@@ -1,0 +1,151 @@
+name: Publish Clinic Cases V1
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: clinic-cases-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare GitHub Pages + installable PWA
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > vite.config.ts <<'EOF'
+          import { defineConfig } from 'vite';
+
+          export default defineConfig({
+            base: '/clinic-cases-system/'
+          });
+          EOF
+
+          cat > public/manifest.webmanifest <<'EOF'
+          {
+            "name": "نظام حالات العيادة",
+            "short_name": "حالات العيادة",
+            "start_url": ".",
+            "scope": ".",
+            "display": "standalone",
+            "background_color": "#ffffff",
+            "theme_color": "#0b1f3a",
+            "lang": "ar",
+            "dir": "rtl",
+            "icons": [
+              {
+                "src": "icon.svg",
+                "sizes": "any",
+                "type": "image/svg+xml",
+                "purpose": "any maskable"
+              }
+            ]
+          }
+          EOF
+
+          cat > public/icon.svg <<'EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+            <rect width="512" height="512" rx="110" fill="#0b1f3a"/>
+            <circle cx="256" cy="256" r="138" fill="#ffffff"/>
+            <rect x="226" y="145" width="60" height="222" rx="20" fill="#0b1f3a"/>
+            <rect x="145" y="226" width="222" height="60" rx="20" fill="#0b1f3a"/>
+          </svg>
+          EOF
+
+          cat > public/sw.js <<'EOF'
+          const CACHE = 'clinic-cases-v1-pwa';
+
+          self.addEventListener('install', event => {
+            event.waitUntil(
+              caches.open(CACHE).then(cache => cache.add(self.registration.scope))
+            );
+            self.skipWaiting();
+          });
+
+          self.addEventListener('activate', event => {
+            event.waitUntil(self.clients.claim());
+          });
+
+          self.addEventListener('fetch', event => {
+            if (event.request.method !== 'GET') return;
+            event.respondWith(
+              fetch(event.request)
+                .then(response => {
+                  const copy = response.clone();
+                  caches.open(CACHE).then(cache => cache.put(event.request, copy));
+                  return response;
+                })
+                .catch(() => caches.match(event.request))
+            );
+          });
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("src/main.ts")
+          s = p.read_text(encoding="utf-8")
+          s = s.replace(
+              "navigator.serviceWorker.register('/sw.js').catch(() => {});",
+              "navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {});"
+          )
+          p.write_text(s, encoding="utf-8")
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: npm install
+
+      - name: Build
+        run: npm run build
+
+      - name: Save deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add vite.config.ts src/main.ts public/manifest.webmanifest public/sw.js public/icon.svg
+          if git diff --cached --quiet; then
+            echo "No deployment config changes"
+          else
+            git commit -m "V1: prepare installable GitHub Pages PWA"
+            git push
+          fi
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
