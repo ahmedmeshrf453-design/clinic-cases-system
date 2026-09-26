@@ -1,0 +1,636 @@
+name: Windows Offline V2 Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Convert project to Windows Offline V2
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src src-tauri/src src-tauri/capabilities
+
+          cat > package.json <<'EOF'
+          {
+            "name": "clinic-cases-system",
+            "private": true,
+            "version": "2.0.0",
+            "type": "module",
+            "scripts": {
+              "dev": "vite --port 1420",
+              "build": "tsc && vite build",
+              "tauri": "tauri",
+              "tauri:build": "tauri build --no-bundle"
+            },
+            "dependencies": {
+              "@tauri-apps/api": "^2.0.0"
+            },
+            "devDependencies": {
+              "@tauri-apps/cli": "^2.0.0",
+              "typescript": "^5.8.3",
+              "vite": "^7.1.7"
+            }
+          }
+          EOF
+
+          cat > tsconfig.json <<'EOF'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "useDefineForClassFields": true,
+              "module": "ESNext",
+              "lib": ["ES2022", "DOM", "DOM.Iterable"],
+              "skipLibCheck": true,
+              "moduleResolution": "Bundler",
+              "allowImportingTsExtensions": true,
+              "resolveJsonModule": true,
+              "isolatedModules": true,
+              "noEmit": true,
+              "strict": true,
+              "types": ["vite/client"]
+            },
+            "include": ["src"]
+          }
+          EOF
+
+          cat > vite.config.ts <<'EOF'
+          import { defineConfig } from 'vite';
+
+          export default defineConfig({
+            clearScreen: false,
+            server: { port: 1420, strictPort: true },
+            envPrefix: ['VITE_', 'TAURI_'],
+            build: { target: ['es2021', 'chrome100', 'safari13'] }
+          });
+          EOF
+
+          cat > index.html <<'EOF'
+          <!doctype html>
+          <html lang="ar" dir="rtl">
+            <head>
+              <meta charset="UTF-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+              <meta name="theme-color" content="#0b1f3a" />
+              <title>Clinic Cases System</title>
+            </head>
+            <body>
+              <div id="app"></div>
+              <script type="module" src="/src/main.ts"></script>
+            </body>
+          </html>
+          EOF
+
+          cat > src/main.ts <<'EOF'
+          import { invoke } from '@tauri-apps/api/core';
+          import './style.css';
+
+          type PatientRow = {
+            id: string;
+            fullName: string;
+            phone: string;
+            age: number | null;
+            gender: string;
+            address: string;
+            doctor: string;
+            specialty: string;
+            lastVisitDate: string;
+            complaint: string;
+          };
+
+          type Stats = { totalPatients: number; todayVisits: number };
+
+          type AddCaseInput = {
+            fullName: string;
+            phone: string;
+            age: number | null;
+            gender: string;
+            address: string;
+            doctor: string;
+            specialty: string;
+            visitDate: string;
+            visitTime: string;
+            complaint: string;
+            diagnosis: string;
+            notes: string;
+          };
+
+          const app = document.querySelector<HTMLDivElement>('#app')!;
+          let patients: PatientRow[] = [];
+          let currentSearch = '';
+
+          function esc(v: string | number | null | undefined) {
+            return String(v ?? '').replace(/[&<>"']/g, c => ({
+              '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+            }[c]!));
+          }
+
+          function today() {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+          }
+
+          function timeNow() {
+            const d = new Date();
+            return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+          }
+
+          async function loadData() {
+            patients = await invoke<PatientRow[]>('list_patients', { search: currentSearch });
+            const stats = await invoke<Stats>('get_stats');
+            drawPatients();
+            const total = document.querySelector('#totalPatients');
+            const todayEl = document.querySelector('#todayVisits');
+            if (total) total.textContent = String(stats.totalPatients);
+            if (todayEl) todayEl.textContent = String(stats.todayVisits);
+          }
+
+          function drawPatients() {
+            const list = document.querySelector<HTMLDivElement>('#list');
+            if (!list) return;
+
+            list.innerHTML = patients.length ? patients.map(p => `
+              <article class="patient-row">
+                <div class="patient-main">
+                  <strong>${esc(p.fullName)}</strong>
+                  <small>${esc(p.phone)}</small>
+                </div>
+                <div>
+                  <span>${esc(p.doctor || '—')}</span>
+                  <small>${esc(p.specialty || '')}</small>
+                </div>
+                <div>
+                  <span>${esc(p.lastVisitDate || '—')}</span>
+                  <small>${esc(p.complaint || '')}</small>
+                </div>
+                <button class="danger" data-archive="${esc(p.id)}">أرشفة</button>
+              </article>
+            `).join('') : `<div class="empty">لا توجد حالات مسجلة</div>`;
+
+            document.querySelectorAll<HTMLButtonElement>('[data-archive]').forEach(btn => {
+              btn.onclick = async () => {
+                if (!confirm('هل تريد أرشفة هذا الملف؟ يمكن استعادته لاحقًا.')) return;
+                await invoke('archive_patient', { id: btn.dataset.archive });
+                await loadData();
+              };
+            });
+          }
+
+          function render() {
+            app.innerHTML = `
+              <div class="shell">
+                <aside class="sidebar">
+                  <div class="brand">
+                    <div class="brand-icon">+</div>
+                    <div><strong>Clinic Cases</strong><small>Offline Windows</small></div>
+                  </div>
+                  <nav>
+                    <button class="nav active">الرئيسية</button>
+                    <button class="nav" id="newCaseSide">تسجيل حالة</button>
+                    <button class="nav" id="backupBtn">نسخة احتياطية</button>
+                  </nav>
+                  <div class="offline-badge">● يعمل أوفلاين بالكامل</div>
+                </aside>
+
+                <main class="content">
+                  <header class="topbar">
+                    <div>
+                      <h1>نظام تسجيل حالات العيادة</h1>
+                      <p>البيانات محفوظة على هذا الكمبيوتر فقط</p>
+                    </div>
+                    <button class="primary" id="newCaseTop">+ تسجيل حالة جديدة</button>
+                  </header>
+
+                  <section class="stats">
+                    <article><span>إجمالي الحالات</span><strong id="totalPatients">0</strong></article>
+                    <article><span>زيارات اليوم</span><strong id="todayVisits">0</strong></article>
+                  </section>
+
+                  <section class="panel">
+                    <div class="panel-head">
+                      <h2>الحالات</h2>
+                      <input id="search" class="search" placeholder="بحث بالاسم أو رقم الهاتف..." />
+                    </div>
+                    <div id="list"></div>
+                  </section>
+                </main>
+              </div>
+
+              <dialog id="caseDialog">
+                <form id="caseForm">
+                  <div class="dialog-head">
+                    <div>
+                      <h2>تسجيل حالة جديدة</h2>
+                      <p>لو رقم الهاتف موجود، هتتسجل زيارة جديدة لنفس الملف.</p>
+                    </div>
+                    <button type="button" class="icon-btn" id="closeDialog">×</button>
+                  </div>
+
+                  <div class="form-grid">
+                    <label class="span-2">الاسم بالكامل<input name="fullName" required autocomplete="off" /></label>
+                    <label>رقم الهاتف<input name="phone" required inputmode="tel" autocomplete="off" /></label>
+                    <label>السن<input name="age" type="number" min="0" max="130" /></label>
+                    <label>النوع<select name="gender"><option value="">—</option><option>ذكر</option><option>أنثى</option></select></label>
+                    <label class="span-2">العنوان<input name="address" autocomplete="off" /></label>
+                    <label>الطبيب<input name="doctor" autocomplete="off" /></label>
+                    <label>التخصص<input name="specialty" autocomplete="off" /></label>
+                    <label>تاريخ الزيارة<input name="visitDate" type="date" required /></label>
+                    <label>وقت الزيارة<input name="visitTime" type="time" required /></label>
+                    <label class="span-2">الشكوى الرئيسية<textarea name="complaint" rows="2"></textarea></label>
+                    <label class="span-2">التشخيص<textarea name="diagnosis" rows="2"></textarea></label>
+                    <label class="span-2">ملاحظات<textarea name="notes" rows="2"></textarea></label>
+                  </div>
+
+                  <div class="actions">
+                    <button type="button" id="cancelCase">إلغاء</button>
+                    <button type="submit" class="primary">حفظ الحالة</button>
+                  </div>
+                </form>
+              </dialog>
+            `;
+
+            const dialog = document.querySelector<HTMLDialogElement>('#caseDialog')!;
+            const form = document.querySelector<HTMLFormElement>('#caseForm')!;
+
+            const openDialog = () => {
+              form.reset();
+              (form.elements.namedItem('visitDate') as HTMLInputElement).value = today();
+              (form.elements.namedItem('visitTime') as HTMLInputElement).value = timeNow();
+              dialog.showModal();
+              setTimeout(() => (form.elements.namedItem('fullName') as HTMLInputElement).focus(), 50);
+            };
+
+            document.querySelector<HTMLButtonElement>('#newCaseTop')!.onclick = openDialog;
+            document.querySelector<HTMLButtonElement>('#newCaseSide')!.onclick = openDialog;
+            document.querySelector<HTMLButtonElement>('#closeDialog')!.onclick = () => dialog.close();
+            document.querySelector<HTMLButtonElement>('#cancelCase')!.onclick = () => dialog.close();
+
+            const search = document.querySelector<HTMLInputElement>('#search')!;
+            let timer: number | undefined;
+            search.oninput = () => {
+              window.clearTimeout(timer);
+              timer = window.setTimeout(async () => {
+                currentSearch = search.value.trim();
+                await loadData();
+              }, 250);
+            };
+
+            document.querySelector<HTMLButtonElement>('#backupBtn')!.onclick = async () => {
+              const path = await invoke<string>('backup_database');
+              alert(`تم إنشاء نسخة احتياطية بنجاح:\n${path}`);
+            };
+
+            form.onsubmit = async (e) => {
+              e.preventDefault();
+              const fd = new FormData(form);
+              const rawAge = String(fd.get('age') || '').trim();
+              const payload: AddCaseInput = {
+                fullName: String(fd.get('fullName') || '').trim(),
+                phone: String(fd.get('phone') || '').trim(),
+                age: rawAge ? Number(rawAge) : null,
+                gender: String(fd.get('gender') || ''),
+                address: String(fd.get('address') || '').trim(),
+                doctor: String(fd.get('doctor') || '').trim(),
+                specialty: String(fd.get('specialty') || '').trim(),
+                visitDate: String(fd.get('visitDate') || ''),
+                visitTime: String(fd.get('visitTime') || ''),
+                complaint: String(fd.get('complaint') || '').trim(),
+                diagnosis: String(fd.get('diagnosis') || '').trim(),
+                notes: String(fd.get('notes') || '').trim()
+              };
+
+              try {
+                await invoke('save_case', { input: payload });
+                dialog.close();
+                await loadData();
+              } catch (err) {
+                alert(`تعذر حفظ الحالة: ${String(err)}`);
+              }
+            };
+
+            loadData().catch(err => alert(`تعذر فتح قاعدة البيانات: ${String(err)}`));
+          }
+
+          render();
+          EOF
+
+          cat > src/style.css <<'EOF'
+          *{box-sizing:border-box}
+          :root{font-family:"Segoe UI",Tahoma,Arial,sans-serif;color:#172033;background:#f4f7fb}
+          body{margin:0;min-width:860px;min-height:100vh;background:#f4f7fb}
+          button,input,textarea,select{font:inherit}button{cursor:pointer}
+          .shell{display:grid;grid-template-columns:250px 1fr;min-height:100vh}.sidebar{background:#0b1f3a;color:#fff;padding:24px 18px;display:flex;flex-direction:column}
+          .brand{display:flex;align-items:center;gap:12px;padding:4px 8px 28px}.brand-icon{width:42px;height:42px;border-radius:12px;background:#fff;color:#0b1f3a;font-size:30px;display:grid;place-items:center;font-weight:700}.brand strong,.brand small{display:block}.brand small{opacity:.65;margin-top:3px}
+          nav{display:grid;gap:8px}.nav{background:transparent;color:#dbe7f7;border:0;border-radius:10px;text-align:right;padding:13px 14px}.nav:hover,.nav.active{background:#17385f;color:#fff}.offline-badge{margin-top:auto;font-size:12px;color:#bfe9cf;padding:12px 8px}
+          .content{padding:30px;max-width:1400px;width:100%;margin:0 auto}.topbar{display:flex;justify-content:space-between;align-items:center;gap:18px}.topbar h1{margin:0 0 6px;font-size:28px}.topbar p{margin:0;color:#6b7890}
+          .primary{background:#0b1f3a;color:#fff;border:0;border-radius:10px;padding:12px 18px}.primary:hover{background:#14345b}.stats{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:16px;margin:24px 0}
+          .stats article,.panel{background:#fff;border:1px solid #e3e9f1;border-radius:16px;box-shadow:0 4px 18px #1831530a}.stats article{padding:20px}.stats span{display:block;color:#738096;margin-bottom:8px}.stats strong{font-size:34px}.panel{padding:20px}
+          .panel-head{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:10px}.panel-head h2{margin:0}.search{width:min(420px,48%);padding:12px 14px;border:1px solid #d7dee8;border-radius:10px;outline:0}.search:focus,input:focus,textarea:focus,select:focus{border-color:#6d89af;box-shadow:0 0 0 3px #17385f15}
+          .patient-row{display:grid;grid-template-columns:2fr 2fr 2fr auto;gap:18px;align-items:center;padding:15px 4px;border-bottom:1px solid #edf1f5}.patient-row:last-child{border-bottom:0}.patient-row strong,.patient-row span{display:block}.patient-row small{display:block;color:#78859a;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.danger{border:1px solid #e1a5a5;background:#fff;color:#a91c1c;padding:8px 12px;border-radius:8px}.empty{text-align:center;color:#7a8798;padding:48px 16px}
+          dialog{border:0;border-radius:18px;width:min(800px,90vw);max-height:90vh;padding:0;box-shadow:0 28px 90px #0004}dialog::backdrop{background:#07111f88}form{padding:24px}.dialog-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px}.dialog-head h2{margin:0 0 5px}.dialog-head p{margin:0;color:#6f7c90;font-size:13px}.icon-btn{border:0;background:#eef2f6;border-radius:8px;width:34px;height:34px;font-size:22px}
+          .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.form-grid label{display:grid;gap:6px;font-size:13px;color:#344158}.span-2{grid-column:1/-1}input,textarea,select{width:100%;padding:10px 12px;border:1px solid #d5dde7;border-radius:9px;background:#fff;outline:0}textarea{resize:vertical}.actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:18px;border-top:1px solid #edf1f5}.actions>button:not(.primary){border:1px solid #d7dee7;background:#fff;padding:10px 17px;border-radius:9px}
+          EOF
+
+          cat > src-tauri/Cargo.toml <<'EOF'
+          [package]
+          name = "clinic-cases-system"
+          version = "2.0.0"
+          description = "Offline clinic patient cases system"
+          authors = ["Clinic Cases"]
+          edition = "2021"
+
+          [lib]
+          name = "clinic_cases_system_lib"
+          crate-type = ["staticlib", "cdylib", "rlib"]
+
+          [build-dependencies]
+          tauri-build = { version = "2", features = [] }
+
+          [dependencies]
+          tauri = { version = "2", features = [] }
+          serde = { version = "1", features = ["derive"] }
+          serde_json = "1"
+          rusqlite = { version = "0.32", features = ["bundled"] }
+          chrono = { version = "0.4", features = ["clock"] }
+          uuid = { version = "1", features = ["v4"] }
+          EOF
+
+          cat > src-tauri/build.rs <<'EOF'
+          fn main() { tauri_build::build() }
+          EOF
+
+          cat > src-tauri/src/main.rs <<'EOF'
+          fn main() { clinic_cases_system_lib::run(); }
+          EOF
+
+          cat > src-tauri/src/lib.rs <<'EOF'
+          use chrono::Local;
+          use rusqlite::{params, Connection, OptionalExtension};
+          use serde::{Deserialize, Serialize};
+          use std::{fs, path::PathBuf};
+          use tauri::{Manager, State};
+          use uuid::Uuid;
+
+          struct AppState { db_path: PathBuf, backup_dir: PathBuf }
+
+          #[derive(Debug, Deserialize)]
+          #[serde(rename_all = "camelCase")]
+          struct AddCaseInput {
+              full_name: String, phone: String, age: Option<i64>, gender: String,
+              address: String, doctor: String, specialty: String, visit_date: String,
+              visit_time: String, complaint: String, diagnosis: String, notes: String,
+          }
+
+          #[derive(Debug, Serialize)]
+          #[serde(rename_all = "camelCase")]
+          struct PatientRow {
+              id: String, full_name: String, phone: String, age: Option<i64>, gender: String,
+              address: String, doctor: String, specialty: String, last_visit_date: String, complaint: String,
+          }
+
+          #[derive(Debug, Serialize)]
+          #[serde(rename_all = "camelCase")]
+          struct Stats { total_patients: i64, today_visits: i64 }
+
+          fn open_db(state: &AppState) -> Result<Connection, String> {
+              Connection::open(&state.db_path).map_err(|e| e.to_string())
+          }
+
+          fn init_db(path: &PathBuf) -> Result<(), String> {
+              let conn = Connection::open(path).map_err(|e| e.to_string())?;
+              conn.execute_batch(r#"
+                  PRAGMA foreign_keys = ON;
+                  PRAGMA journal_mode = WAL;
+                  CREATE TABLE IF NOT EXISTS patients (
+                    id TEXT PRIMARY KEY, full_name TEXT NOT NULL, phone TEXT NOT NULL UNIQUE,
+                    age INTEGER, gender TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '',
+                    archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                  );
+                  CREATE TABLE IF NOT EXISTS visits (
+                    id TEXT PRIMARY KEY, patient_id TEXT NOT NULL, visit_date TEXT NOT NULL,
+                    visit_time TEXT NOT NULL DEFAULT '', doctor TEXT NOT NULL DEFAULT '',
+                    specialty TEXT NOT NULL DEFAULT '', complaint TEXT NOT NULL DEFAULT '',
+                    diagnosis TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    FOREIGN KEY(patient_id) REFERENCES patients(id)
+                  );
+                  CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone);
+                  CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(full_name);
+                  CREATE INDEX IF NOT EXISTS idx_visits_patient ON visits(patient_id);
+                  CREATE INDEX IF NOT EXISTS idx_visits_date ON visits(visit_date);
+              "#).map_err(|e| e.to_string())?;
+              Ok(())
+          }
+
+          #[tauri::command]
+          fn save_case(state: State<AppState>, input: AddCaseInput) -> Result<String, String> {
+              let mut conn = open_db(&state)?;
+              let tx = conn.transaction().map_err(|e| e.to_string())?;
+              let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+              let existing: Option<String> = tx.query_row(
+                  "SELECT id FROM patients WHERE phone = ?1 LIMIT 1", params![input.phone], |row| row.get(0)
+              ).optional().map_err(|e| e.to_string())?;
+
+              let patient_id = if let Some(id) = existing {
+                  tx.execute(
+                      "UPDATE patients SET full_name=?1, age=?2, gender=?3, address=?4, archived=0, updated_at=?5 WHERE id=?6",
+                      params![input.full_name, input.age, input.gender, input.address, now, id]
+                  ).map_err(|e| e.to_string())?;
+                  id
+              } else {
+                  let id = Uuid::new_v4().to_string();
+                  tx.execute(
+                      "INSERT INTO patients (id,full_name,phone,age,gender,address,archived,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,0,?7,?7)",
+                      params![id, input.full_name, input.phone, input.age, input.gender, input.address, now]
+                  ).map_err(|e| e.to_string())?;
+                  id
+              };
+
+              let visit_id = Uuid::new_v4().to_string();
+              tx.execute(
+                  "INSERT INTO visits (id,patient_id,visit_date,visit_time,doctor,specialty,complaint,diagnosis,notes,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?10)",
+                  params![visit_id, patient_id, input.visit_date, input.visit_time, input.doctor, input.specialty, input.complaint, input.diagnosis, input.notes, now]
+              ).map_err(|e| e.to_string())?;
+              tx.commit().map_err(|e| e.to_string())?;
+              Ok(patient_id)
+          }
+
+          #[tauri::command]
+          fn list_patients(state: State<AppState>, search: String) -> Result<Vec<PatientRow>, String> {
+              let conn = open_db(&state)?;
+              let q = format!("%{}%", search.trim());
+              let mut stmt = conn.prepare(r#"
+                  SELECT p.id,p.full_name,p.phone,p.age,p.gender,p.address,
+                  COALESCE((SELECT v.doctor FROM visits v WHERE v.patient_id=p.id ORDER BY v.visit_date DESC,v.visit_time DESC,v.created_at DESC LIMIT 1),''),
+                  COALESCE((SELECT v.specialty FROM visits v WHERE v.patient_id=p.id ORDER BY v.visit_date DESC,v.visit_time DESC,v.created_at DESC LIMIT 1),''),
+                  COALESCE((SELECT v.visit_date FROM visits v WHERE v.patient_id=p.id ORDER BY v.visit_date DESC,v.visit_time DESC,v.created_at DESC LIMIT 1),''),
+                  COALESCE((SELECT v.complaint FROM visits v WHERE v.patient_id=p.id ORDER BY v.visit_date DESC,v.visit_time DESC,v.created_at DESC LIMIT 1),'')
+                  FROM patients p
+                  WHERE p.archived=0 AND (?1='%%' OR p.full_name LIKE ?1 OR p.phone LIKE ?1)
+                  ORDER BY 9 DESC, p.updated_at DESC LIMIT 500
+              "#).map_err(|e| e.to_string())?;
+
+              let rows = stmt.query_map(params![q], |row| Ok(PatientRow {
+                  id: row.get(0)?, full_name: row.get(1)?, phone: row.get(2)?, age: row.get(3)?,
+                  gender: row.get(4)?, address: row.get(5)?, doctor: row.get(6)?, specialty: row.get(7)?,
+                  last_visit_date: row.get(8)?, complaint: row.get(9)?,
+              })).map_err(|e| e.to_string())?;
+              rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+          }
+
+          #[tauri::command]
+          fn archive_patient(state: State<AppState>, id: String) -> Result<(), String> {
+              let conn = open_db(&state)?;
+              let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+              conn.execute("UPDATE patients SET archived=1, updated_at=?1 WHERE id=?2", params![now, id]).map_err(|e| e.to_string())?;
+              Ok(())
+          }
+
+          #[tauri::command]
+          fn get_stats(state: State<AppState>) -> Result<Stats, String> {
+              let conn = open_db(&state)?;
+              let total_patients: i64 = conn.query_row("SELECT COUNT(*) FROM patients WHERE archived=0", [], |row| row.get(0)).map_err(|e| e.to_string())?;
+              let today = Local::now().format("%Y-%m-%d").to_string();
+              let today_visits: i64 = conn.query_row(
+                  "SELECT COUNT(*) FROM visits v JOIN patients p ON p.id=v.patient_id WHERE v.visit_date=?1 AND p.archived=0",
+                  params![today], |row| row.get(0)
+              ).map_err(|e| e.to_string())?;
+              Ok(Stats { total_patients, today_visits })
+          }
+
+          #[tauri::command]
+          fn backup_database(state: State<AppState>) -> Result<String, String> {
+              fs::create_dir_all(&state.backup_dir).map_err(|e| e.to_string())?;
+              let stamp = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+              let target = state.backup_dir.join(format!("clinic-cases-backup-{}.db", stamp));
+              fs::copy(&state.db_path, &target).map_err(|e| e.to_string())?;
+              Ok(target.to_string_lossy().to_string())
+          }
+
+          pub fn run() {
+              tauri::Builder::default()
+                  .setup(|app| {
+                      let data_dir = app.path().app_data_dir()?;
+                      fs::create_dir_all(&data_dir)?;
+                      let db_path = data_dir.join("clinic-cases.db");
+                      init_db(&db_path).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                      let backup_dir = app.path().document_dir().unwrap_or_else(|_| data_dir.clone()).join("Clinic Cases Backups");
+                      fs::create_dir_all(&backup_dir)?;
+                      if db_path.exists() {
+                          let daily = backup_dir.join(format!("clinic-cases-auto-{}.db", Local::now().format("%Y-%m-%d")));
+                          if !daily.exists() { let _ = fs::copy(&db_path, daily); }
+                      }
+                      app.manage(AppState { db_path, backup_dir });
+                      Ok(())
+                  })
+                  .invoke_handler(tauri::generate_handler![save_case,list_patients,archive_patient,get_stats,backup_database])
+                  .run(tauri::generate_context!())
+                  .expect("error while running Clinic Cases System");
+          }
+          EOF
+
+          cat > src-tauri/tauri.conf.json <<'EOF'
+          {
+            "$schema": "https://schema.tauri.app/config/2",
+            "productName": "Clinic Cases System",
+            "version": "2.0.0",
+            "identifier": "com.cliniccases.system",
+            "build": {
+              "beforeDevCommand": "npm run dev",
+              "devUrl": "http://localhost:1420",
+              "beforeBuildCommand": "npm run build",
+              "frontendDist": "../dist"
+            },
+            "app": {
+              "windows": [{
+                "title": "Clinic Cases System",
+                "width": 1280,
+                "height": 800,
+                "minWidth": 900,
+                "minHeight": 620,
+                "resizable": true,
+                "fullscreen": false
+              }],
+              "security": { "csp": null }
+            },
+            "bundle": { "active": false }
+          }
+          EOF
+
+          cat > src-tauri/capabilities/default.json <<'EOF'
+          {
+            "$schema": "../gen/schemas/desktop-schema.json",
+            "identifier": "default",
+            "description": "Default desktop capability",
+            "windows": ["main"],
+            "permissions": ["core:default"]
+          }
+          EOF
+
+          cat > README.md <<'EOF'
+          # Clinic Cases System — Windows Offline V2
+
+          برنامج Windows محلي بالكامل لتسجيل حالات العيادة.
+
+          - لا يحتاج Firebase أو إنترنت أثناء التشغيل.
+          - قاعدة البيانات SQLite محفوظة على الكمبيوتر فقط.
+          - ملف المريض منفصل عن الزيارات.
+          - البحث بالاسم أو رقم الهاتف.
+          - نفس رقم الهاتف يضيف زيارة جديدة بدل تكرار المريض.
+          - أرشفة بدل الحذف.
+          - نسخة احتياطية يدوية + نسخة تلقائية يومية في Documents/Clinic Cases Backups.
+
+          GitHub يُستخدم للكود والبناء فقط. بيانات المرضى لا تُرفع إلى GitHub.
+          EOF
+
+          rm -f firebase.json firestore.rules .env.example
+          rm -rf public
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: npm install
+
+      - name: Build Windows EXE
+        shell: bash
+        run: npm run tauri:build
+
+      - name: Commit Windows Offline V2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "Clinic Cases Windows Offline V2"
+            git push
+          fi
+
+      - name: Upload Windows portable EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V2
+          path: src-tauri/target/release/clinic-cases-system.exe
+          if-no-files-found: error
