@@ -1,0 +1,299 @@
+name: Clinic Cases V1 Bootstrap
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create V1 project files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p src public
+
+          cat > package.json <<'EOF'
+          {
+            "name": "clinic-cases-system",
+            "private": true,
+            "version": "1.0.0",
+            "type": "module",
+            "scripts": {
+              "dev": "vite",
+              "build": "tsc && vite build",
+              "preview": "vite preview"
+            },
+            "dependencies": {
+              "firebase": "^12.3.0"
+            },
+            "devDependencies": {
+              "typescript": "^5.8.3",
+              "vite": "^7.1.7"
+            }
+          }
+          EOF
+
+          cat > tsconfig.json <<'EOF'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "useDefineForClassFields": true,
+              "module": "ESNext",
+              "lib": ["ES2022", "DOM", "DOM.Iterable"],
+              "skipLibCheck": true,
+              "moduleResolution": "Bundler",
+              "allowImportingTsExtensions": true,
+              "resolveJsonModule": true,
+              "isolatedModules": true,
+              "noEmit": true,
+              "strict": true,
+              "types": ["vite/client"]
+            },
+            "include": ["src"]
+          }
+          EOF
+
+          cat > index.html <<'EOF'
+          <!doctype html>
+          <html lang="ar" dir="rtl">
+            <head>
+              <meta charset="UTF-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+              <meta name="theme-color" content="#0b1f3a" />
+              <meta name="description" content="نظام تسجيل وإدارة حالات العيادة" />
+              <link rel="manifest" href="/manifest.webmanifest" />
+              <title>Clinic Cases System</title>
+            </head>
+            <body>
+              <div id="app"></div>
+              <script type="module" src="/src/main.ts"></script>
+            </body>
+          </html>
+          EOF
+
+          cat > public/manifest.webmanifest <<'EOF'
+          {
+            "name": "نظام حالات العيادة",
+            "short_name": "حالات العيادة",
+            "start_url": "/",
+            "display": "standalone",
+            "background_color": "#ffffff",
+            "theme_color": "#0b1f3a",
+            "lang": "ar",
+            "dir": "rtl"
+          }
+          EOF
+
+          cat > src/main.ts <<'EOF'
+          import './style.css';
+
+          type CaseRow = {
+            id: string;
+            name: string;
+            phone: string;
+            doctor: string;
+            specialty: string;
+            date: string;
+            complaint: string;
+            archived: boolean;
+          };
+
+          const KEY = 'clinic-cases-v1';
+          let rows: CaseRow[] = JSON.parse(localStorage.getItem(KEY) || '[]');
+
+          const app = document.querySelector<HTMLDivElement>('#app')!;
+
+          function save() {
+            localStorage.setItem(KEY, JSON.stringify(rows));
+          }
+
+          function esc(v: string) {
+            return v.replace(/[&<>"']/g, c => ({
+              '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+            }[c]!));
+          }
+
+          function render() {
+            const active = rows.filter(r => !r.archived);
+            app.innerHTML = `
+              <div class="layout">
+                <aside>
+                  <h2>Clinic Cases</h2>
+                  <nav>
+                    <button class="nav active">الرئيسية</button>
+                    <button class="nav">الحالات</button>
+                    <button class="nav" id="newCaseBtn">تسجيل حالة</button>
+                  </nav>
+                </aside>
+
+                <main>
+                  <header>
+                    <div>
+                      <h1>نظام تسجيل حالات العيادة</h1>
+                      <p>نسخة V1 — تعمل على الكمبيوتر وأندرويد</p>
+                    </div>
+                    <button class="primary" id="newCaseTop">+ تسجيل حالة جديدة</button>
+                  </header>
+
+                  <section class="stats">
+                    <article><span>إجمالي الحالات</span><strong>${active.length}</strong></article>
+                    <article><span>حالات اليوم</span><strong>${active.filter(r => r.date === new Date().toISOString().slice(0,10)).length}</strong></article>
+                  </section>
+
+                  <section class="panel">
+                    <input id="search" class="search" placeholder="بحث بالاسم أو رقم الهاتف..." />
+                    <div id="list"></div>
+                  </section>
+                </main>
+              </div>
+
+              <dialog id="caseDialog">
+                <form method="dialog" id="caseForm">
+                  <h2>تسجيل حالة جديدة</h2>
+                  <label>الاسم بالكامل<input name="name" required /></label>
+                  <label>رقم الهاتف<input name="phone" inputmode="tel" required /></label>
+                  <label>الطبيب<input name="doctor" required /></label>
+                  <label>التخصص<input name="specialty" required /></label>
+                  <label>تاريخ الزيارة<input name="date" type="date" required /></label>
+                  <label>الشكوى<textarea name="complaint" rows="3"></textarea></label>
+                  <div class="actions">
+                    <button value="cancel">إلغاء</button>
+                    <button class="primary" id="saveCase" value="default">حفظ الحالة</button>
+                  </div>
+                </form>
+              </dialog>
+            `;
+
+            const list = document.querySelector<HTMLDivElement>('#list')!;
+            const search = document.querySelector<HTMLInputElement>('#search')!;
+
+            function drawList(term = '') {
+              const q = term.trim().toLowerCase();
+              const data = active.filter(r => !q || r.name.toLowerCase().includes(q) || r.phone.includes(q));
+              list.innerHTML = data.length ? data.map(r => `
+                <article class="row">
+                  <div><strong>${esc(r.name)}</strong><small>${esc(r.phone)}</small></div>
+                  <div><span>${esc(r.doctor)}</span><small>${esc(r.specialty)}</small></div>
+                  <div><span>${esc(r.date)}</span></div>
+                  <button data-archive="${r.id}" class="danger">أرشفة</button>
+                </article>
+              `).join('') : `<div class="empty">لا توجد حالات مسجلة</div>`;
+
+              document.querySelectorAll<HTMLButtonElement>('[data-archive]').forEach(btn => {
+                btn.onclick = () => {
+                  const id = btn.dataset.archive!;
+                  rows = rows.map(r => r.id === id ? {...r, archived: true} : r);
+                  save();
+                  render();
+                };
+              });
+            }
+
+            drawList();
+            search.oninput = () => drawList(search.value);
+
+            const dialog = document.querySelector<HTMLDialogElement>('#caseDialog')!;
+            const open = () => dialog.showModal();
+            document.querySelector<HTMLButtonElement>('#newCaseTop')!.onclick = open;
+            document.querySelector<HTMLButtonElement>('#newCaseBtn')!.onclick = open;
+
+            const form = document.querySelector<HTMLFormElement>('#caseForm')!;
+            const dateInput = form.elements.namedItem('date') as HTMLInputElement;
+            dateInput.value = new Date().toISOString().slice(0,10);
+
+            form.addEventListener('submit', (e) => {
+              const submitter = (e as SubmitEvent).submitter as HTMLButtonElement | null;
+              if (submitter?.value === 'cancel') return;
+
+              e.preventDefault();
+              const fd = new FormData(form);
+              const phone = String(fd.get('phone') || '').trim();
+              if (rows.some(r => !r.archived && r.phone === phone)) {
+                alert('يوجد ملف مسجل بهذا الرقم');
+                return;
+              }
+
+              rows.unshift({
+                id: crypto.randomUUID(),
+                name: String(fd.get('name') || '').trim(),
+                phone,
+                doctor: String(fd.get('doctor') || '').trim(),
+                specialty: String(fd.get('specialty') || '').trim(),
+                date: String(fd.get('date') || ''),
+                complaint: String(fd.get('complaint') || '').trim(),
+                archived: false
+              });
+              save();
+              dialog.close();
+              render();
+            });
+          }
+
+          render();
+
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+          }
+          EOF
+
+          cat > src/style.css <<'EOF'
+          *{box-sizing:border-box}body{margin:0;font-family:Arial,Tahoma,sans-serif;background:#f6f8fb;color:#14213d}button,input,textarea{font:inherit}
+          .layout{min-height:100vh;display:grid;grid-template-columns:240px 1fr}aside{background:#0b1f3a;color:#fff;padding:24px}aside h2{margin-top:0}
+          nav{display:grid;gap:10px}.nav{background:transparent;border:0;color:#dce6f5;text-align:right;padding:12px;border-radius:10px}.nav.active,.nav:hover{background:#16365f}
+          main{padding:28px;max-width:1250px;width:100%;margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:16px}header h1{margin:0 0 6px}header p{margin:0;color:#64748b}
+          .primary{background:#0b1f3a;color:#fff;border:0;padding:12px 18px;border-radius:10px;cursor:pointer}.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:24px 0}
+          .stats article,.panel{background:#fff;border:1px solid #e6ebf1;border-radius:16px;padding:20px}.stats span{display:block;color:#64748b}.stats strong{font-size:34px}
+          .search{width:100%;padding:14px;border:1px solid #d8e0ea;border-radius:10px;margin-bottom:16px}.row{display:grid;grid-template-columns:2fr 2fr 1fr auto;gap:16px;align-items:center;padding:14px 0;border-bottom:1px solid #edf1f5}
+          .row small{display:block;color:#64748b;margin-top:4px}.danger{border:1px solid #d33;background:#fff;color:#b91c1c;padding:8px 12px;border-radius:8px}.empty{text-align:center;color:#64748b;padding:32px}
+          dialog{border:0;border-radius:16px;width:min(560px,92vw);padding:0;box-shadow:0 25px 70px #0004}dialog::backdrop{background:#0006}form{padding:24px;display:grid;gap:14px}
+          label{display:grid;gap:6px}input,textarea{padding:11px;border:1px solid #cfd8e3;border-radius:9px}.actions{display:flex;justify-content:flex-end;gap:10px}.actions button{padding:10px 16px;border-radius:9px;border:1px solid #d4dbe4}
+          @media(max-width:760px){.layout{display:block}aside{display:none}main{padding:16px}header{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:1fr 1fr}.row{grid-template-columns:1fr auto}.row>div:nth-child(2),.row>div:nth-child(3){grid-column:1}.primary{width:100%}}
+          EOF
+
+          cat > public/sw.js <<'EOF'
+          const CACHE='clinic-cases-v1';
+          self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['/'])));self.skipWaiting()});
+          self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
+          self.addEventListener('fetch',e=>{if(e.request.method==='GET')e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)))});
+          EOF
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: npm install
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit V1 source into repository
+        shell: bash
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json tsconfig.json index.html src public
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "Clinic Cases V1 bootstrap"
+            git push
+          fi
+
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: clinic-cases-v1-web
+          path: dist/
+          if-no-files-found: error
