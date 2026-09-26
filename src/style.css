@@ -1,0 +1,11 @@
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Tahoma,sans-serif;background:#f6f8fb;color:#14213d}button,input,textarea{font:inherit}
+.layout{min-height:100vh;display:grid;grid-template-columns:240px 1fr}aside{background:#0b1f3a;color:#fff;padding:24px}aside h2{margin-top:0}
+nav{display:grid;gap:10px}.nav{background:transparent;border:0;color:#dce6f5;text-align:right;padding:12px;border-radius:10px}.nav.active,.nav:hover{background:#16365f}
+main{padding:28px;max-width:1250px;width:100%;margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:16px}header h1{margin:0 0 6px}header p{margin:0;color:#64748b}
+.primary{background:#0b1f3a;color:#fff;border:0;padding:12px 18px;border-radius:10px;cursor:pointer}.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:24px 0}
+.stats article,.panel{background:#fff;border:1px solid #e6ebf1;border-radius:16px;padding:20px}.stats span{display:block;color:#64748b}.stats strong{font-size:34px}
+.search{width:100%;padding:14px;border:1px solid #d8e0ea;border-radius:10px;margin-bottom:16px}.row{display:grid;grid-template-columns:2fr 2fr 1fr auto;gap:16px;align-items:center;padding:14px 0;border-bottom:1px solid #edf1f5}
+.row small{display:block;color:#64748b;margin-top:4px}.danger{border:1px solid #d33;background:#fff;color:#b91c1c;padding:8px 12px;border-radius:8px}.empty{text-align:center;color:#64748b;padding:32px}
+dialog{border:0;border-radius:16px;width:min(560px,92vw);padding:0;box-shadow:0 25px 70px #0004}dialog::backdrop{background:#0006}form{padding:24px;display:grid;gap:14px}
+label{display:grid;gap:6px}input,textarea{padding:11px;border:1px solid #cfd8e3;border-radius:9px}.actions{display:flex;justify-content:flex-end;gap:10px}.actions button{padding:10px 16px;border-radius:9px;border:1px solid #d4dbe4}
+@media(max-width:760px){.layout{display:block}aside{display:none}main{padding:16px}header{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:1fr 1fr}.row{grid-template-columns:1fr auto}.row>div:nth-child(2),.row>div:nth-child(3){grid-column:1}.primary{width:100%}}

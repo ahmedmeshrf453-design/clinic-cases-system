@@ -1,0 +1,10 @@
+{
+  "name": "نظام حالات العيادة",
+  "short_name": "حالات العيادة",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0b1f3a",
+  "lang": "ar",
+  "dir": "rtl"
+}
