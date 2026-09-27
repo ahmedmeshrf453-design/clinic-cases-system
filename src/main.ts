@@ -108,9 +108,13 @@ function shell(content: string, title: string, subtitle: string) {
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
-          <div class="brand-mark">✚</div>
-          <div><strong>Clinic Cases</strong><small>نظام العيادة المحلي</small></div>
+          <div class="brand-mark">AK</div>
+          <div>
+            <strong>نظام الحالات</strong>
+            <small>عيادات العقاد التخصصية</small>
+          </div>
         </div>
+
         <nav>
           ${navButton('dashboard','⌂','الرئيسية')}
           ${navButton('patients','◉','المرضى')}
@@ -120,29 +124,58 @@ function shell(content: string, title: string, subtitle: string) {
           ${navButton('archive','▣','الأرشيف')}
           ${navButton('backups','⟳','النسخ الاحتياطية')}
         </nav>
+
         <div class="sidebar-footer">
           <span class="online-dot"></span>
           يعمل أوفلاين بالكامل
           <small>SQLite محلي على هذا الكمبيوتر</small>
         </div>
       </aside>
+
       <main class="main">
-        <header class="topbar">
+        <section class="clinic-header">
+          <div class="clinic-identity">
+            <img class="clinic-logo" src="/clinic-logo-header.jpg" alt="لوجو عيادات العقاد التخصصية" />
+            <div class="clinic-copy">
+              <strong class="clinic-name">عيادات العقاد التخصصية</strong>
+              <span class="clinic-slogan">رعاية تليق بك</span>
+            </div>
+          </div>
+
+          <div class="system-meta">
+            <div class="connection-panel">
+              <div class="connection-badge" id="connectionBadge">
+                <span class="connection-dot"></span>
+                <strong id="connectionText">فحص الاتصال...</strong>
+              </div>
+              <small>النظام يعمل محليًا على هذا الجهاز</small>
+            </div>
+
+            <div class="live-clock-panel">
+              <div class="clock-main" id="clockTime">--:--:--</div>
+              <div class="clock-date" id="clockDate"></div>
+              <div class="clock-day" id="clockDay"></div>
+              <div class="clock-zone" id="clockZone"></div>
+            </div>
+          </div>
+        </section>
+
+        <div class="clinic-divider"></div>
+
+        <header class="topbar page-topbar">
           <div>
             <h1>${title}</h1>
             <p>${subtitle}</p>
           </div>
           <div class="top-actions">
-            <div class="clock">
-              <strong id="clockTime"></strong>
-              <span id="clockDate"></span>
-            </div>
             <button class="btn primary" id="globalNewCase">＋ تسجيل حالة</button>
           </div>
         </header>
+
         <section id="screenContent">${content}</section>
       </main>
     </div>
+
     <div id="modalRoot"></div>
     <div id="toastRoot"></div>
   `;
@@ -150,18 +183,82 @@ function shell(content: string, title: string, subtitle: string) {
   document.querySelectorAll<HTMLButtonElement>('[data-screen]').forEach(btn => {
     btn.onclick = () => navigate(btn.dataset.screen as Screen);
   });
+
   document.querySelector<HTMLButtonElement>('#globalNewCase')!.onclick = () => openCaseModal();
+
+  window.ononline = updateConnectionStatus;
+  window.onoffline = updateConnectionStatus;
+
   updateClock();
+  updateConnectionStatus();
+
   window.clearInterval(refreshTimer);
-  refreshTimer = window.setInterval(updateClock, 1000);
+  refreshTimer = window.setInterval(() => {
+    updateClock();
+    updateConnectionStatus();
+  }, 1000);
+}
+
+function timezoneOffsetLabel(d: Date) {
+  const minutes = -d.getTimezoneOffset();
+  const sign = minutes >= 0 ? '+' : '-';
+  const abs = Math.abs(minutes);
+  const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+  const mm = String(abs % 60).padStart(2, '0');
+  return `UTC${sign}${hh}:${mm}`;
 }
 
 function updateClock() {
   const d = new Date();
-  const t = document.querySelector('#clockTime');
-  const dt = document.querySelector('#clockDate');
-  if (t) t.textContent = d.toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'});
-  if (dt) dt.textContent = d.toLocaleDateString('ar-EG', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+
+  const t = document.querySelector<HTMLElement>('#clockTime');
+  const dt = document.querySelector<HTMLElement>('#clockDate');
+  const day = document.querySelector<HTMLElement>('#clockDay');
+  const zone = document.querySelector<HTMLElement>('#clockZone');
+
+  if (t) {
+    t.textContent = d.toLocaleTimeString('ar-EG', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  }
+
+  if (dt) {
+    dt.textContent = d.toLocaleDateString('ar-EG', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+  }
+
+  if (day) {
+    day.textContent = d.toLocaleDateString('ar-EG', {
+      weekday: 'long'
+    });
+  }
+
+  if (zone) {
+    const systemZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Windows';
+    zone.textContent = `متزامن مع Windows • ${systemZone} • ${timezoneOffsetLabel(d)}`;
+  }
+}
+
+function updateConnectionStatus() {
+  const badge = document.querySelector<HTMLElement>('#connectionBadge');
+  const text = document.querySelector<HTMLElement>('#connectionText');
+
+  if (!badge || !text) return;
+
+  if (navigator.onLine) {
+    badge.classList.remove('offline');
+    badge.classList.add('online');
+    text.textContent = 'الجهاز متصل';
+  } else {
+    badge.classList.remove('online');
+    badge.classList.add('offline');
+    text.textContent = 'الجهاز غير متصل';
+  }
 }
 
 function toast(message: string, type: 'ok'|'error'='ok') {
