@@ -29,6 +29,7 @@ type Visit = {
   complaint: string;
   diagnosis: string;
   notes: string;
+  fee: string;
   createdAt: string;
 };
 
@@ -421,13 +422,14 @@ function visitTable(rows: Visit[]) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>التاريخ</th><th>الوقت</th><th>الطبيب</th><th>التخصص</th><th>الشكوى</th><th>التشخيص</th></tr></thead>
+        <thead><tr><th>التاريخ</th><th>الوقت</th><th>الطبيب</th><th>التخصص</th><th>سعر الكشف</th><th>الشكوى</th><th>التشخيص</th></tr></thead>
         <tbody>${rows.length ? rows.map(v => `
           <tr>
             <td>${displayDate(v.visitDate)}</td><td class="ltr">${esc(v.visitTime)}</td>
             <td>${esc(v.doctor || '—')}</td><td>${esc(v.specialty || '—')}</td>
+            <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
             <td>${esc(v.complaint || '—')}</td><td>${esc(v.diagnosis || '—')}</td>
-          </tr>`).join('') : `<tr><td colspan="6" class="empty-row">لا توجد زيارات</td></tr>`}
+          </tr>`).join('') : `<tr><td colspan="7" class="empty-row">لا توجد زيارات</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -572,7 +574,7 @@ async function openPatient(id: string) {
 
 function doctorOptions(selected = '') {
   return `<option value="">— اختر الطبيب —</option>` + doctors.filter(d=>d.active).map(d =>
-    `<option value="${esc(d.name)}" data-specialty="${esc(d.specialty)}" ${d.name===selected?'selected':''}>${esc(d.name)} — ${esc(d.specialty)}</option>`
+    `<option value="${esc(d.name)}" data-specialty="${esc(d.specialty)}" ${d.name===selected?'selected':''}>${esc(d.name)}</option>`
   ).join('');
 }
 
@@ -597,7 +599,8 @@ async function openCaseModal(existing?: Patient) {
           <div class="section-title">بيانات الزيارة</div>
           <div class="form-grid">
             <label>الطبيب<select id="doctorSelect" name="doctor">${doctorOptions(existing?.doctor || '')}</select></label>
-            <label>التخصص<input id="specialtyInput" name="specialty" value="${esc(existing?.specialty || '')}"></label>
+            <label>التخصص<input id="specialtyInput" name="specialty" value="${esc(existing?.specialty || '')}" readonly placeholder="يظهر تلقائيًا بعد اختيار الطبيب"></label>
+            <label>سعر الكشف<input class="ltr" name="fee" type="number" min="0" step="0.01" placeholder="يكتب يدويًا"></label>
             <label>تاريخ الزيارة<input name="visitDate" type="date" value="${today()}"></label>
             <label>وقت الزيارة<input name="visitTime" type="time" value="${timeNow()}"></label>
             <label class="span2">الشكوى الرئيسية<textarea name="complaint" rows="2"></textarea></label>
@@ -618,7 +621,7 @@ async function openCaseModal(existing?: Patient) {
   ds.onchange = () => {
     const opt = ds.selectedOptions[0];
     const sp = opt?.dataset.specialty || '';
-    if (sp) document.querySelector<HTMLInputElement>('#specialtyInput')!.value = sp;
+    document.querySelector<HTMLInputElement>('#specialtyInput')!.value = sp;
   };
   document.querySelector<HTMLFormElement>('#caseForm')!.onsubmit = async e => {
     e.preventDefault();
@@ -633,6 +636,7 @@ async function openCaseModal(existing?: Patient) {
         address: String(fd.get('address')||'').trim(),
         doctor: String(fd.get('doctor')||'').trim(),
         specialty: String(fd.get('specialty')||'').trim(),
+        fee: String(fd.get('fee')||'').trim(),
         visitDate: String(fd.get('visitDate')||''),
         visitTime: String(fd.get('visitTime')||''),
         complaint: String(fd.get('complaint')||'').trim(),

@@ -11,7 +11,7 @@ struct AppState { db_path: PathBuf, backup_dir: PathBuf }
 #[serde(rename_all = "camelCase")]
 struct AddCaseInput {
     full_name: String, phone: String, age: Option<i64>, gender: String, address: String,
-    doctor: String, specialty: String, visit_date: String, visit_time: String,
+    doctor: String, specialty: String, fee: String, visit_date: String, visit_time: String,
     complaint: String, diagnosis: String, notes: String,
 }
 
@@ -55,7 +55,7 @@ struct Patient {
 struct Visit {
     id: String, patient_id: String, visit_date: String, visit_time: String,
     doctor: String, specialty: String, complaint: String, diagnosis: String,
-    notes: String, created_at: String,
+    notes: String, fee: String, created_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -99,9 +99,9 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
       CREATE TABLE IF NOT EXISTS visits(
         id TEXT PRIMARY KEY, patient_id TEXT NOT NULL, visit_date TEXT NOT NULL DEFAULT '',
         visit_time TEXT NOT NULL DEFAULT '', doctor TEXT NOT NULL DEFAULT '',
-        specialty TEXT NOT NULL DEFAULT '', complaint TEXT NOT NULL DEFAULT '',
-        diagnosis TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        specialty TEXT NOT NULL DEFAULT '', fee TEXT NOT NULL DEFAULT '',
+        complaint TEXT NOT NULL DEFAULT '', diagnosis TEXT NOT NULL DEFAULT '',
+        notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
         FOREIGN KEY(patient_id) REFERENCES patients(id)
       );
       CREATE TABLE IF NOT EXISTS doctors(
@@ -140,6 +140,75 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         conn.execute_batch("PRAGMA foreign_keys=ON;")
             .map_err(|e| e.to_string())?;
     }
+
+    // V3.4: add manual visit fee without losing existing visits.
+    let has_fee: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='fee'",
+        [],
+        |row| row.get(0)
+    ).map_err(|e| e.to_string())?;
+
+    if has_fee == 0 {
+        conn.execute(
+            "ALTER TABLE visits ADD COLUMN fee TEXT NOT NULL DEFAULT ''",
+            []
+        ).map_err(|e| e.to_string())?;
+    }
+
+    // Default doctors requested for Al Akkad Clinics.
+    conn.execute_batch(r#"
+      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
+      VALUES('akkad-doc-01','علوي عبد السلام','استشاري الباطنه والجهاز الهضمي',1,datetime('now','localtime'),datetime('now','localtime'))
+      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+
+      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
+      VALUES('akkad-doc-02','د.محمد عصام شلبي','استشاري الجراحة العامة و جراحات المناظير و الأورام و القدم السكري',1,datetime('now','localtime'),datetime('now','localtime'))
+      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+
+      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
+      VALUES('akkad-doc-03','امير خالد','اخصائي جراحة القدم السكري والاوعية الدموية',1,datetime('now','localtime'),datetime('now','localtime'))
+      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+
+      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
+      VALUES('akkad-doc-04','فاطمة شعبان','استشاري طب السمع والاتزان',1,datetime('now','localtime'),datetime('now','localtime'))
+      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+
+      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
+      VALUES('akkad-doc-05','ساره عماد','اخصائي التغذية العلاجية',1,datetime('now','localtime'),datetime('now','localtime'))
+      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+
+      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
+      VALUES('akkad-doc-06','رشا زمزم','اخصائي التغذية العلاجية',1,datetime('now','localtime'),datetime('now','localtime'))
+      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+
+      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
+      VALUES('akkad-doc-07','محمد عبد الوهاب','استشاري جراحة المسالك البولية وامراض الذكورة والعقم',1,datetime('now','localtime'),datetime('now','localtime'))
+      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+
+      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
+      VALUES('akkad-doc-08','حسام رشدي','استشاري جراحة المسالك البولية وامراض الذكورة والعقم',1,datetime('now','localtime'),datetime('now','localtime'))
+      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+
+      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
+      VALUES('akkad-doc-09','مصطفى الحسيني','اخصائي جراحة المسالك البولية وامراض الذكورة والعقم',1,datetime('now','localtime'),datetime('now','localtime'))
+      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+
+      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
+      VALUES('akkad-doc-10','نهال النبوي','اخصائي جراحة الانف والاذن والحنجرة',1,datetime('now','localtime'),datetime('now','localtime'))
+      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+
+      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
+      VALUES('akkad-doc-11','دعاء جمال','اخصائي النساء والتوليد',1,datetime('now','localtime'),datetime('now','localtime'))
+      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+
+      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
+      VALUES('akkad-doc-12','ساره الجيميلي','استشاري الجلدية',1,datetime('now','localtime'),datetime('now','localtime'))
+      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+
+      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
+      VALUES('akkad-doc-13','محمد غازي','اخصائي جراحة العيون والمياه البيضاء والليزك',1,datetime('now','localtime'),datetime('now','localtime'))
+      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+    "#).map_err(|e| e.to_string())?;
 
     conn.execute_batch(r#"
       CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone);
@@ -181,6 +250,7 @@ fn map_visit(row: &rusqlite::Row<'_>) -> rusqlite::Result<Visit> {
         id: row.get(0)?, patient_id: row.get(1)?, visit_date: row.get(2)?, visit_time: row.get(3)?,
         doctor: row.get(4)?, specialty: row.get(5)?, complaint: row.get(6)?,
         diagnosis: row.get(7)?, notes: row.get(8)?, created_at: row.get(9)?,
+        fee: row.get(10)?,
     })
 }
 
@@ -218,9 +288,9 @@ fn save_case(state: State<AppState>, input: AddCaseInput) -> Result<String, Stri
 
     let visit_id = Uuid::new_v4().to_string();
     tx.execute(
-        "INSERT INTO visits(id,patient_id,visit_date,visit_time,doctor,specialty,complaint,diagnosis,notes,created_at,updated_at)
-         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?10)",
-        params![visit_id,patient_id,input.visit_date,input.visit_time,input.doctor,input.specialty,input.complaint,input.diagnosis,input.notes,now]
+        "INSERT INTO visits(id,patient_id,visit_date,visit_time,doctor,specialty,fee,complaint,diagnosis,notes,created_at,updated_at)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11)",
+        params![visit_id,patient_id,input.visit_date,input.visit_time,input.doctor,input.specialty,input.fee,input.complaint,input.diagnosis,input.notes,now]
     ).map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     Ok(patient_id)
@@ -244,7 +314,7 @@ fn get_patient_details(state: State<AppState>, id: String) -> Result<PatientDeta
     let sql = format!("{} WHERE p.id=?1", patient_select_sql());
     let patient = conn.query_row(&sql, params![id], map_patient).map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
-        "SELECT id,patient_id,visit_date,visit_time,doctor,specialty,complaint,diagnosis,notes,created_at
+        "SELECT id,patient_id,visit_date,visit_time,doctor,specialty,complaint,diagnosis,notes,created_at,fee
          FROM visits WHERE patient_id=?1 ORDER BY visit_date DESC,visit_time DESC,created_at DESC"
     ).map_err(|e| e.to_string())?;
     let rows = stmt.query_map(params![patient.id.clone()], map_visit).map_err(|e| e.to_string())?;
@@ -315,7 +385,7 @@ fn run_report(state: State<AppState>, query: ReportQuery) -> Result<ReportResult
     let conn=open_db(&state)?;
     let doctor_like=if query.doctor.trim().is_empty(){"%".to_string()}else{query.doctor.trim().to_string()};
     let mut stmt=conn.prepare(
-        "SELECT v.id,v.patient_id,v.visit_date,v.visit_time,v.doctor,v.specialty,v.complaint,v.diagnosis,v.notes,v.created_at
+        "SELECT v.id,v.patient_id,v.visit_date,v.visit_time,v.doctor,v.specialty,v.complaint,v.diagnosis,v.notes,v.created_at,v.fee
          FROM visits v JOIN patients p ON p.id=v.patient_id
          WHERE p.archived=0 AND v.visit_date>=?1 AND v.visit_date<=?2 AND (?3='%' OR v.doctor=?3)
          ORDER BY v.visit_date DESC,v.visit_time DESC"
