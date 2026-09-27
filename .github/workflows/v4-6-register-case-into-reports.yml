@@ -1,0 +1,128 @@
+name: Clinic Cases V4.6 Register Case Into Reports
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply V4.6 case registration flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > _patch.b64 <<'PATCHEOF'
+          CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAppbXBvcnQganNvbgoKbWFpbl9wYXRoID0gUGF0aCgic3JjL21haW4udHMiKQpzID0g
+          bWFpbl9wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQoKIyBNYWtlIHRoZSBwcmltYXJ5IGFjdGlvbiBjbGVhcmx5IHJl
+          cHJlc2VudCBhIGNhc2UvdmlzaXQgZmxvdywgbm90IGp1c3QgYSBwYXRpZW50IHJlY29yZC4KcyA9IHMucmVwbGFjZSgi77yLINiq
+          2LPYrNmK2YQg2YXYsdmK2LYiLCAi77yLINiq2LPYrNmK2YQg2K3Yp9mE2KkiKQoKcyA9IHMucmVwbGFjZSgKICAgICI8ZGl2Pjxo
+          Mj7Yqtiz2KzZitmEINmF2LHZiti2PC9oMj48cD7YqNmK2KfZhtin2Kog2KfZhNmF2LHZiti2INmB2YLYtyDigJQg2YTZiCDYsdmC
+          2YUg2KfZhNiq2YTZitmB2YjZhiDZhdmI2KzZiNivINmH2YrZgdiq2K0g2KfZhNmF2YTZgSDYp9mE2YXZiNis2YjYrzwvcD48L2Rp
+          dj4iLAogICAgIjxkaXY+PGgyPtiq2LPYrNmK2YQg2K3Yp9mE2Kkg2KzYr9mK2K/YqTwvaDI+PHA+2KfZhNiu2LfZiNipIDEg2YXZ
+          hiAyIOKAlCDYqNmK2KfZhtin2Kog2KfZhNmF2LHZiti22Iwg2YjYqNi52K8g2KfZhNit2YHYuCDZitiq2YUg2YHYqtitINiq2LPY
+          rNmK2YQg2KfZhNiy2YrYp9ix2Kkg2KrZhNmC2KfYptmK2YvYpzwvcD48L2Rpdj4iCikKCnMgPSBzLnJlcGxhY2UoCiAgICAnPGJ1
+          dHRvbiB0eXBlPSJzdWJtaXQiIGNsYXNzPSJidG4gcHJpbWFyeSI+2K3Zgdi4INmI2YHYqtitINin2YTZhdmE2YE8L2J1dHRvbj4n
+          LAogICAgJzxidXR0b24gdHlwZT0ic3VibWl0IiBjbGFzcz0iYnRuIHByaW1hcnkiPtin2YTYqtin2YTZijog2KjZitin2YbYp9iq
+          INin2YTYstmK2KfYsdipPC9idXR0b24+JwopCgpvbGQgPSAiIiIgICAgICBjbG9zZSgpOwogICAgICB0b2FzdChyZXN1bHQuZXhp
+          c3RlZCA/ICfYsdmC2YUg2KfZhNiq2YTZitmB2YjZhiDZhdmI2KzZiNivIOKAlCDYqtmFINmB2KrYrSDZhdmE2YEg2KfZhNmF2LHZ
+          iti2JyA6ICfYqtmFINil2YbYtNin2KEg2YXZhNmBINin2YTZhdix2YrYticpOwogICAgICBhd2FpdCByZW5kZXJTY3JlZW4oKTsK
+          ICAgICAgYXdhaXQgb3BlblBhdGllbnQocmVzdWx0LmlkKTsiIiIKCm5ldyA9ICIiIiAgICAgIGNvbnN0IGRldGFpbHMgPSBhd2Fp
+          dCBpbnZva2U8UGF0aWVudERldGFpbHM+KCdnZXRfcGF0aWVudF9kZXRhaWxzJywgeyBpZDogcmVzdWx0LmlkIH0pOwogICAgICBj
+          bG9zZSgpOwogICAgICB0b2FzdChyZXN1bHQuZXhpc3RlZAogICAgICAgID8gJ9in2YTZhdix2YrYtiDZhdmI2KzZiNivINio2KfZ
+          hNmB2LnZhCDigJQg2KPZg9mF2YQg2KjZitin2YbYp9iqINin2YTYstmK2KfYsdipINmE2KrYs9is2YrZhCDYp9mE2K3Yp9mE2Kkn
+          CiAgICAgICAgOiAn2KrZhSDYrdmB2Lgg2KjZitin2YbYp9iqINin2YTZhdix2YrYtiDigJQg2KPZg9mF2YQg2KjZitin2YbYp9iq
+          INin2YTYstmK2KfYsdipINmE2KrYs9is2YrZhCDYp9mE2K3Yp9mE2KknKTsKICAgICAgYXdhaXQgcmVuZGVyU2NyZWVuKCk7CiAg
+          ICAgIGF3YWl0IG9wZW5WaXNpdE1vZGFsKGRldGFpbHMucGF0aWVudCk7IiIiCgppZiBvbGQgbm90IGluIHM6CiAgICByYWlzZSBT
+          eXN0ZW1FeGl0KCJQYXRpZW50IHJlZ2lzdHJhdGlvbiBjb21wbGV0aW9uIGJsb2NrIG5vdCBmb3VuZCIpCnMgPSBzLnJlcGxhY2Uo
+          b2xkLCBuZXcsIDEpCgpzID0gcy5yZXBsYWNlKAogICAgInRvYXN0KCfYqtmFINit2YHYuCDYp9mE2LLZitin2LHYqScpOyIsCiAg
+          ICAidG9hc3QoJ9iq2YUg2K3Zgdi4INin2YTYrdin2YTYqSDZiNil2LbYp9mB2KrZh9inINil2YTZiSDYrdin2YTYp9iqINin2YTZ
+          itmI2YUg2YjYp9mE2KrZgtin2LHZitixJyk7IiwKICAgIDEKKQoKbWFpbl9wYXRoLndyaXRlX3RleHQocywgZW5jb2Rpbmc9InV0
+          Zi04IikKCnBrZ19wYXRoID0gUGF0aCgicGFja2FnZS5qc29uIikKcGtnID0ganNvbi5sb2Fkcyhwa2dfcGF0aC5yZWFkX3RleHQo
+          ZW5jb2Rpbmc9InV0Zi04IikpCnBrZ1sidmVyc2lvbiJdID0gIjQuNi4wIgpwa2dfcGF0aC53cml0ZV90ZXh0KGpzb24uZHVtcHMo
+          cGtnLCBlbnN1cmVfYXNjaWk9RmFsc2UsIGluZGVudD0yKSArICJcbiIsIGVuY29kaW5nPSJ1dGYtOCIpCgpjb25mX3BhdGggPSBQ
+          YXRoKCJzcmMtdGF1cmkvdGF1cmkuY29uZi5qc29uIikKY29uZiA9IGpzb24ubG9hZHMoY29uZl9wYXRoLnJlYWRfdGV4dChlbmNv
+          ZGluZz0idXRmLTgiKSkKY29uZlsidmVyc2lvbiJdID0gIjQuNi4wIgpjb25mX3BhdGgud3JpdGVfdGV4dChqc29uLmR1bXBzKGNv
+          bmYsIGVuc3VyZV9hc2NpaT1GYWxzZSwgaW5kZW50PTIpICsgIlxuIiwgZW5jb2Rpbmc9InV0Zi04IikKCmNhcmdvX3BhdGggPSBQ
+          YXRoKCJzcmMtdGF1cmkvQ2FyZ28udG9tbCIpCmxpbmVzID0gY2FyZ29fcGF0aC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04Iiku
+          c3BsaXRsaW5lcygpCmZvciBpLCBsaW5lIGluIGVudW1lcmF0ZShsaW5lcyk6CiAgICBpZiBsaW5lLnN0YXJ0c3dpdGgoJ3ZlcnNp
+          b24gPSAiJyk6CiAgICAgICAgbGluZXNbaV0gPSAndmVyc2lvbiA9ICI0LjYuMCInCiAgICAgICAgYnJlYWsKY2FyZ29fcGF0aC53
+          cml0ZV90ZXh0KCJcbiIuam9pbihsaW5lcykgKyAiXG4iLCBlbmNvZGluZz0idXRmLTgiKQoKcHJpbnQoIlY0LjYgY2FzZSByZWdp
+          c3RyYXRpb24gZmxvdyBhcHBsaWVkIikK
+          PATCHEOF
+          tr -d '\r\n ' < _patch.b64 > _patch.clean.b64
+          python -c "import base64; open('_v46_patch.py','wb').write(base64.b64decode(open('_patch.clean.b64','rb').read()))"
+          python _v46_patch.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Validate frontend
+        shell: bash
+        run: npm run build
+
+      - name: Validate Rust
+        shell: bash
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Registration flow gate
+        shell: bash
+        run: |
+          python - <<'PY2'
+          from pathlib import Path
+          s = Path('src/main.ts').read_text(encoding='utf-8')
+          assert '＋ تسجيل حالة' in s
+          assert 'التالي: بيانات الزيارة' in s
+          assert "await openVisitModal(details.patient);" in s
+          assert 'تم حفظ الحالة وإضافتها إلى حالات اليوم والتقارير' in s
+          print('Registration flow gate passed')
+          PY2
+
+      - name: Build V4.6 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify Setup EXE
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          Write-Host "Installer:" $installer.FullName
+
+      - name: Commit validated V4.6 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V4.6: complete case registration with visit"
+            git push
+          fi
+
+      - name: Upload V4.6 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V4.6-Register-Case-Into-Reports-Installer
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
