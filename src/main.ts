@@ -524,7 +524,7 @@ async function openCaseModal(existing?: Patient) {
   };
   document.querySelector<HTMLFormElement>('#caseForm')!.onsubmit = async e => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
     const rawAge = String(fd.get('age')||'').trim();
     try {
       await invoke('save_case', { input: {
@@ -573,7 +573,7 @@ async function openEditPatient(id: string) {
   document.querySelector<HTMLButtonElement>('#cancelEdit')!.onclick=close;
   document.querySelector<HTMLFormElement>('#editPatientForm')!.onsubmit=async e=>{
     e.preventDefault();
-    const fd=new FormData(e.currentTarget);
+    const fd=new FormData(e.currentTarget as HTMLFormElement);
     const age=String(fd.get('age')||'').trim();
     try {
       await invoke('update_patient',{input:{id,fullName:String(fd.get('fullName')||'').trim(),phone:String(fd.get('phone')||'').trim(),age:age?Number(age):null,gender:String(fd.get('gender')||''),address:String(fd.get('address')||'').trim()}});
@@ -599,7 +599,7 @@ function openDoctorModal(doctor?: Doctor) {
   document.querySelector<HTMLButtonElement>('#closeDoctor')!.onclick=close;
   document.querySelector<HTMLButtonElement>('#cancelDoctor')!.onclick=close;
   document.querySelector<HTMLFormElement>('#doctorForm')!.onsubmit=async e=>{
-    e.preventDefault(); const fd=new FormData(e.currentTarget);
+    e.preventDefault(); const fd=new FormData(e.currentTarget as HTMLFormElement);
     await invoke('save_doctor',{input:{id:doctor?.id||'',name:String(fd.get('name')||'').trim(),specialty:String(fd.get('specialty')||'').trim(),active:doctor?.active??true}});
     close(); toast('تم حفظ الطبيب'); await renderScreen();
   };
