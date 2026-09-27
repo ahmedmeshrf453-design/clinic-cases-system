@@ -27,6 +27,30 @@ struct UpdatePatientInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RegisterPatientInput {
+    full_name: String, phone: String, age: Option<i64>, gender: String, address: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RegisterPatientResult {
+    id: String, existed: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AddVisitInput {
+    patient_id: String, visit_type: String, doctor: String, fee: String,
+    visit_date: String, visit_time: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BlacklistInput { id: String, blacklisted: bool }
+
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ArchiveInput { id: String, archived: bool }
 
 #[derive(Debug, Deserialize)]
@@ -45,7 +69,7 @@ struct ReportQuery { from: String, to: String, doctor: String }
 #[serde(rename_all = "camelCase")]
 struct Patient {
     id: String, full_name: String, phone: String, age: Option<i64>, gender: String,
-    address: String, archived: bool, created_at: String, updated_at: String,
+    address: String, archived: bool, blacklisted: bool, created_at: String, updated_at: String,
     doctor: String, specialty: String, last_visit_date: String, last_visit_time: String,
     complaint: String, visits_count: i64,
 }
@@ -55,7 +79,7 @@ struct Patient {
 struct Visit {
     id: String, patient_id: String, visit_date: String, visit_time: String,
     doctor: String, specialty: String, complaint: String, diagnosis: String,
-    notes: String, fee: String, created_at: String,
+    notes: String, fee: String, visit_type: String, created_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -94,14 +118,16 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
       CREATE TABLE IF NOT EXISTS patients(
         id TEXT PRIMARY KEY, full_name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
         age INTEGER, gender TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '',
-        archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        archived INTEGER NOT NULL DEFAULT 0, blacklisted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS visits(
         id TEXT PRIMARY KEY, patient_id TEXT NOT NULL, visit_date TEXT NOT NULL DEFAULT '',
         visit_time TEXT NOT NULL DEFAULT '', doctor TEXT NOT NULL DEFAULT '',
         specialty TEXT NOT NULL DEFAULT '', fee TEXT NOT NULL DEFAULT '',
-        complaint TEXT NOT NULL DEFAULT '', diagnosis TEXT NOT NULL DEFAULT '',
-        notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        visit_type TEXT NOT NULL DEFAULT '', complaint TEXT NOT NULL DEFAULT '',
+        diagnosis TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
         FOREIGN KEY(patient_id) REFERENCES patients(id)
       );
       CREATE TABLE IF NOT EXISTS doctors(
@@ -155,60 +181,64 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         ).map_err(|e| e.to_string())?;
     }
 
-    // Default doctors requested for Al Akkad Clinics.
+    let has_blacklisted: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('patients') WHERE name='blacklisted'",
+        [],
+        |row| row.get(0)
+    ).map_err(|e| e.to_string())?;
+    if has_blacklisted == 0 {
+        conn.execute(
+            "ALTER TABLE patients ADD COLUMN blacklisted INTEGER NOT NULL DEFAULT 0",
+            []
+        ).map_err(|e| e.to_string())?;
+    }
+
+    let has_visit_type: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='visit_type'",
+        [],
+        |row| row.get(0)
+    ).map_err(|e| e.to_string())?;
+    if has_visit_type == 0 {
+        conn.execute(
+            "ALTER TABLE visits ADD COLUMN visit_type TEXT NOT NULL DEFAULT ''",
+            []
+        ).map_err(|e| e.to_string())?;
+    }
+
+    // Seed the requested doctors once. Later edits/deletes remain untouched.
     conn.execute_batch(r#"
-      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
-      VALUES('akkad-doc-01','علوي عبد السلام','استشاري الباطنه والجهاز الهضمي',1,datetime('now','localtime'),datetime('now','localtime'))
-      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
-
-      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
-      VALUES('akkad-doc-02','د.محمد عصام شلبي','استشاري الجراحة العامة و جراحات المناظير و الأورام و القدم السكري',1,datetime('now','localtime'),datetime('now','localtime'))
-      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
-
-      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
-      VALUES('akkad-doc-03','امير خالد','اخصائي جراحة القدم السكري والاوعية الدموية',1,datetime('now','localtime'),datetime('now','localtime'))
-      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
-
-      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
-      VALUES('akkad-doc-04','فاطمة شعبان','استشاري طب السمع والاتزان',1,datetime('now','localtime'),datetime('now','localtime'))
-      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
-
-      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
-      VALUES('akkad-doc-05','ساره عماد','اخصائي التغذية العلاجية',1,datetime('now','localtime'),datetime('now','localtime'))
-      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
-
-      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
-      VALUES('akkad-doc-06','رشا زمزم','اخصائي التغذية العلاجية',1,datetime('now','localtime'),datetime('now','localtime'))
-      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
-
-      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
-      VALUES('akkad-doc-07','محمد عبد الوهاب','استشاري جراحة المسالك البولية وامراض الذكورة والعقم',1,datetime('now','localtime'),datetime('now','localtime'))
-      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
-
-      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
-      VALUES('akkad-doc-08','حسام رشدي','استشاري جراحة المسالك البولية وامراض الذكورة والعقم',1,datetime('now','localtime'),datetime('now','localtime'))
-      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
-
-      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
-      VALUES('akkad-doc-09','مصطفى الحسيني','اخصائي جراحة المسالك البولية وامراض الذكورة والعقم',1,datetime('now','localtime'),datetime('now','localtime'))
-      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
-
-      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
-      VALUES('akkad-doc-10','نهال النبوي','اخصائي جراحة الانف والاذن والحنجرة',1,datetime('now','localtime'),datetime('now','localtime'))
-      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
-
-      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
-      VALUES('akkad-doc-11','دعاء جمال','اخصائي النساء والتوليد',1,datetime('now','localtime'),datetime('now','localtime'))
-      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
-
-      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
-      VALUES('akkad-doc-12','ساره الجيميلي','استشاري الجلدية',1,datetime('now','localtime'),datetime('now','localtime'))
-      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
-
-      INSERT INTO doctors(id,name,specialty,active,created_at,updated_at)
-      VALUES('akkad-doc-13','محمد غازي','اخصائي جراحة العيون والمياه البيضاء والليزك',1,datetime('now','localtime'),datetime('now','localtime'))
-      ON CONFLICT(name) DO UPDATE SET specialty=excluded.specialty,active=1,updated_at=excluded.updated_at;
+      CREATE TABLE IF NOT EXISTS app_meta(
+        key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT ''
+      );
     "#).map_err(|e| e.to_string())?;
+
+    let doctors_seeded: Option<String> = conn.query_row(
+        "SELECT value FROM app_meta WHERE key='doctors_seed_v1'",
+        [],
+        |row| row.get(0)
+    ).optional().map_err(|e| e.to_string())?;
+
+    if doctors_seeded.is_none() {
+        conn.execute_batch(r#"
+          INSERT OR IGNORE INTO doctors(id,name,specialty,active,created_at,updated_at)
+          VALUES
+          ('akkad-doc-01','علوي عبد السلام','استشاري الباطنه والجهاز الهضمي',1,datetime('now','localtime'),datetime('now','localtime')),
+          ('akkad-doc-02','د.محمد عصام شلبي','استشاري الجراحة العامة و جراحات المناظير و الأورام و القدم السكري',1,datetime('now','localtime'),datetime('now','localtime')),
+          ('akkad-doc-03','امير خالد','اخصائي جراحة القدم السكري والاوعية الدموية',1,datetime('now','localtime'),datetime('now','localtime')),
+          ('akkad-doc-04','فاطمة شعبان','استشاري طب السمع والاتزان',1,datetime('now','localtime'),datetime('now','localtime')),
+          ('akkad-doc-05','ساره عماد','اخصائي التغذية العلاجية',1,datetime('now','localtime'),datetime('now','localtime')),
+          ('akkad-doc-06','رشا زمزم','اخصائي التغذية العلاجية',1,datetime('now','localtime'),datetime('now','localtime')),
+          ('akkad-doc-07','محمد عبد الوهاب','استشاري جراحة المسالك البولية وامراض الذكورة والعقم',1,datetime('now','localtime'),datetime('now','localtime')),
+          ('akkad-doc-08','حسام رشدي','استشاري جراحة المسالك البولية وامراض الذكورة والعقم',1,datetime('now','localtime'),datetime('now','localtime')),
+          ('akkad-doc-09','مصطفى الحسيني','اخصائي جراحة المسالك البولية وامراض الذكورة والعقم',1,datetime('now','localtime'),datetime('now','localtime')),
+          ('akkad-doc-10','نهال النبوي','اخصائي جراحة الانف والاذن والحنجرة',1,datetime('now','localtime'),datetime('now','localtime')),
+          ('akkad-doc-11','دعاء جمال','اخصائي النساء والتوليد',1,datetime('now','localtime'),datetime('now','localtime')),
+          ('akkad-doc-12','ساره الجيميلي','استشاري الجلدية',1,datetime('now','localtime'),datetime('now','localtime')),
+          ('akkad-doc-13','محمد غازي','اخصائي جراحة العيون والمياه البيضاء والليزك',1,datetime('now','localtime'),datetime('now','localtime'));
+
+          INSERT OR REPLACE INTO app_meta(key,value) VALUES('doctors_seed_v1','1');
+        "#).map_err(|e| e.to_string())?;
+    }
 
     conn.execute_batch(r#"
       CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone);
@@ -230,7 +260,8 @@ fn patient_select_sql() -> &'static str {
       COALESCE((SELECT v.visit_date FROM visits v WHERE v.patient_id=p.id ORDER BY v.visit_date DESC,v.visit_time DESC,v.created_at DESC LIMIT 1),''),
       COALESCE((SELECT v.visit_time FROM visits v WHERE v.patient_id=p.id ORDER BY v.visit_date DESC,v.visit_time DESC,v.created_at DESC LIMIT 1),''),
       COALESCE((SELECT v.complaint FROM visits v WHERE v.patient_id=p.id ORDER BY v.visit_date DESC,v.visit_time DESC,v.created_at DESC LIMIT 1),''),
-      (SELECT COUNT(*) FROM visits v WHERE v.patient_id=p.id)
+      (SELECT COUNT(*) FROM visits v WHERE v.patient_id=p.id),
+      p.blacklisted
     FROM patients p
     "#
 }
@@ -242,6 +273,7 @@ fn map_patient(row: &rusqlite::Row<'_>) -> rusqlite::Result<Patient> {
         created_at: row.get(7)?, updated_at: row.get(8)?, doctor: row.get(9)?,
         specialty: row.get(10)?, last_visit_date: row.get(11)?, last_visit_time: row.get(12)?,
         complaint: row.get(13)?, visits_count: row.get(14)?,
+        blacklisted: row.get::<_,i64>(15)? != 0,
     })
 }
 
@@ -250,7 +282,7 @@ fn map_visit(row: &rusqlite::Row<'_>) -> rusqlite::Result<Visit> {
         id: row.get(0)?, patient_id: row.get(1)?, visit_date: row.get(2)?, visit_time: row.get(3)?,
         doctor: row.get(4)?, specialty: row.get(5)?, complaint: row.get(6)?,
         diagnosis: row.get(7)?, notes: row.get(8)?, created_at: row.get(9)?,
-        fee: row.get(10)?,
+        fee: row.get(10)?, visit_type: row.get(11)?,
     })
 }
 
@@ -297,6 +329,107 @@ fn save_case(state: State<AppState>, input: AddCaseInput) -> Result<String, Stri
 }
 
 #[tauri::command]
+fn register_patient(state: State<AppState>, input: RegisterPatientInput) -> Result<RegisterPatientResult, String> {
+    let conn = open_db(&state)?;
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let phone = input.phone.trim().to_string();
+
+    if !phone.is_empty() {
+        let existing: Option<String> = conn.query_row(
+            "SELECT id FROM patients WHERE phone=?1 LIMIT 1",
+            params![phone],
+            |row| row.get(0)
+        ).optional().map_err(|e| e.to_string())?;
+
+        if let Some(id) = existing {
+            return Ok(RegisterPatientResult { id, existed: true });
+        }
+    }
+
+    let id = Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO patients(id,full_name,phone,age,gender,address,archived,blacklisted,created_at,updated_at)
+         VALUES(?1,?2,?3,?4,?5,?6,0,0,?7,?7)",
+        params![
+            id, input.full_name.trim(), phone, input.age,
+            input.gender, input.address.trim(), now
+        ]
+    ).map_err(|e| e.to_string())?;
+
+    Ok(RegisterPatientResult { id, existed: false })
+}
+
+#[tauri::command]
+fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, String> {
+    let mut conn = open_db(&state)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let exists: Option<String> = tx.query_row(
+        "SELECT id FROM patients WHERE id=?1",
+        params![input.patient_id],
+        |row| row.get(0)
+    ).optional().map_err(|e| e.to_string())?;
+
+    if exists.is_none() {
+        return Err("ملف المريض غير موجود".into());
+    }
+
+    let specialty: String = if input.doctor.trim().is_empty() {
+        String::new()
+    } else {
+        tx.query_row(
+            "SELECT specialty FROM doctors WHERE name=?1 LIMIT 1",
+            params![input.doctor.trim()],
+            |row| row.get(0)
+        ).optional().map_err(|e| e.to_string())?.unwrap_or_default()
+    };
+
+    let visit_id = Uuid::new_v4().to_string();
+    tx.execute(
+        "INSERT INTO visits(
+           id,patient_id,visit_date,visit_time,doctor,specialty,fee,visit_type,
+           complaint,diagnosis,notes,created_at,updated_at
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'','','',?9,?9)",
+        params![
+            visit_id, input.patient_id, input.visit_date, input.visit_time,
+            input.doctor.trim(), specialty, input.fee.trim(), input.visit_type.trim(), now
+        ]
+    ).map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "UPDATE patients SET updated_at=?1 WHERE id=?2",
+        params![now, input.patient_id]
+    ).map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(visit_id)
+}
+
+#[tauri::command]
+fn set_patient_blacklisted(state: State<AppState>, input: BlacklistInput) -> Result<(), String> {
+    let conn = open_db(&state)?;
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    conn.execute(
+        "UPDATE patients SET blacklisted=?1,updated_at=?2 WHERE id=?3",
+        params![if input.blacklisted {1} else {0}, now, input.id]
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_patient(state: State<AppState>, id: String) -> Result<(), String> {
+    let mut conn = open_db(&state)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM visits WHERE patient_id=?1", params![id])
+        .map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM patients WHERE id=?1", params![id])
+        .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn list_patients(state: State<AppState>, query: PatientQuery) -> Result<Vec<Patient>, String> {
     let conn = open_db(&state)?;
     let archived = if query.archived_only { 1 } else { 0 };
@@ -314,7 +447,7 @@ fn get_patient_details(state: State<AppState>, id: String) -> Result<PatientDeta
     let sql = format!("{} WHERE p.id=?1", patient_select_sql());
     let patient = conn.query_row(&sql, params![id], map_patient).map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
-        "SELECT id,patient_id,visit_date,visit_time,doctor,specialty,complaint,diagnosis,notes,created_at,fee
+        "SELECT id,patient_id,visit_date,visit_time,doctor,specialty,complaint,diagnosis,notes,created_at,fee,visit_type
          FROM visits WHERE patient_id=?1 ORDER BY visit_date DESC,visit_time DESC,created_at DESC"
     ).map_err(|e| e.to_string())?;
     let rows = stmt.query_map(params![patient.id.clone()], map_visit).map_err(|e| e.to_string())?;
@@ -381,11 +514,19 @@ fn save_doctor(state: State<AppState>, input: DoctorInput) -> Result<String, Str
 }
 
 #[tauri::command]
+fn delete_doctor(state: State<AppState>, id: String) -> Result<(), String> {
+    let conn = open_db(&state)?;
+    conn.execute("DELETE FROM doctors WHERE id=?1", params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn run_report(state: State<AppState>, query: ReportQuery) -> Result<ReportResult,String> {
     let conn=open_db(&state)?;
     let doctor_like=if query.doctor.trim().is_empty(){"%".to_string()}else{query.doctor.trim().to_string()};
     let mut stmt=conn.prepare(
-        "SELECT v.id,v.patient_id,v.visit_date,v.visit_time,v.doctor,v.specialty,v.complaint,v.diagnosis,v.notes,v.created_at,v.fee
+        "SELECT v.id,v.patient_id,v.visit_date,v.visit_time,v.doctor,v.specialty,v.complaint,v.diagnosis,v.notes,v.created_at,v.fee,v.visit_type
          FROM visits v JOIN patients p ON p.id=v.patient_id
          WHERE p.archived=0 AND v.visit_date>=?1 AND v.visit_date<=?2 AND (?3='%' OR v.doctor=?3)
          ORDER BY v.visit_date DESC,v.visit_time DESC"
@@ -584,8 +725,9 @@ pub fn run(){
         Ok(())
       })
       .invoke_handler(tauri::generate_handler![
-        save_case,list_patients,get_patient_details,update_patient,set_patient_archived,
-        get_stats,list_doctors,save_doctor,run_report,create_backup,list_backups,
+        save_case,register_patient,add_visit,list_patients,get_patient_details,update_patient,
+        set_patient_archived,set_patient_blacklisted,delete_patient,get_stats,
+        list_doctors,save_doctor,delete_doctor,run_report,create_backup,list_backups,
         restore_backup,open_backup_folder
       ])
       .run(tauri::generate_context!())

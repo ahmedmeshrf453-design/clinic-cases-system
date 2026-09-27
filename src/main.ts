@@ -9,6 +9,7 @@ type Patient = {
   gender: string;
   address: string;
   archived: boolean;
+  blacklisted: boolean;
   createdAt: string;
   updatedAt: string;
   doctor: string;
@@ -30,6 +31,7 @@ type Visit = {
   diagnosis: string;
   notes: string;
   fee: string;
+  visitType: string;
   createdAt: string;
 };
 
@@ -169,7 +171,7 @@ function shell(content: string, title: string, subtitle: string) {
             <p>${subtitle}</p>
           </div>
           <div class="top-actions">
-            <button class="btn primary" id="globalNewCase">＋ تسجيل حالة</button>
+            <button class="btn primary" id="globalNewCase">＋ تسجيل مريض</button>
           </div>
         </header>
 
@@ -294,24 +296,23 @@ function patientTable(rows: Patient[], archived: boolean) {
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>المريض</th><th>الهاتف</th><th>السن/النوع</th><th>الطبيب</th>
-          <th>التخصص</th><th>آخر زيارة</th><th>الزيارات</th><th></th>
+          <th>المريض</th><th>رقم التليفون</th><th>السن/النوع</th><th>آخر طبيب</th>
+          <th>آخر زيارة</th><th>الزيارات</th><th>الحالة</th><th></th>
         </tr></thead>
         <tbody>
           ${rows.length ? rows.map(p => `
-            <tr>
+            <tr class="${p.blacklisted ? 'blacklisted-row' : ''}">
               <td><button class="link patient-open" data-id="${esc(p.id)}">${esc(p.fullName || 'بدون اسم')}</button></td>
-              <td class="ltr">${esc(p.phone)}</td>
+              <td class="ltr">${esc(p.phone || '—')}</td>
               <td>${p.age ?? '—'} ${p.gender ? `• ${esc(p.gender)}` : ''}</td>
               <td>${esc(p.doctor || '—')}</td>
-              <td>${esc(p.specialty || '—')}</td>
               <td>${displayDate(p.lastVisitDate)} ${p.lastVisitTime ? `<small>${esc(p.lastVisitTime)}</small>`:''}</td>
               <td><span class="count-badge">${p.visitsCount}</span></td>
+              <td>${p.blacklisted ? '<span class="blacklist-badge">Black List</span>' : '<span class="ok-badge">عادي</span>'}</td>
               <td class="row-actions">
                 ${archived
                   ? `<button class="icon-action restore" data-restore="${esc(p.id)}" title="استعادة">↶</button>`
-                  : `<button class="icon-action edit" data-edit="${esc(p.id)}" title="تعديل">✎</button>
-                     <button class="icon-action archive" data-archive="${esc(p.id)}" title="أرشفة">▣</button>`
+                  : `<button class="icon-action edit" data-edit="${esc(p.id)}" title="تعديل">✎</button>`
                 }
               </td>
             </tr>
@@ -358,7 +359,7 @@ async function renderDashboard() {
       </section>
       <section class="quick-card">
         <h2>إجراءات سريعة</h2>
-        <button class="quick" id="quickNew">＋ <span><b>تسجيل حالة جديدة</b><small>مريض جديد أو زيارة جديدة</small></span></button>
+        <button class="quick" id="quickNew">＋ <span><b>تسجيل مريض جديد</b><small>إنشاء ملف بيانات للمريض</small></span></button>
         <button class="quick" id="quickToday">◷ <span><b>زيارات اليوم</b><small>عرض الحالات المسجلة اليوم</small></span></button>
         <button class="quick" id="quickBackup">⟳ <span><b>نسخة احتياطية</b><small>حفظ نسخة من قاعدة البيانات الآن</small></span></button>
       </section>
@@ -385,7 +386,7 @@ async function renderPatients(archived: boolean) {
         </div>
         <div class="filters">
           <input class="search-input" id="patientSearch" placeholder="بحث بالاسم أو رقم الهاتف..." />
-          ${!archived ? `<button class="btn primary small" id="newFromPatients">＋ مريض / زيارة</button>` : ''}
+          ${!archived ? `<button class="btn primary small" id="newFromPatients">＋ مريض جديد</button>` : ''}
         </div>
       </div>
       <div id="patientTable">${patientTable(rows, archived)}</div>
@@ -422,14 +423,15 @@ function visitTable(rows: Visit[]) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>التاريخ</th><th>الوقت</th><th>الطبيب</th><th>التخصص</th><th>سعر الكشف</th><th>الشكوى</th><th>التشخيص</th></tr></thead>
+        <thead><tr><th>التاريخ</th><th>الوقت</th><th>نوع الزيارة</th><th>الطبيب</th><th>سعر الكشف</th></tr></thead>
         <tbody>${rows.length ? rows.map(v => `
           <tr>
-            <td>${displayDate(v.visitDate)}</td><td class="ltr">${esc(v.visitTime)}</td>
-            <td>${esc(v.doctor || '—')}</td><td>${esc(v.specialty || '—')}</td>
+            <td>${displayDate(v.visitDate)}</td>
+            <td class="ltr">${esc(v.visitTime)}</td>
+            <td><span class="visit-type-badge">${esc(v.visitType || 'زيارة')}</span></td>
+            <td>${esc(v.doctor || '—')}</td>
             <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
-            <td>${esc(v.complaint || '—')}</td><td>${esc(v.diagnosis || '—')}</td>
-          </tr>`).join('') : `<tr><td colspan="7" class="empty-row">لا توجد زيارات</td></tr>`}
+          </tr>`).join('') : `<tr><td colspan="5" class="empty-row">لا توجد زيارات</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -448,7 +450,8 @@ async function renderDoctors() {
             <div class="doctor-avatar">⚕</div>
             <div class="doctor-info"><strong>${esc(d.name)}</strong><span>${esc(d.specialty || 'بدون تخصص')}</span></div>
             <div class="doctor-actions">
-              <button class="icon-action edit" data-doctor-edit="${esc(d.id)}">✎</button>
+              <button class="icon-action edit" data-doctor-edit="${esc(d.id)}" title="تعديل">✎</button>
+              <button class="icon-action danger" data-doctor-delete="${esc(d.id)}" title="حذف">🗑</button>
               <button class="switch ${d.active?'on':''}" data-doctor-toggle="${esc(d.id)}" data-active="${d.active}">${d.active?'نشط':'غير نشط'}</button>
             </div>
           </article>`).join('') : `<div class="empty-block">لم يتم إضافة أطباء بعد</div>`}
@@ -464,6 +467,14 @@ async function renderDoctors() {
     const d = doctors.find(x => x.id === b.dataset.doctorToggle);
     if (!d) return;
     await invoke('save_doctor', { input: { id: d.id, name: d.name, specialty: d.specialty, active: !d.active } });
+    await renderScreen();
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-doctor-delete]').forEach(b => b.onclick = async () => {
+    const d = doctors.find(x => x.id === b.dataset.doctorDelete);
+    if (!d) return;
+    if (!confirm(`حذف الطبيب ${d.name} من القائمة؟ الزيارات القديمة لن تُحذف.`)) return;
+    await invoke('delete_doctor', { id: d.id });
+    toast('تم حذف الطبيب');
     await renderScreen();
   });
 }
@@ -549,27 +560,69 @@ async function openPatient(id: string) {
     <div class="modal-backdrop" id="patientModalBackdrop">
       <section class="modal wide">
         <div class="modal-head">
-          <div><h2>${esc(p.fullName || "بدون اسم")}</h2><p class="ltr">${esc(p.phone || "بدون رقم")}</p></div>
+          <div>
+            <h2>${esc(p.fullName || "بدون اسم")} ${p.blacklisted ? '<span class="blacklist-badge">Black List</span>' : ''}</h2>
+            <p class="ltr patient-phone">📞 ${esc(p.phone || "بدون رقم تليفون")}</p>
+          </div>
           <button class="modal-close" id="closePatient">×</button>
         </div>
+
         <div class="patient-summary">
+          <div><span>رقم التليفون</span><strong class="ltr">${esc(p.phone || '—')}</strong></div>
           <div><span>السن</span><strong>${p.age ?? '—'}</strong></div>
           <div><span>النوع</span><strong>${esc(p.gender || '—')}</strong></div>
           <div><span>العنوان</span><strong>${esc(p.address || '—')}</strong></div>
           <div><span>عدد الزيارات</span><strong>${p.visitsCount}</strong></div>
         </div>
+
+        <div class="profile-actions">
+          <button class="btn ghost small" id="editPatientFromDetails">✎ تعديل البيانات</button>
+          <button class="btn ${p.blacklisted ? 'ghost' : 'danger-outline'} small" id="toggleBlacklist">
+            ${p.blacklisted ? 'إزالة من Black List' : '⛔ إضافة إلى Black List'}
+          </button>
+          <button class="btn danger-outline small" id="deletePatient">🗑 حذف المريض</button>
+          <button class="btn primary small" id="addVisitToPatient">＋ إضافة زيارة</button>
+        </div>
+
         <div class="modal-toolbar">
           <h3>سجل الزيارات</h3>
-          <div><button class="btn ghost small" id="editPatientFromDetails">تعديل البيانات</button>
-          <button class="btn primary small" id="addVisitToPatient">＋ إضافة زيارة</button></div>
         </div>
         ${visitTable(details.visits)}
       </section>
     </div>`;
-  document.querySelector<HTMLButtonElement>('#closePatient')!.onclick = () => root.innerHTML='';
-  document.querySelector<HTMLDivElement>('#patientModalBackdrop')!.onclick = e => { if (e.target === e.currentTarget) root.innerHTML=''; };
-  document.querySelector<HTMLButtonElement>('#editPatientFromDetails')!.onclick = () => { root.innerHTML=''; openEditPatient(id); };
-  document.querySelector<HTMLButtonElement>('#addVisitToPatient')!.onclick = () => { root.innerHTML=''; openCaseModal(p); };
+
+  const close = () => root.innerHTML='';
+  document.querySelector<HTMLButtonElement>('#closePatient')!.onclick = close;
+  document.querySelector<HTMLDivElement>('#patientModalBackdrop')!.onclick = e => {
+    if (e.target === e.currentTarget) close();
+  };
+
+  document.querySelector<HTMLButtonElement>('#editPatientFromDetails')!.onclick = () => {
+    close();
+    openEditPatient(id);
+  };
+
+  document.querySelector<HTMLButtonElement>('#toggleBlacklist')!.onclick = async () => {
+    await invoke('set_patient_blacklisted', { input: { id, blacklisted: !p.blacklisted } });
+    toast(!p.blacklisted ? 'تمت إضافة المريض إلى Black List' : 'تمت إزالة المريض من Black List');
+    close();
+    await renderScreen();
+  };
+
+  document.querySelector<HTMLButtonElement>('#deletePatient')!.onclick = async () => {
+    if (!confirm(`حذف ملف ${p.fullName || 'المريض'} نهائيًا بكل زياراته؟`)) return;
+    if (!confirm('تأكيد أخير: الحذف نهائي ولا يمكن التراجع عنه إلا من نسخة احتياطية.')) return;
+    await invoke('delete_patient', { id });
+    close();
+    toast('تم حذف ملف المريض');
+    await renderScreen();
+  };
+
+  document.querySelector<HTMLButtonElement>('#addVisitToPatient')!.onclick = () => {
+    if (p.blacklisted && !confirm('هذا المريض موجود في Black List. هل تريد تسجيل زيارة رغم ذلك؟')) return;
+    close();
+    openVisitModal(p);
+  };
 }
 
 function doctorOptions(selected = '') {
@@ -579,75 +632,131 @@ function doctorOptions(selected = '') {
 }
 
 async function openCaseModal(existing?: Patient) {
+  if (existing) return openVisitModal(existing);
+  return openPatientRegistrationModal();
+}
+
+async function openPatientRegistrationModal() {
   const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
   root.innerHTML = `
     <div class="modal-backdrop" id="caseBackdrop">
       <section class="modal form-modal">
         <div class="modal-head">
-          <div><h2>${existing ? 'إضافة زيارة جديدة' : 'تسجيل حالة جديدة'}</h2><p>${existing ? `لملف: ${esc(existing.fullName)}` : 'لو رقم الهاتف موجود سيتم إضافة زيارة لنفس المريض تلقائيًا'}</p></div>
+          <div><h2>تسجيل مريض</h2><p>بيانات المريض فقط — لو رقم التليفون موجود هيفتح الملف الموجود</p></div>
           <button class="modal-close" id="closeCase">×</button>
         </div>
-        <form id="caseForm">
+        <form id="patientRegisterForm">
           <div class="section-title">بيانات المريض</div>
           <div class="form-grid">
-            <label class="span2">الاسم بالكامل<input name="fullName" value="${esc(existing?.fullName || '')}"></label>
-            <label>رقم الهاتف<input class="ltr" name="phone" value="${esc(existing?.phone || '')}"></label>
-            <label>السن<input name="age" type="number" min="0" max="130" value="${existing?.age ?? ''}"></label>
-            <label>النوع<select name="gender"><option value="">—</option><option ${existing?.gender==='ذكر'?'selected':''}>ذكر</option><option ${existing?.gender==='أنثى'?'selected':''}>أنثى</option></select></label>
-            <label class="span2">العنوان<input name="address" value="${esc(existing?.address || '')}"></label>
-          </div>
-          <div class="section-title">بيانات الزيارة</div>
-          <div class="form-grid">
-            <label>الطبيب<select id="doctorSelect" name="doctor">${doctorOptions(existing?.doctor || '')}</select></label>
-            <label>التخصص<input id="specialtyInput" name="specialty" value="${esc(existing?.specialty || '')}" readonly placeholder="يظهر تلقائيًا بعد اختيار الطبيب"></label>
-            <label>سعر الكشف<input class="ltr" name="fee" type="number" min="0" step="0.01" placeholder="يكتب يدويًا"></label>
-            <label>تاريخ الزيارة<input name="visitDate" type="date" value="${today()}"></label>
-            <label>وقت الزيارة<input name="visitTime" type="time" value="${timeNow()}"></label>
-            <label class="span2">الشكوى الرئيسية<textarea name="complaint" rows="2"></textarea></label>
-            <label class="span2">التشخيص<textarea name="diagnosis" rows="2"></textarea></label>
-            <label class="span2">ملاحظات<textarea name="notes" rows="2"></textarea></label>
+            <label class="span2">الاسم بالكامل<input name="fullName"></label>
+            <label class="span2">رقم التليفون<input class="ltr" name="phone" inputmode="tel"></label>
+            <label>السن<input name="age" type="number" min="0" max="130"></label>
+            <label>النوع<select name="gender"><option value="">—</option><option>ذكر</option><option>أنثى</option></select></label>
+            <label class="span2">العنوان (اختياري)<input name="address"></label>
           </div>
           <div class="form-actions">
             <button type="button" class="btn ghost" id="cancelCase">إلغاء</button>
-            <button type="submit" class="btn primary">حفظ الحالة</button>
+            <button type="submit" class="btn primary">حفظ وفتح الملف</button>
           </div>
         </form>
       </section>
     </div>`;
+
   const close = () => root.innerHTML='';
   document.querySelector<HTMLButtonElement>('#closeCase')!.onclick = close;
   document.querySelector<HTMLButtonElement>('#cancelCase')!.onclick = close;
-  const ds = document.querySelector<HTMLSelectElement>('#doctorSelect')!;
-  ds.onchange = () => {
-    const opt = ds.selectedOptions[0];
-    const sp = opt?.dataset.specialty || '';
-    document.querySelector<HTMLInputElement>('#specialtyInput')!.value = sp;
-  };
-  document.querySelector<HTMLFormElement>('#caseForm')!.onsubmit = async e => {
+
+  document.querySelector<HTMLFormElement>('#patientRegisterForm')!.onsubmit = async e => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget as HTMLFormElement);
     const rawAge = String(fd.get('age')||'').trim();
+
     try {
-      await invoke('save_case', { input: {
+      const result = await invoke<{id:string, existed:boolean}>('register_patient', { input: {
         fullName: String(fd.get('fullName')||'').trim(),
         phone: String(fd.get('phone')||'').trim(),
         age: rawAge ? Number(rawAge) : null,
         gender: String(fd.get('gender')||''),
-        address: String(fd.get('address')||'').trim(),
-        doctor: String(fd.get('doctor')||'').trim(),
-        specialty: String(fd.get('specialty')||'').trim(),
-        fee: String(fd.get('fee')||'').trim(),
-        visitDate: String(fd.get('visitDate')||''),
-        visitTime: String(fd.get('visitTime')||''),
-        complaint: String(fd.get('complaint')||'').trim(),
-        diagnosis: String(fd.get('diagnosis')||'').trim(),
-        notes: String(fd.get('notes')||'').trim()
+        address: String(fd.get('address')||'').trim()
       }});
+
       close();
-      toast('تم حفظ الحالة والزيارة بنجاح');
+      toast(result.existed ? 'رقم التليفون موجود — تم فتح ملف المريض' : 'تم إنشاء ملف المريض');
       await renderScreen();
+      await openPatient(result.id);
     } catch (err) {
       toast(`تعذر الحفظ: ${String(err)}`, 'error');
+    }
+  };
+}
+
+async function openVisitModal(patient: Patient) {
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+  root.innerHTML = `
+    <div class="modal-backdrop">
+      <section class="modal form-modal">
+        <div class="modal-head">
+          <div>
+            <h2>إضافة زيارة</h2>
+            <p>${esc(patient.fullName || 'بدون اسم')} • <span class="ltr">${esc(patient.phone || 'بدون رقم')}</span></p>
+          </div>
+          <button class="modal-close" id="closeVisit">×</button>
+        </div>
+
+        <form id="visitForm">
+          <div class="form-grid">
+            <label class="span2">نوع الزيارة
+              <select name="visitType">
+                <option value="كشف جديد">كشف جديد</option>
+                <option value="استشارة">استشارة</option>
+              </select>
+            </label>
+            <label class="span2">الطبيب
+              <select name="doctor">${doctorOptions(patient.doctor || '')}</select>
+            </label>
+            <label>سعر الكشف
+              <input class="ltr" name="fee" type="number" min="0" step="0.01" placeholder="يكتب يدويًا">
+            </label>
+            <label>التاريخ
+              <input name="visitDate" type="date" value="${today()}">
+            </label>
+            <label>الوقت
+              <input name="visitTime" type="time" value="${timeNow()}">
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn ghost" id="cancelVisit">إلغاء</button>
+            <button type="submit" class="btn primary">حفظ الزيارة</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+
+  const close = () => root.innerHTML='';
+  document.querySelector<HTMLButtonElement>('#closeVisit')!.onclick = close;
+  document.querySelector<HTMLButtonElement>('#cancelVisit')!.onclick = close;
+
+  document.querySelector<HTMLFormElement>('#visitForm')!.onsubmit = async e => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+
+    try {
+      await invoke('add_visit', { input: {
+        patientId: patient.id,
+        visitType: String(fd.get('visitType')||''),
+        doctor: String(fd.get('doctor')||'').trim(),
+        fee: String(fd.get('fee')||'').trim(),
+        visitDate: String(fd.get('visitDate')||''),
+        visitTime: String(fd.get('visitTime')||'')
+      }});
+
+      close();
+      toast('تم حفظ الزيارة');
+      await renderScreen();
+      await openPatient(patient.id);
+    } catch (err) {
+      toast(`تعذر حفظ الزيارة: ${String(err)}`, 'error');
     }
   };
 }
@@ -665,7 +774,7 @@ async function openEditPatient(id: string) {
           <label>رقم الهاتف<input class="ltr" name="phone" value="${esc(p.phone)}"></label>
           <label>السن<input name="age" type="number" min="0" max="130" value="${p.age ?? ''}"></label>
           <label>النوع<select name="gender"><option value="">—</option><option ${p.gender==='ذكر'?'selected':''}>ذكر</option><option ${p.gender==='أنثى'?'selected':''}>أنثى</option></select></label>
-          <label class="span2">العنوان<input name="address" value="${esc(p.address)}"></label>
+          <label class="span2">العنوان (اختياري)<input name="address" value="${esc(p.address)}"></label>
         </div>
         <div class="form-actions"><button type="button" class="btn ghost" id="cancelEdit">إلغاء</button><button class="btn primary">حفظ التعديل</button></div>
       </form>
