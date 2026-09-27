@@ -10,18 +10,39 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{
-      "label": "main",
-      "title": "Clinic Cases System",
-      "width": 1440,
-      "height": 900,
-      "minWidth": 1050,
-      "minHeight": 680,
-      "maximized": true,
-      "resizable": true,
-      "fullscreen": false
-    }],
-    "security": { "csp": null }
+    "windows": [
+      {
+        "label": "main",
+        "title": "Clinic Cases System",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1050,
+        "minHeight": 680,
+        "maximized": true,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
   },
-  "bundle": { "active": false }
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "installerHooks": "./windows/hooks.nsh",
+        "installMode": "currentUser",
+        "startMenuFolder": "Clinic Cases System"
+      }
+    }
+  }
 }
