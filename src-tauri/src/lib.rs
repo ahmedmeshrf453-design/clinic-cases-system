@@ -87,16 +87,17 @@ fn open_db(state: &AppState) -> Result<Connection, String> {
 
 fn init_db(path: &PathBuf) -> Result<(), String> {
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
+    conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;")
+        .map_err(|e| e.to_string())?;
+
     conn.execute_batch(r#"
-      PRAGMA foreign_keys=ON;
-      PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS patients(
-        id TEXT PRIMARY KEY, full_name TEXT NOT NULL, phone TEXT NOT NULL UNIQUE,
+        id TEXT PRIMARY KEY, full_name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
         age INTEGER, gender TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '',
         archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS visits(
-        id TEXT PRIMARY KEY, patient_id TEXT NOT NULL, visit_date TEXT NOT NULL,
+        id TEXT PRIMARY KEY, patient_id TEXT NOT NULL, visit_date TEXT NOT NULL DEFAULT '',
         visit_time TEXT NOT NULL DEFAULT '', doctor TEXT NOT NULL DEFAULT '',
         specialty TEXT NOT NULL DEFAULT '', complaint TEXT NOT NULL DEFAULT '',
         diagnosis TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
@@ -107,6 +108,40 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, specialty TEXT NOT NULL DEFAULT '',
         active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
+    "#).map_err(|e| e.to_string())?;
+
+    // Upgrade old V3 databases: remove UNIQUE(phone) while preserving all IDs and visits.
+    let schema: String = conn.query_row(
+        "SELECT COALESCE(sql,'') FROM sqlite_master WHERE type='table' AND name='patients'",
+        [],
+        |row| row.get(0)
+    ).map_err(|e| e.to_string())?;
+
+    if schema.to_uppercase().contains("UNIQUE") {
+        conn.execute_batch("PRAGMA wal_checkpoint(FULL); PRAGMA foreign_keys=OFF;")
+            .map_err(|e| e.to_string())?;
+
+        conn.execute_batch(r#"
+          BEGIN IMMEDIATE;
+          CREATE TABLE patients_v31(
+            id TEXT PRIMARY KEY, full_name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
+            age INTEGER, gender TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '',
+            archived INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+          );
+          INSERT INTO patients_v31(id,full_name,phone,age,gender,address,archived,created_at,updated_at)
+            SELECT id,COALESCE(full_name,''),COALESCE(phone,''),age,COALESCE(gender,''),COALESCE(address,''),
+                   archived,created_at,updated_at
+            FROM patients;
+          DROP TABLE patients;
+          ALTER TABLE patients_v31 RENAME TO patients;
+          COMMIT;
+        "#).map_err(|e| e.to_string())?;
+
+        conn.execute_batch("PRAGMA foreign_keys=ON;")
+            .map_err(|e| e.to_string())?;
+    }
+
+    conn.execute_batch(r#"
       CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone);
       CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(full_name);
       CREATE INDEX IF NOT EXISTS idx_patients_archived ON patients(archived);
@@ -114,6 +149,7 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
       CREATE INDEX IF NOT EXISTS idx_visits_date ON visits(visit_date);
       CREATE INDEX IF NOT EXISTS idx_visits_doctor ON visits(doctor);
     "#).map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
@@ -150,17 +186,20 @@ fn map_visit(row: &rusqlite::Row<'_>) -> rusqlite::Result<Visit> {
 
 #[tauri::command]
 fn save_case(state: State<AppState>, input: AddCaseInput) -> Result<String, String> {
-    if input.full_name.trim().is_empty() || input.phone.trim().is_empty() {
-        return Err("الاسم ورقم الهاتف مطلوبان".into());
-    }
     let mut conn = open_db(&state)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let phone = input.phone.trim().to_string();
 
-    let existing: Option<String> = tx.query_row(
-        "SELECT id FROM patients WHERE phone=?1 LIMIT 1", params![phone], |r| r.get(0)
-    ).optional().map_err(|e| e.to_string())?;
+    let existing: Option<String> = if phone.is_empty() {
+        None
+    } else {
+        tx.query_row(
+            "SELECT id FROM patients WHERE phone=?1 AND archived=0 LIMIT 1",
+            params![phone],
+            |row| row.get(0)
+        ).optional().map_err(|e| e.to_string())?
+    };
 
     let patient_id = if let Some(id) = existing {
         tx.execute(
@@ -215,13 +254,12 @@ fn get_patient_details(state: State<AppState>, id: String) -> Result<PatientDeta
 
 #[tauri::command]
 fn update_patient(state: State<AppState>, input: UpdatePatientInput) -> Result<(), String> {
-    if input.full_name.trim().is_empty() || input.phone.trim().is_empty() { return Err("الاسم ورقم الهاتف مطلوبان".into()); }
     let conn = open_db(&state)?;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     conn.execute(
         "UPDATE patients SET full_name=?1,phone=?2,age=?3,gender=?4,address=?5,updated_at=?6 WHERE id=?7",
         params![input.full_name.trim(),input.phone.trim(),input.age,input.gender,input.address,now,input.id]
-    ).map_err(|e| if e.to_string().contains("UNIQUE") { "رقم الهاتف مستخدم في ملف آخر".into() } else { e.to_string() })?;
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
 

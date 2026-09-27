@@ -201,7 +201,7 @@ function patientTable(rows: Patient[], archived: boolean) {
         <tbody>
           ${rows.length ? rows.map(p => `
             <tr>
-              <td><button class="link patient-open" data-id="${esc(p.id)}">${esc(p.fullName)}</button></td>
+              <td><button class="link patient-open" data-id="${esc(p.id)}">${esc(p.fullName || 'بدون اسم')}</button></td>
               <td class="ltr">${esc(p.phone)}</td>
               <td>${p.age ?? '—'} ${p.gender ? `• ${esc(p.gender)}` : ''}</td>
               <td>${esc(p.doctor || '—')}</td>
@@ -449,7 +449,7 @@ async function openPatient(id: string) {
     <div class="modal-backdrop" id="patientModalBackdrop">
       <section class="modal wide">
         <div class="modal-head">
-          <div><h2>${esc(p.fullName)}</h2><p class="ltr">${esc(p.phone)}</p></div>
+          <div><h2>${esc(p.fullName || "بدون اسم")}</h2><p class="ltr">${esc(p.phone || "بدون رقم")}</p></div>
           <button class="modal-close" id="closePatient">×</button>
         </div>
         <div class="patient-summary">
@@ -490,8 +490,8 @@ async function openCaseModal(existing?: Patient) {
         <form id="caseForm">
           <div class="section-title">بيانات المريض</div>
           <div class="form-grid">
-            <label class="span2">الاسم بالكامل<input name="fullName" required value="${esc(existing?.fullName || '')}"></label>
-            <label>رقم الهاتف<input class="ltr" name="phone" required value="${esc(existing?.phone || '')}"></label>
+            <label class="span2">الاسم بالكامل<input name="fullName" value="${esc(existing?.fullName || '')}"></label>
+            <label>رقم الهاتف<input class="ltr" name="phone" value="${esc(existing?.phone || '')}"></label>
             <label>السن<input name="age" type="number" min="0" max="130" value="${existing?.age ?? ''}"></label>
             <label>النوع<select name="gender"><option value="">—</option><option ${existing?.gender==='ذكر'?'selected':''}>ذكر</option><option ${existing?.gender==='أنثى'?'selected':''}>أنثى</option></select></label>
             <label class="span2">العنوان<input name="address" value="${esc(existing?.address || '')}"></label>
@@ -500,8 +500,8 @@ async function openCaseModal(existing?: Patient) {
           <div class="form-grid">
             <label>الطبيب<select id="doctorSelect" name="doctor">${doctorOptions(existing?.doctor || '')}</select></label>
             <label>التخصص<input id="specialtyInput" name="specialty" value="${esc(existing?.specialty || '')}"></label>
-            <label>تاريخ الزيارة<input name="visitDate" type="date" required value="${today()}"></label>
-            <label>وقت الزيارة<input name="visitTime" type="time" required value="${timeNow()}"></label>
+            <label>تاريخ الزيارة<input name="visitDate" type="date" value="${today()}"></label>
+            <label>وقت الزيارة<input name="visitTime" type="time" value="${timeNow()}"></label>
             <label class="span2">الشكوى الرئيسية<textarea name="complaint" rows="2"></textarea></label>
             <label class="span2">التشخيص<textarea name="diagnosis" rows="2"></textarea></label>
             <label class="span2">ملاحظات<textarea name="notes" rows="2"></textarea></label>
@@ -559,8 +559,8 @@ async function openEditPatient(id: string) {
       <div class="modal-head"><div><h2>تعديل بيانات المريض</h2><p>لا يؤثر على سجل الزيارات السابق</p></div><button class="modal-close" id="closeEdit">×</button></div>
       <form id="editPatientForm">
         <div class="form-grid">
-          <label class="span2">الاسم بالكامل<input name="fullName" required value="${esc(p.fullName)}"></label>
-          <label>رقم الهاتف<input class="ltr" name="phone" required value="${esc(p.phone)}"></label>
+          <label class="span2">الاسم بالكامل<input name="fullName" value="${esc(p.fullName)}"></label>
+          <label>رقم الهاتف<input class="ltr" name="phone" value="${esc(p.phone)}"></label>
           <label>السن<input name="age" type="number" min="0" max="130" value="${p.age ?? ''}"></label>
           <label>النوع<select name="gender"><option value="">—</option><option ${p.gender==='ذكر'?'selected':''}>ذكر</option><option ${p.gender==='أنثى'?'selected':''}>أنثى</option></select></label>
           <label class="span2">العنوان<input name="address" value="${esc(p.address)}"></label>
