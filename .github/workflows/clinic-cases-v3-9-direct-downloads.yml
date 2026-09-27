@@ -1,0 +1,134 @@
+name: Clinic Cases V3.9 Direct Downloads Export
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply V3.9 direct download patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > _patch.b64 <<'PATCHEOF'
+          CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAppbXBvcnQganNvbgoKIyA9PT09PT09PT09PT09PT09PSBGUk9OVEVORCA9PT09PT09
+          PT09PT09PT09PQptYWluX3BhdGggPSBQYXRoKCJzcmMvbWFpbi50cyIpCnMgPSBtYWluX3BhdGgucmVhZF90ZXh0KGVuY29kaW5n
+          PSJ1dGYtOCIpCgpzID0gcy5yZXBsYWNlKCLYrdmB2LggUERGIiwgItiq2K3ZhdmK2YQgUERGIikKcyA9IHMucmVwbGFjZSgi2K3Z
+          gdi4INi12YjYsdipIiwgItiq2K3ZhdmK2YQg2LXZiNix2KkiKQpzID0gcy5yZXBsYWNlKCLYt9io2KfYudipIC8g2K3Zgdi4IFBE
+          RiIsICLYqtit2YXZitmEIFBERiIpCnMgPSBzLnJlcGxhY2UoItmB2KrYrSDZhdis2YTYryDYp9mE2YXZhNmB2KfYqiIsICLZgdiq
+          2K0g2YXYrNmE2K8g2KfZhNiq2K3ZhdmK2YTYp9iqIikKCm9sZCA9ICIiIiAgICBjb25zdCBzYXZlZCA9IGF3YWl0IGludm9rZTxz
+          dHJpbmc+KCdzYXZlX2V4cG9ydCcsIHsKICAgICAgaW5wdXQ6IHsgZmlsZU5hbWUsIGJhc2U2NERhdGEgfQogICAgfSk7CiAgICB0
+          b2FzdChg2KrZhSDYp9mE2K3Zgdi4INi52YTZiSDYp9mE2KzZh9in2LI6ICR7c2F2ZWR9YCk7IiIiCm5ldyA9ICIiIiAgICBjb25z
+          dCBzYXZlZCA9IGF3YWl0IGludm9rZTxzdHJpbmc+KCdzYXZlX2V4cG9ydCcsIHsKICAgICAgaW5wdXQ6IHsgZmlsZU5hbWUsIGJh
+          c2U2NERhdGEgfQogICAgfSk7CiAgICB0b2FzdChg2KrZhSDYqtmG2LLZitmEINin2YTZhdmE2YEg2KjZhtis2KfYrSDZgdmKIERv
+          d25sb2FkczogJHtzYXZlZH1gKTsiIiIKaWYgb2xkIG5vdCBpbiBzOgogICAgcmFpc2UgU3lzdGVtRXhpdCgiZXhwb3J0IHN1Y2Nl
+          c3MgbWVzc2FnZSBtYXJrZXIgbm90IGZvdW5kIikKcyA9IHMucmVwbGFjZShvbGQsIG5ldywgMSkKCm1haW5fcGF0aC53cml0ZV90
+          ZXh0KHMsIGVuY29kaW5nPSJ1dGYtOCIpCgojID09PT09PT09PT09PT09PT09IEJBQ0tFTkQgPT09PT09PT09PT09PT09PT0KbGli
+          X3BhdGggPSBQYXRoKCJzcmMtdGF1cmkvc3JjL2xpYi5ycyIpCnIgPSBsaWJfcGF0aC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04
+          IikKCnN0YXJ0ID0gci5pbmRleCgiI1t0YXVyaTo6Y29tbWFuZF1cbmZuIHNhdmVfZXhwb3J0KCIpCmVuZCA9IHIuaW5kZXgoIlxu
+          I1t0YXVyaTo6Y29tbWFuZF1cbmZuIG9wZW5fZXhwb3J0X2ZvbGRlciIsIHN0YXJ0KQoKc2F2ZV9mbiA9IHIiIiIjW3RhdXJpOjpj
+          b21tYW5kXQpmbiBzYXZlX2V4cG9ydChzdGF0ZTogU3RhdGU8QXBwU3RhdGU+LCBpbnB1dDogU2F2ZUV4cG9ydElucHV0KSAtPiBS
+          ZXN1bHQ8U3RyaW5nLFN0cmluZz57CiAgICBmczo6Y3JlYXRlX2Rpcl9hbGwoJnN0YXRlLmV4cG9ydF9kaXIpLm1hcF9lcnIofGV8
+          ZS50b19zdHJpbmcoKSk/OwoKICAgIGxldCBzYWZlX25hbWU6IFN0cmluZyA9IGlucHV0LmZpbGVfbmFtZS5jaGFycygpLm1hcCh8
+          Y3wgewogICAgICAgIGlmIFsnXFwnLCcvJywnOicsJyonLCc/JywnIicsJzwnLCc+JywnfCddLmNvbnRhaW5zKCZjKSB7ICdfJyB9
+          IGVsc2UgeyBjIH0KICAgIH0pLmNvbGxlY3QoKTsKCiAgICBpZiBzYWZlX25hbWUudHJpbSgpLmlzX2VtcHR5KCkgewogICAgICAg
+          IHJldHVybiBFcnIoItin2LPZhSDYp9mE2YXZhNmBINi62YrYsSDYtdin2YTYrSIuaW50bygpKTsKICAgIH0KCiAgICBsZXQgYnl0
+          ZXMgPSBnZW5lcmFsX3B1cnBvc2U6OlNUQU5EQVJECiAgICAgICAgLmRlY29kZShpbnB1dC5iYXNlNjRfZGF0YS50cmltKCkpCiAg
+          ICAgICAgLm1hcF9lcnIofGV8IGZvcm1hdCEoItiq2LnYsNixINmC2LHYp9ih2Kkg2KfZhNmF2YTZgToge30iLCBlKSk/OwoKICAg
+          IGxldCByZXF1ZXN0ZWQgPSBQYXRoQnVmOjpmcm9tKHNhZmVfbmFtZS50cmltKCkpOwogICAgbGV0IHN0ZW0gPSByZXF1ZXN0ZWQu
+          ZmlsZV9zdGVtKCkKICAgICAgICAuYW5kX3RoZW4ofHh8IHgudG9fc3RyKCkpCiAgICAgICAgLnVud3JhcF9vcigiY2xpbmljLWV4
+          cG9ydCIpOwogICAgbGV0IGV4dCA9IHJlcXVlc3RlZC5leHRlbnNpb24oKQogICAgICAgIC5hbmRfdGhlbih8eHwgeC50b19zdHIo
+          KSkKICAgICAgICAudW53cmFwX29yKCIiKTsKCiAgICBsZXQgc3RhbXAgPSBMb2NhbDo6bm93KCkuZm9ybWF0KCIlWS0lbS0lZF8l
+          SC0lTS0lUyIpLnRvX3N0cmluZygpOwogICAgbGV0IHVuaXF1ZV9uYW1lID0gaWYgZXh0LmlzX2VtcHR5KCkgewogICAgICAgIGZv
+          cm1hdCEoInt9IC0ge30iLCBzdGVtLCBzdGFtcCkKICAgIH0gZWxzZSB7CiAgICAgICAgZm9ybWF0ISgie30gLSB7fS57fSIsIHN0
+          ZW0sIHN0YW1wLCBleHQpCiAgICB9OwoKICAgIGxldCB0YXJnZXQgPSBzdGF0ZS5leHBvcnRfZGlyLmpvaW4odW5pcXVlX25hbWUp
+          OwogICAgZnM6OndyaXRlKCZ0YXJnZXQsIGJ5dGVzKS5tYXBfZXJyKHxlfGUudG9fc3RyaW5nKCkpPzsKCiAgICBsZXQgc2VsZWN0
+          X2FyZyA9IGZvcm1hdCEoIi9zZWxlY3Qse30iLCB0YXJnZXQudG9fc3RyaW5nX2xvc3N5KCkpOwogICAgbGV0IF8gPSBDb21tYW5k
+          OjpuZXcoImV4cGxvcmVyLmV4ZSIpLmFyZyhzZWxlY3RfYXJnKS5zcGF3bigpOwoKICAgIE9rKHRhcmdldC50b19zdHJpbmdfbG9z
+          c3koKS50b19zdHJpbmcoKSkKfQoiIiIKciA9IHJbOnN0YXJ0XSArIHNhdmVfZm4gKyByW2VuZDpdCgpvbGQgPSAiIiIgICAgICAg
+          IGxldCBleHBvcnRfZGlyPWRvY3VtZW50c19kaXIuam9pbigiQ2xpbmljIENhc2VzIEV4cG9ydHMiKTsKICAgICAgICBmczo6Y3Jl
+          YXRlX2Rpcl9hbGwoJmV4cG9ydF9kaXIpPzsKCiAgICAgICAgbGV0IHN0YXRlPUFwcFN0YXRle2RiX3BhdGgsYmFja3VwX2Rpcixl
+          eHBvcnRfZGlyfTsiIiIKbmV3ID0gIiIiICAgICAgICBsZXQgZG93bmxvYWRzX2Rpcj1hcHAucGF0aCgpLmRvd25sb2FkX2Rpcigp
+          LnVud3JhcF9vcl9lbHNlKHxffGRvY3VtZW50c19kaXIuY2xvbmUoKSk7CiAgICAgICAgbGV0IGV4cG9ydF9kaXI9ZG93bmxvYWRz
+          X2Rpci5qb2luKCLYqtiz2KzZitmEINit2KfZhNin2Kog2LnZitin2K/Yp9iqINin2YTYudmC2KfYryIpOwogICAgICAgIGZzOjpj
+          cmVhdGVfZGlyX2FsbCgmZXhwb3J0X2Rpcik/OwoKICAgICAgICBsZXQgc3RhdGU9QXBwU3RhdGV7ZGJfcGF0aCxiYWNrdXBfZGly
+          LGV4cG9ydF9kaXJ9OyIiIgppZiBvbGQgbm90IGluIHI6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCJleHBvcnRfZGlyIHNldHVwIG1h
+          cmtlciBub3QgZm91bmQiKQpyID0gci5yZXBsYWNlKG9sZCwgbmV3LCAxKQoKbGliX3BhdGgud3JpdGVfdGV4dChyLCBlbmNvZGlu
+          Zz0idXRmLTgiKQoKIyA9PT09PT09PT09PT09PT09PSBWRVJTSU9OID09PT09PT09PT09PT09PT09CnBrZ19wYXRoID0gUGF0aCgi
+          cGFja2FnZS5qc29uIikKcGtnID0ganNvbi5sb2Fkcyhwa2dfcGF0aC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04IikpCnBrZ1si
+          dmVyc2lvbiJdID0gIjMuOS4wIgpwa2dfcGF0aC53cml0ZV90ZXh0KGpzb24uZHVtcHMocGtnLCBlbnN1cmVfYXNjaWk9RmFsc2Us
+          IGluZGVudD0yKSArICJcbiIsIGVuY29kaW5nPSJ1dGYtOCIpCgpjb25mX3BhdGggPSBQYXRoKCJzcmMtdGF1cmkvdGF1cmkuY29u
+          Zi5qc29uIikKY29uZiA9IGpzb24ubG9hZHMoY29uZl9wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKSkKY29uZlsidmVy
+          c2lvbiJdID0gIjMuOS4wIgpjb25mX3BhdGgud3JpdGVfdGV4dChqc29uLmR1bXBzKGNvbmYsIGVuc3VyZV9hc2NpaT1GYWxzZSwg
+          aW5kZW50PTIpICsgIlxuIiwgZW5jb2Rpbmc9InV0Zi04IikKCmNhcmdvX3BhdGggPSBQYXRoKCJzcmMtdGF1cmkvQ2FyZ28udG9t
+          bCIpCmNhcmdvID0gY2FyZ29fcGF0aC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04Iikuc3BsaXRsaW5lcygpCmZvciBpLCBsaW5l
+          IGluIGVudW1lcmF0ZShjYXJnbyk6CiAgICBpZiBsaW5lLnN0YXJ0c3dpdGgoJ3ZlcnNpb24gPSAiJyk6CiAgICAgICAgY2FyZ29b
+          aV0gPSAndmVyc2lvbiA9ICIzLjkuMCInCiAgICAgICAgYnJlYWsKY2FyZ29fcGF0aC53cml0ZV90ZXh0KCJcbiIuam9pbihjYXJn
+          bykgKyAiXG4iLCBlbmNvZGluZz0idXRmLTgiKQoKcHJpbnQoIlYzLjkgZGlyZWN0IERvd25sb2FkcyBleHBvcnQgcGF0Y2ggYXBw
+          bGllZC4iKQo=
+          PATCHEOF
+          tr -d '\r\n ' < _patch.b64 > _patch.clean.b64
+          python -c "import base64; open('_v39_patch.py','wb').write(base64.b64decode(open('_patch.clean.b64','rb').read()))"
+          python _v39_patch.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Validate frontend
+        shell: bash
+        run: npm run build
+
+      - name: Validate Rust
+        shell: bash
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Build V3.9 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify Setup EXE
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          Write-Host "Installer:" $installer.FullName
+
+      - name: Commit validated V3.9 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src-tauri/src/lib.rs package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V3.9: export patient files directly to Downloads"
+            git push
+          fi
+
+      - name: Upload V3.9 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V3.9-Direct-Downloads-Installer
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
