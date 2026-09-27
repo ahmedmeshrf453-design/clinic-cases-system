@@ -510,7 +510,7 @@ function shell(content: string, title: string, subtitle: string) {
             <p>${subtitle}</p>
           </div>
           <div class="top-actions">
-            <button class="btn primary" id="globalNewCase">＋ تسجيل مريض</button>
+            <button class="btn primary" id="globalNewCase">＋ تسجيل حالة</button>
           </div>
         </header>
 
@@ -1109,7 +1109,7 @@ async function openPatientRegistrationModal() {
     <div class="modal-backdrop" id="caseBackdrop">
       <section class="modal form-modal">
         <div class="modal-head">
-          <div><h2>تسجيل مريض</h2><p>بيانات المريض فقط — لو رقم التليفون موجود هيفتح الملف الموجود</p></div>
+          <div><h2>تسجيل حالة جديدة</h2><p>الخطوة 1 من 2 — بيانات المريض، وبعد الحفظ يتم فتح تسجيل الزيارة تلقائيًا</p></div>
           <button class="modal-close" id="closeCase">×</button>
         </div>
         <form id="patientRegisterForm">
@@ -1123,7 +1123,7 @@ async function openPatientRegistrationModal() {
           </div>
           <div class="form-actions">
             <button type="button" class="btn ghost" id="cancelCase">إلغاء</button>
-            <button type="submit" class="btn primary">حفظ وفتح الملف</button>
+            <button type="submit" class="btn primary">التالي: بيانات الزيارة</button>
           </div>
         </form>
       </section>
@@ -1147,10 +1147,13 @@ async function openPatientRegistrationModal() {
         address: String(fd.get('address')||'').trim()
       }});
 
+      const details = await invoke<PatientDetails>('get_patient_details', { id: result.id });
       close();
-      toast(result.existed ? 'رقم التليفون موجود — تم فتح ملف المريض' : 'تم إنشاء ملف المريض');
+      toast(result.existed
+        ? 'المريض موجود بالفعل — أكمل بيانات الزيارة لتسجيل الحالة'
+        : 'تم حفظ بيانات المريض — أكمل بيانات الزيارة لتسجيل الحالة');
       await renderScreen();
-      await openPatient(result.id);
+      await openVisitModal(details.patient);
     } catch (err) {
       toast(`تعذر الحفظ: ${String(err)}`, 'error');
     }
@@ -1219,7 +1222,7 @@ async function openVisitModal(patient: Patient) {
       }});
 
       close();
-      toast('تم حفظ الزيارة');
+      toast('تم حفظ الحالة وإضافتها إلى حالات اليوم والتقارير');
       await renderScreen();
       await openPatient(patient.id);
     } catch (err) {
