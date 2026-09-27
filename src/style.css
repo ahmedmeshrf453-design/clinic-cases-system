@@ -706,3 +706,53 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
     top:230px !important;
   }
 }
+
+
+/* ===== V4.2 exact original logo ===== */
+.clinic-header{
+  min-height:150px !important;
+}
+
+.clinic-logo{
+  width:118px !important;
+  height:132px !important;
+  object-fit:contain !important;
+  object-position:center !important;
+  background:transparent !important;
+  padding:0 !important;
+  margin:0 !important;
+  border:0 !important;
+  border-radius:0 !important;
+  box-shadow:none !important;
+}
+
+.system-watermark{
+  position:fixed !important;
+  left:50% !important;
+  top:245px !important;
+  transform:translateX(-50%) !important;
+  width:420px !important;
+  height:560px !important;
+  background-image:url('/clinic-logo-emblem.png') !important;
+  background-position:center !important;
+  background-repeat:no-repeat !important;
+  background-size:contain !important;
+  opacity:.045 !important;
+  pointer-events:none !important;
+  user-select:none !important;
+  z-index:20 !important;
+  filter:none !important;
+}
+
+@media(max-width:1000px){
+  .clinic-logo{
+    width:96px !important;
+    height:108px !important;
+  }
+
+  .system-watermark{
+    width:300px !important;
+    height:400px !important;
+    top:230px !important;
+  }
+}
