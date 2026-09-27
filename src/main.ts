@@ -1,5 +1,6 @@
 import QRCode from 'qrcode';
 import { invoke } from '@tauri-apps/api/core';
+import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import './style.css';
@@ -266,10 +267,24 @@ async function captureAndSaveExport(html: string, baseName: string, format: Expo
       base64Data = pdf.output('datauristring').split(',')[1];
     }
 
-    const saved = await invoke<string>('save_export', {
-      input: { fileName, base64Data }
+    const selectedPath = await saveDialog({
+      title: 'اختيار مكان حفظ الملف',
+      defaultPath: fileName,
+      filters: [{
+        name: format === 'pdf' ? 'PDF' : 'PNG',
+        extensions: [format]
+      }]
     });
-    toast(`تم تنزيل الملف بنجاح في Downloads: ${saved}`);
+
+    if (!selectedPath) {
+      toast('تم إلغاء الحفظ');
+      return;
+    }
+
+    const saved = await invoke<string>('save_export', {
+      input: { fileName, base64Data, targetPath: selectedPath }
+    });
+    toast(`تم حفظ الملف بنجاح: ${saved}`);
   } catch (err) {
     toast(`تعذر إنشاء الملف: ${String(err)}`, 'error');
   } finally {

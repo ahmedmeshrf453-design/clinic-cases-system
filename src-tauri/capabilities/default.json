@@ -2,6 +2,11 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Clinic Cases desktop capability",
-  "windows": ["main"],
-  "permissions": ["core:default"]
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "dialog:allow-save"
+  ]
 }

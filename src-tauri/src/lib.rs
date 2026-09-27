@@ -105,6 +105,7 @@ struct BackupItem { name: String, path: String, modified: String, size: u64 }
 struct SaveExportInput {
     file_name: String,
     base64_data: String,
+    target_path: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -122,7 +123,7 @@ fn operational_day_date() -> NaiveDate {
 
 fn open_db(state: &AppState) -> Result<Connection, String> {
     let conn = Connection::open(&state.db_path).map_err(|e| e.to_string())?;
-    conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;")
+    conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON;")
         .map_err(|e| e.to_string())?;
     Ok(conn)
 }
@@ -656,57 +657,112 @@ fn list_backups(state: State<AppState>) -> Result<Vec<BackupItem>,String>{
 
 #[tauri::command]
 fn restore_backup(state: State<AppState>, path: String) -> Result<(),String>{
-    let source=PathBuf::from(path);
-    if !source.exists(){return Err("ملف النسخة غير موجود".into());}
-    let test=Connection::open(&source).map_err(|_|"ملف النسخة غير صالح".to_string())?;
-    let ok:Option<String>=test.query_row("SELECT name FROM sqlite_master WHERE type='table' AND name='patients'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
-    drop(test);
-    if ok.is_none(){return Err("الملف ليس نسخة صالحة للنظام".into());}
+    let backup_root = fs::canonicalize(&state.backup_dir)
+        .map_err(|_| "تعذر الوصول إلى مجلد النسخ الاحتياطية".to_string())?;
 
-    let safety=state.backup_dir.join(format!("before-restore-{}.db",Local::now().format("%Y-%m-%d_%H-%M-%S")));
+    let source = fs::canonicalize(PathBuf::from(path))
+        .map_err(|_| "ملف النسخة غير موجود".to_string())?;
+
+    if !source.starts_with(&backup_root) {
+        return Err("لأسباب الأمان يمكن استعادة النسخ الموجودة داخل مجلد النسخ الاحتياطية فقط".into());
+    }
+
+    if source.extension().and_then(|x| x.to_str()).map(|x| x.eq_ignore_ascii_case("db")) != Some(true) {
+        return Err("امتداد ملف النسخة غير صالح".into());
+    }
+
+    let test=Connection::open(&source).map_err(|_|"ملف النسخة غير صالح".to_string())?;
+    let ok:Option<String>=test.query_row(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='patients'",
+        [],
+        |r|r.get(0)
+    ).optional().map_err(|e|e.to_string())?;
+    drop(test);
+
+    if ok.is_none(){
+        return Err("الملف ليس نسخة صالحة للنظام".into());
+    }
+
+    let safety=state.backup_dir.join(format!(
+        "before-restore-{}.db",
+        Local::now().format("%Y-%m-%d_%H-%M-%S")
+    ));
     checkpoint_and_copy(&state,&safety)?;
 
     let wal=PathBuf::from(format!("{}-wal",state.db_path.to_string_lossy()));
     let shm=PathBuf::from(format!("{}-shm",state.db_path.to_string_lossy()));
-    let _=fs::remove_file(&wal); let _=fs::remove_file(&shm);
-    fs::copy(source,&state.db_path).map_err(|e|e.to_string())?;
+    let _=fs::remove_file(&wal);
+    let _=fs::remove_file(&shm);
+
+    fs::copy(&source,&state.db_path).map_err(|e|e.to_string())?;
     init_db(&state.db_path)?;
     Ok(())
 }
 
 #[tauri::command]
-fn save_export(state: State<AppState>, input: SaveExportInput) -> Result<String,String>{
-    fs::create_dir_all(&state.export_dir).map_err(|e|e.to_string())?;
+fn save_export(_state: State<AppState>, input: SaveExportInput) -> Result<String,String>{
+    const MAX_EXPORT_BYTES: usize = 30 * 1024 * 1024;
+    const MAX_BASE64_CHARS: usize = 42 * 1024 * 1024;
 
-    let safe_name: String = input.file_name.chars().map(|c| {
-        if ['\\','/',':','*','?','"','<','>','|'].contains(&c) { '_' } else { c }
-    }).collect();
+    if input.target_path.trim().is_empty() {
+        return Err("لم يتم اختيار مكان للحفظ".into());
+    }
 
-    if safe_name.trim().is_empty() {
-        return Err("اسم الملف غير صالح".into());
+    if input.base64_data.len() > MAX_BASE64_CHARS {
+        return Err("حجم الملف أكبر من الحد المسموح".into());
+    }
+
+    let intended_path = PathBuf::from(input.file_name.trim());
+    let intended_ext = intended_path.extension()
+        .and_then(|x| x.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if intended_ext != "pdf" && intended_ext != "png" {
+        return Err("نوع الملف غير مسموح".into());
+    }
+
+    let target = PathBuf::from(input.target_path.trim());
+
+    if target.file_name().is_none() {
+        return Err("مسار الحفظ غير صالح".into());
+    }
+
+    let target_ext = target.extension()
+        .and_then(|x| x.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if target_ext != intended_ext {
+        return Err("امتداد الملف لا يطابق نوع الملف الذي يتم حفظه".into());
+    }
+
+    let parent = target.parent()
+        .ok_or_else(|| "مسار الحفظ غير صالح".to_string())?;
+
+    if !parent.exists() || !parent.is_dir() {
+        return Err("المجلد المختار غير موجود".into());
     }
 
     let bytes = general_purpose::STANDARD
         .decode(input.base64_data.trim())
-        .map_err(|e| format!("تعذر قراءة الملف: {}", e))?;
+        .map_err(|_| "بيانات الملف غير صالحة".to_string())?;
 
-    let requested = PathBuf::from(safe_name.trim());
-    let stem = requested.file_stem()
-        .and_then(|x| x.to_str())
-        .unwrap_or("clinic-export");
-    let ext = requested.extension()
-        .and_then(|x| x.to_str())
-        .unwrap_or("");
+    if bytes.is_empty() || bytes.len() > MAX_EXPORT_BYTES {
+        return Err("حجم الملف غير صالح".into());
+    }
 
-    let stamp = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
-    let unique_name = if ext.is_empty() {
-        format!("{} - {}", stem, stamp)
-    } else {
-        format!("{} - {}.{}", stem, stamp, ext)
+    let signature_ok = match intended_ext.as_str() {
+        "pdf" => bytes.starts_with(b"%PDF-"),
+        "png" => bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]),
+        _ => false,
     };
 
-    let target = state.export_dir.join(unique_name);
-    fs::write(&target, bytes).map_err(|e|e.to_string())?;
+    if !signature_ok {
+        return Err("محتوى الملف لا يطابق نوعه".into());
+    }
+
+    fs::write(&target, &bytes).map_err(|e| format!("تعذر حفظ الملف: {}", e))?;
 
     let select_arg = format!("/select,{}", target.to_string_lossy());
     let _ = Command::new("explorer.exe").arg(select_arg).spawn();
@@ -811,6 +867,7 @@ pub fn run(){
     let backup_only = std::env::args().any(|arg| arg == "--backup-only");
 
     tauri::Builder::default()
+      .plugin(tauri_plugin_dialog::init())
       .setup(move |app|{
         let data_dir=app.path().app_data_dir()?;
         fs::create_dir_all(&data_dir)?;
