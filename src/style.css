@@ -486,3 +486,64 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
     grid-column:1/-1;
   }
 }
+
+
+/* ===== V3.7 FIXED ===== */
+.clinic-logo{
+  width:118px;
+  height:96px;
+  padding:0;
+  object-fit:contain;
+  background:transparent;
+  border-radius:0;
+}
+
+.system-watermark{
+  width:470px;
+  height:350px;
+  top:330px;
+  opacity:.022;
+  background-image:url('/clinic-logo-emblem.png');
+  background-size:contain;
+  background-position:center;
+  background-repeat:no-repeat;
+  filter:none;
+}
+
+.today-search-panel{
+  display:flex;
+  align-items:end;
+  justify-content:space-between;
+  gap:16px;
+  padding:12px 14px;
+  margin:0 0 14px;
+  background:#f7fafc;
+  border:1px solid #e4ebf1;
+  border-radius:12px;
+}
+
+.today-search-panel>div{
+  min-width:220px;
+}
+
+.today-search-panel strong,
+.today-search-panel small{
+  display:block;
+}
+
+.today-search-panel small{
+  margin-top:3px;
+  color:#7c899b;
+  font-size:11px;
+}
+
+.today-search-panel .search-input{
+  width:min(420px,48vw);
+}
+
+.today-search-results-title{
+  margin:8px 0 11px;
+  font-size:12px;
+  font-weight:800;
+  color:#274764;
+}

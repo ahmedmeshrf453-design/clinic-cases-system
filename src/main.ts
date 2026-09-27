@@ -74,6 +74,7 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 let screen: Screen = 'dashboard';
 let doctors: Doctor[] = [];
 let refreshTimer: number | undefined;
+let activeBusinessDay = '';
 
 function esc(v: unknown) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({
@@ -83,6 +84,15 @@ function esc(v: unknown) {
 
 function today() {
   const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function businessDay() {
+  const d = new Date();
+  if (d.getHours() < 11) d.setDate(d.getDate() - 1);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -284,7 +294,7 @@ function shell(content: string, title: string, subtitle: string) {
         <nav>
           ${navButton('dashboard','⌂','الرئيسية')}
           ${navButton('patients','◉','المرضى')}
-          ${navButton('today','◷','زيارات اليوم')}
+          ${navButton('today','◷','حالات اليوم')}
           ${navButton('doctors','⚕','الأطباء')}
           ${navButton('reports','▤','التقارير')}
           ${navButton('archive','▣','الأرشيف')}
@@ -302,7 +312,7 @@ function shell(content: string, title: string, subtitle: string) {
         <div class="system-watermark" aria-hidden="true"></div>
         <section class="clinic-header">
           <div class="clinic-identity">
-            <img class="clinic-logo" src="/clinic-logo-header.jpg" alt="لوجو عيادات العقاد التخصصية" />
+            <img class="clinic-logo" src="/clinic-logo-emblem.png" alt="لوجو عيادات العقاد التخصصية" />
             <div class="clinic-copy">
               <strong class="clinic-name">عيادات العقاد التخصصية</strong>
               <span class="clinic-slogan">رعاية تليق بك</span>
@@ -359,10 +369,17 @@ function shell(content: string, title: string, subtitle: string) {
   updateClock();
   updateConnectionStatus();
 
+  activeBusinessDay = businessDay();
   window.clearInterval(refreshTimer);
   refreshTimer = window.setInterval(() => {
     updateClock();
     updateConnectionStatus();
+
+    const nowBusinessDay = businessDay();
+    if (nowBusinessDay !== activeBusinessDay) {
+      activeBusinessDay = nowBusinessDay;
+      renderScreen().catch(err => toast(`تعذر تحديث اليوم الجديد: ${String(err)}`, 'error'));
+    }
   }, 1000);
 }
 
@@ -505,7 +522,7 @@ async function renderDashboard() {
   shell(`
     <div class="stats-grid">
       <article class="stat"><div class="stat-icon">👥</div><div><span>إجمالي المرضى</span><strong>${stats.totalPatients}</strong></div></article>
-      <article class="stat"><div class="stat-icon">◷</div><div><span>زيارات اليوم</span><strong>${stats.todayVisits}</strong></div></article>
+      <article class="stat"><div class="stat-icon">◷</div><div><span>حالات اليوم</span><strong>${stats.todayVisits}</strong></div></article>
       <article class="stat"><div class="stat-icon">＋</div><div><span>مرضى جدد اليوم</span><strong>${stats.newToday}</strong></div></article>
       <article class="stat"><div class="stat-icon">▤</div><div><span>إجمالي الزيارات</span><strong>${stats.totalVisits}</strong></div></article>
     </div>
@@ -519,7 +536,7 @@ async function renderDashboard() {
       <section class="quick-card">
         <h2>إجراءات سريعة</h2>
         <button class="quick" id="quickNew">＋ <span><b>تسجيل مريض جديد</b><small>إنشاء ملف بيانات للمريض</small></span></button>
-        <button class="quick" id="quickToday">◷ <span><b>زيارات اليوم</b><small>عرض الحالات المسجلة اليوم</small></span></button>
+        <button class="quick" id="quickToday">◷ <span><b>حالات اليوم</b><small>عرض الحالات المسجلة اليوم</small></span></button>
         <button class="quick" id="quickBackup">⟳ <span><b>نسخة احتياطية</b><small>حفظ نسخة من قاعدة البيانات الآن</small></span></button>
       </section>
     </div>
@@ -567,24 +584,64 @@ async function renderPatients(archived: boolean) {
 }
 
 async function renderToday() {
-  const result = await invoke<ReportResult>('run_report', { query: { from: today(), to: today(), doctor: '' } });
+  const dayKey = businessDay();
+  const result = await invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } });
+
   shell(`
     <section class="card">
       <div class="card-head">
-        <div><h2>زيارات اليوم</h2><p>${displayDate(today())} — ${result.totalVisits} زيارة</p></div>
+        <div>
+          <h2>حالات اليوم</h2>
+          <p>اليوم التشغيلي يبدأ 11:00 صباحًا • ${displayDate(dayKey)} • ${result.totalVisits} حالة</p>
+        </div>
         <div class="filters">
           <button class="btn ghost small" id="todayImage">حفظ صورة</button>
           <button class="btn primary small" id="todayPdf">حفظ PDF</button>
         </div>
       </div>
+
+      <div class="today-search-panel">
+        <div>
+          <strong>البحث في ملفات المرضى</strong>
+          <small>ابحث بالاسم أو رقم التليفون لفتح أي ملف قديم</small>
+        </div>
+        <input class="search-input" id="todayPatientSearch" placeholder="اسم المريض أو رقم التليفون..." />
+      </div>
+      <div id="todayPatientSearchResults"></div>
+
       ${visitTable(result.rows, true)}
     </section>
-  `, 'زيارات اليوم', 'كل الزيارات المسجلة في تاريخ اليوم');
+  `, 'حالات اليوم', 'بعد الساعة 11 صباحًا يبدأ يوم جديد تلقائيًا');
 
   document.querySelector<HTMLButtonElement>('#todayImage')!.onclick = () =>
-    exportReportFile(result, today(), today(), '', 'png');
+    exportReportFile(result, dayKey, dayKey, '', 'png');
   document.querySelector<HTMLButtonElement>('#todayPdf')!.onclick = () =>
-    exportReportFile(result, today(), today(), '', 'pdf');
+    exportReportFile(result, dayKey, dayKey, '', 'pdf');
+
+  const search = document.querySelector<HTMLInputElement>('#todayPatientSearch')!;
+  const results = document.querySelector<HTMLDivElement>('#todayPatientSearchResults')!;
+  let timer: number | undefined;
+
+  search.oninput = () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(async () => {
+      const q = search.value.trim();
+      if (!q) {
+        results.innerHTML = '';
+        return;
+      }
+
+      const rows = await invoke<Patient[]>('list_patients', {
+        query: { search: q, archivedOnly: false, limit: 24 }
+      });
+
+      results.innerHTML = `
+        <div class="today-search-results-title">نتائج البحث</div>
+        ${patientTable(rows, false)}
+      `;
+      bindPatientActions();
+    }, 180);
+  };
 }
 
 function visitTable(rows: Visit[], showPatient = false) {
@@ -653,10 +710,11 @@ async function renderDoctors() {
 }
 
 async function renderReports() {
-  const now = new Date();
-  const monthFrom = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-  const monthLast = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
-  const monthTo = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(monthLast).padStart(2,'0')}`;
+  const activeDay = businessDay();
+  const [activeYear, activeMonth] = activeDay.split('-').map(Number);
+  const monthFrom = `${activeYear}-${String(activeMonth).padStart(2,'0')}-01`;
+  const monthLast = new Date(activeYear, activeMonth, 0).getDate();
+  const monthTo = `${activeYear}-${String(activeMonth).padStart(2,'0')}-${String(monthLast).padStart(2,'0')}`;
 
   shell(`
     <section class="card">
@@ -712,8 +770,9 @@ async function renderReports() {
   document.querySelector<HTMLButtonElement>('#runReportBtn')!.onclick = run;
 
   document.querySelector<HTMLButtonElement>('#rangeToday')!.onclick = async () => {
-    (document.querySelector<HTMLInputElement>('#reportFrom')!).value = today();
-    (document.querySelector<HTMLInputElement>('#reportTo')!).value = today();
+    const d = businessDay();
+    (document.querySelector<HTMLInputElement>('#reportFrom')!).value = d;
+    (document.querySelector<HTMLInputElement>('#reportTo')!).value = d;
     await run();
   };
 

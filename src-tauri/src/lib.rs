@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose, Engine as _};
-use chrono::{Local, Timelike};
+use chrono::{Duration, Local, NaiveDate, Timelike};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, process::Command};
@@ -110,6 +110,15 @@ struct SaveExportInput {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ReportResult { total_visits: i64, unique_patients: i64, rows: Vec<Visit> }
+
+fn operational_day_date() -> NaiveDate {
+    let now = Local::now();
+    if now.hour() < 11 {
+        now.date_naive() - Duration::days(1)
+    } else {
+        now.date_naive()
+    }
+}
 
 fn open_db(state: &AppState) -> Result<Connection, String> {
     let conn = Connection::open(&state.db_path).map_err(|e| e.to_string())?;
@@ -489,11 +498,44 @@ fn set_patient_archived(state: State<AppState>, input: ArchiveInput) -> Result<(
 #[tauri::command]
 fn get_stats(state: State<AppState>) -> Result<Stats, String> {
     let conn = open_db(&state)?;
-    let today = Local::now().format("%Y-%m-%d").to_string();
-    let total_patients: i64 = conn.query_row("SELECT COUNT(*) FROM patients WHERE archived=0",[],|r|r.get(0)).map_err(|e|e.to_string())?;
-    let today_visits: i64 = conn.query_row("SELECT COUNT(*) FROM visits v JOIN patients p ON p.id=v.patient_id WHERE v.visit_date=?1 AND p.archived=0",params![today],|r|r.get(0)).map_err(|e|e.to_string())?;
-    let new_today: i64 = conn.query_row("SELECT COUNT(*) FROM patients WHERE archived=0 AND substr(created_at,1,10)=?1",params![today],|r|r.get(0)).map_err(|e|e.to_string())?;
-    let total_visits: i64 = conn.query_row("SELECT COUNT(*) FROM visits",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+
+    let day = operational_day_date();
+    let next_day = day + Duration::days(1);
+    let day_s = day.format("%Y-%m-%d").to_string();
+    let next_day_s = next_day.format("%Y-%m-%d").to_string();
+    let start_ts = format!("{} 11:00:00", day_s);
+    let end_ts = format!("{} 11:00:00", next_day_s);
+
+    let total_patients: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM patients WHERE archived=0",
+        [],
+        |r| r.get(0)
+    ).map_err(|e|e.to_string())?;
+
+    let today_visits: i64 = conn.query_row(
+        "SELECT COUNT(*)
+         FROM visits v
+         JOIN patients p ON p.id=v.patient_id
+         WHERE p.archived=0
+           AND (v.visit_date > ?1 OR (v.visit_date=?1 AND COALESCE(NULLIF(v.visit_time,''),'00:00') >= '11:00'))
+           AND (v.visit_date < ?2 OR (v.visit_date=?2 AND COALESCE(NULLIF(v.visit_time,''),'00:00') < '11:00'))",
+        params![day_s, next_day_s],
+        |r| r.get(0)
+    ).map_err(|e|e.to_string())?;
+
+    let new_today: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM patients
+         WHERE archived=0 AND created_at>=?1 AND created_at<?2",
+        params![start_ts, end_ts],
+        |r| r.get(0)
+    ).map_err(|e|e.to_string())?;
+
+    let total_visits: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM visits",
+        [],
+        |r| r.get(0)
+    ).map_err(|e|e.to_string())?;
+
     Ok(Stats{total_patients,today_visits,new_today,total_visits})
 }
 
@@ -535,19 +577,40 @@ fn delete_doctor(state: State<AppState>, id: String) -> Result<(), String> {
 #[tauri::command]
 fn run_report(state: State<AppState>, query: ReportQuery) -> Result<ReportResult,String> {
     let conn=open_db(&state)?;
+
+    let from_date = NaiveDate::parse_from_str(query.from.trim(), "%Y-%m-%d")
+        .map_err(|_| "تاريخ البداية غير صالح".to_string())?;
+    let to_date = NaiveDate::parse_from_str(query.to.trim(), "%Y-%m-%d")
+        .map_err(|_| "تاريخ النهاية غير صالح".to_string())?;
+
+    if to_date < from_date {
+        return Err("تاريخ النهاية يجب أن يكون بعد أو مساويًا لتاريخ البداية".into());
+    }
+
+    let end_date = to_date + Duration::days(1);
+    let from_s = from_date.format("%Y-%m-%d").to_string();
+    let end_s = end_date.format("%Y-%m-%d").to_string();
+
     let doctor_like=if query.doctor.trim().is_empty(){"%".to_string()}else{query.doctor.trim().to_string()};
+
     let mut stmt=conn.prepare(
         "SELECT v.id,v.patient_id,v.visit_date,v.visit_time,v.doctor,v.specialty,v.complaint,v.diagnosis,v.notes,v.created_at,v.fee,v.visit_type,
                 p.full_name,p.phone
          FROM visits v JOIN patients p ON p.id=v.patient_id
-         WHERE p.archived=0 AND v.visit_date>=?1 AND v.visit_date<=?2 AND (?3='%' OR v.doctor=?3)
+         WHERE p.archived=0
+           AND (v.visit_date > ?1 OR (v.visit_date=?1 AND COALESCE(NULLIF(v.visit_time,''),'00:00') >= '11:00'))
+           AND (v.visit_date < ?2 OR (v.visit_date=?2 AND COALESCE(NULLIF(v.visit_time,''),'00:00') < '11:00'))
+           AND (?3='%' OR v.doctor=?3)
          ORDER BY v.visit_date DESC,v.visit_time DESC"
     ).map_err(|e|e.to_string())?;
-    let rows_iter=stmt.query_map(params![query.from,query.to,doctor_like],map_visit).map_err(|e|e.to_string())?;
+
+    let rows_iter=stmt.query_map(params![from_s,end_s,doctor_like],map_visit).map_err(|e|e.to_string())?;
     let rows=rows_iter.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
     let total_visits=rows.len() as i64;
+
     let mut ids=std::collections::HashSet::new();
     for v in &rows { ids.insert(v.patient_id.clone()); }
+
     Ok(ReportResult{total_visits,unique_patients:ids.len() as i64,rows})
 }
 

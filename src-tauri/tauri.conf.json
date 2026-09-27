@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Clinic Cases System",
-  "version": "3.6.0",
+  "productName": "تسجيل حالات عيادات العقاد التخصصية",
+  "version": "3.7.0",
   "identifier": "com.cliniccases.system",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "عيادات العقاد التخصصية - نظام الحالات",
+        "title": "تسجيل حالات عيادات العقاد التخصصية",
         "width": 1440,
         "height": 900,
         "minWidth": 1050,
@@ -41,7 +41,7 @@
         "uninstallerIcon": "icons/icon.ico",
         "installerHooks": "./windows/hooks.nsh",
         "installMode": "currentUser",
-        "startMenuFolder": "Clinic Cases System"
+        "startMenuFolder": "تسجيل حالات عيادات العقاد التخصصية"
       }
     }
   }
