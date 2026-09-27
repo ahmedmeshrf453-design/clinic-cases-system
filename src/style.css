@@ -756,3 +756,137 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
     top:230px !important;
   }
 }
+
+
+
+/* ===== V4.4 patient print QR + footer ===== */
+.patient-print-brand{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  margin:0 auto 18px;
+}
+
+.patient-print-brand img{
+  display:block;
+  width:250px;
+  height:auto;
+  object-fit:contain;
+  margin:0 auto;
+}
+
+.patient-print-slogan{
+  margin-top:10px;
+  font-size:20px;
+  font-weight:800;
+  color:#087f8a;
+  letter-spacing:.2px;
+}
+
+.patient-export-title{
+  text-align:center;
+}
+
+.patient-export-title h2{
+  font-size:25px;
+}
+
+.patient-export-title p{
+  font-size:16px;
+  font-weight:700;
+}
+
+.patient-export-top{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 210px;
+  gap:18px;
+  align-items:start;
+}
+
+.patient-export-grid{
+  margin-bottom:0;
+}
+
+.patient-qr-box{
+  border:1px solid #dfe8ee;
+  border-radius:12px;
+  background:#f9fbfc;
+  padding:14px 12px;
+  text-align:center;
+}
+
+.patient-qr-box img{
+  width:150px;
+  height:150px;
+  object-fit:contain;
+  display:block;
+  margin:0 auto 10px;
+}
+
+.patient-qr-caption{
+  font-size:14px;
+  font-weight:800;
+  color:#0a2342;
+  margin-bottom:4px;
+}
+
+.patient-qr-box small{
+  color:#718196;
+  font-size:11px;
+}
+
+.patient-print-footer{
+  margin-top:28px;
+  padding-top:14px;
+  border-top:1px solid #dce7ec;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:32px;
+  flex-wrap:wrap;
+}
+
+.patient-print-footer-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:18px;
+  font-weight:800;
+  color:#0a2342;
+}
+
+.patient-print-footer-badge{
+  min-width:28px;
+  height:28px;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:12px;
+  font-weight:900;
+  line-height:1;
+}
+
+.patient-print-footer-badge.wa{
+  background:#25D366;
+  color:#fff;
+}
+
+.patient-print-footer-badge.phone{
+  background:#0a2342;
+  color:#fff;
+  font-size:16px;
+}
+
+@media(max-width:1100px){
+  .patient-export-top{
+    grid-template-columns:1fr;
+  }
+
+  .patient-qr-box{
+    max-width:240px;
+    margin:0 auto;
+  }
+}

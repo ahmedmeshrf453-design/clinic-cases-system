@@ -1,3 +1,4 @@
+import QRCode from 'qrcode';
 import { invoke } from '@tauri-apps/api/core';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -169,6 +170,52 @@ function exportSheet(title: string, subtitle: string, body: string) {
     </div>`;
 }
 
+
+function patientExportSheet(title: string, subtitle: string, body: string) {
+  return `
+    <div class="export-document patient-export-document">
+      <div class="patient-print-brand">
+        <img src="/patient-print-logo.jpg" alt="لوجو عيادات العقاد التخصصية" />
+        <div class="patient-print-slogan">رعاية تليق بك</div>
+      </div>
+
+      <div class="export-rule"></div>
+
+      <div class="export-title patient-export-title">
+        <h2>${esc(title)}</h2>
+        <p>${esc(subtitle)}</p>
+      </div>
+
+      ${body}
+
+      <div class="patient-print-footer">
+        <div class="patient-print-footer-item">
+          <span class="patient-print-footer-badge wa">WA</span>
+          <strong class="ltr">01102233167</strong>
+        </div>
+        <div class="patient-print-footer-item">
+          <span class="patient-print-footer-badge phone">☎</span>
+          <strong class="ltr">01107072134</strong>
+        </div>
+      </div>
+    </div>`;
+}
+
+function buildPatientQrPayload(details: PatientDetails) {
+  const p = details.patient;
+  const lastVisit = details.visits?.[0];
+  return [
+    'Clinic Cases System',
+    `Patient ID: ${p.id}`,
+    `Name: ${p.fullName || ''}`,
+    `Phone: ${p.phone || ''}`,
+    `Doctor: ${lastVisit?.doctor || ''}`,
+    `Visit Type: ${lastVisit?.visitType || ''}`,
+    `Created At: ${p.createdAt || ''}`
+  ].join(' | ');
+}
+
+
 async function captureAndSaveExport(html: string, baseName: string, format: ExportFormat) {
   const host = document.createElement('div');
   host.className = 'export-capture-host';
@@ -232,21 +279,39 @@ async function captureAndSaveExport(html: string, baseName: string, format: Expo
 
 async function exportPatientFile(details: PatientDetails, format: ExportFormat) {
   const p = details.patient;
+  const qrPayload = buildPatientQrPayload(details);
+  const qrDataUrl = await QRCode.toDataURL(qrPayload, {
+    width: 170,
+    margin: 1,
+    color: {
+      dark: '#0a2342',
+      light: '#ffffff'
+    }
+  });
+
   const body = `
-    <div class="export-patient-grid">
-      <div><span>اسم المريض</span><strong>${esc(p.fullName || '—')}</strong></div>
-      <div><span>رقم التليفون</span><strong class="ltr">${esc(p.phone || '—')}</strong></div>
-      <div><span>السن</span><strong>${p.age ?? '—'}</strong></div>
-      <div><span>النوع</span><strong>${esc(p.gender || '—')}</strong></div>
-      <div class="wide"><span>العنوان</span><strong>${esc(p.address || '—')}</strong></div>
-      <div><span>الحالة</span><strong>${p.blacklisted ? 'Black List' : 'عادي'}</strong></div>
-      <div><span>عدد الزيارات</span><strong>${p.visitsCount}</strong></div>
+    <div class="patient-export-top">
+      <div class="export-patient-grid patient-export-grid">
+        <div><span>اسم المريض</span><strong>${esc(p.fullName || '—')}</strong></div>
+        <div><span>رقم التليفون</span><strong class="ltr">${esc(p.phone || '—')}</strong></div>
+        <div><span>السن</span><strong>${p.age ?? '—'}</strong></div>
+        <div><span>النوع</span><strong>${esc(p.gender || '—')}</strong></div>
+        <div class="wide"><span>العنوان</span><strong>${esc(p.address || '—')}</strong></div>
+        <div><span>الحالة</span><strong>${p.blacklisted ? 'Black List' : 'عادي'}</strong></div>
+        <div><span>عدد الزيارات</span><strong>${p.visitsCount}</strong></div>
+        <div><span>الكود</span><strong class="ltr">${esc(p.id)}</strong></div>
+      </div>
+      <div class="patient-qr-box">
+        <img src="${qrDataUrl}" alt="QR Code" />
+        <div class="patient-qr-caption">QR فريد للحالة</div>
+        <small class="ltr">${esc(p.id)}</small>
+      </div>
     </div>
     <h3 class="export-section-heading">سجل الزيارات</h3>
     ${exportVisitRows(details.visits, false)}
   `;
   await captureAndSaveExport(
-    exportSheet('ملف المريض', p.fullName || 'بدون اسم', body),
+    patientExportSheet('ملف المريض', p.fullName || 'بدون اسم', body),
     `ملف المريض - ${p.fullName || p.phone || p.id}`,
     format
   );
