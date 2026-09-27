@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose, Engine as _};
 use chrono::{Local, Timelike};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -5,7 +6,7 @@ use std::{fs, path::PathBuf, process::Command};
 use tauri::{Manager, State};
 use uuid::Uuid;
 
-struct AppState { db_path: PathBuf, backup_dir: PathBuf }
+struct AppState { db_path: PathBuf, backup_dir: PathBuf, export_dir: PathBuf }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,7 +80,8 @@ struct Patient {
 struct Visit {
     id: String, patient_id: String, visit_date: String, visit_time: String,
     doctor: String, specialty: String, complaint: String, diagnosis: String,
-    notes: String, fee: String, visit_type: String, created_at: String,
+    notes: String, fee: String, visit_type: String,
+    patient_name: String, patient_phone: String, created_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -97,6 +99,13 @@ struct Stats { total_patients: i64, today_visits: i64, new_today: i64, total_vis
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BackupItem { name: String, path: String, modified: String, size: u64 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveExportInput {
+    file_name: String,
+    base64_data: String,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -283,6 +292,7 @@ fn map_visit(row: &rusqlite::Row<'_>) -> rusqlite::Result<Visit> {
         doctor: row.get(4)?, specialty: row.get(5)?, complaint: row.get(6)?,
         diagnosis: row.get(7)?, notes: row.get(8)?, created_at: row.get(9)?,
         fee: row.get(10)?, visit_type: row.get(11)?,
+        patient_name: row.get(12)?, patient_phone: row.get(13)?,
     })
 }
 
@@ -447,7 +457,8 @@ fn get_patient_details(state: State<AppState>, id: String) -> Result<PatientDeta
     let sql = format!("{} WHERE p.id=?1", patient_select_sql());
     let patient = conn.query_row(&sql, params![id], map_patient).map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
-        "SELECT id,patient_id,visit_date,visit_time,doctor,specialty,complaint,diagnosis,notes,created_at,fee,visit_type
+        "SELECT id,patient_id,visit_date,visit_time,doctor,specialty,complaint,diagnosis,notes,created_at,fee,visit_type,
+                '' AS patient_name,'' AS patient_phone
          FROM visits WHERE patient_id=?1 ORDER BY visit_date DESC,visit_time DESC,created_at DESC"
     ).map_err(|e| e.to_string())?;
     let rows = stmt.query_map(params![patient.id.clone()], map_visit).map_err(|e| e.to_string())?;
@@ -526,7 +537,8 @@ fn run_report(state: State<AppState>, query: ReportQuery) -> Result<ReportResult
     let conn=open_db(&state)?;
     let doctor_like=if query.doctor.trim().is_empty(){"%".to_string()}else{query.doctor.trim().to_string()};
     let mut stmt=conn.prepare(
-        "SELECT v.id,v.patient_id,v.visit_date,v.visit_time,v.doctor,v.specialty,v.complaint,v.diagnosis,v.notes,v.created_at,v.fee,v.visit_type
+        "SELECT v.id,v.patient_id,v.visit_date,v.visit_time,v.doctor,v.specialty,v.complaint,v.diagnosis,v.notes,v.created_at,v.fee,v.visit_type,
+                p.full_name,p.phone
          FROM visits v JOIN patients p ON p.id=v.patient_id
          WHERE p.archived=0 AND v.visit_date>=?1 AND v.visit_date<=?2 AND (?3='%' OR v.doctor=?3)
          ORDER BY v.visit_date DESC,v.visit_time DESC"
@@ -596,6 +608,34 @@ fn restore_backup(state: State<AppState>, path: String) -> Result<(),String>{
     let _=fs::remove_file(&wal); let _=fs::remove_file(&shm);
     fs::copy(source,&state.db_path).map_err(|e|e.to_string())?;
     init_db(&state.db_path)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn save_export(state: State<AppState>, input: SaveExportInput) -> Result<String,String>{
+    fs::create_dir_all(&state.export_dir).map_err(|e|e.to_string())?;
+
+    let safe_name: String = input.file_name.chars().map(|c| {
+        if ['\\','/',':','*','?','"','<','>','|'].contains(&c) { '_' } else { c }
+    }).collect();
+
+    if safe_name.trim().is_empty() {
+        return Err("اسم الملف غير صالح".into());
+    }
+
+    let bytes = general_purpose::STANDARD
+        .decode(input.base64_data.trim())
+        .map_err(|e| format!("تعذر قراءة الملف: {}", e))?;
+
+    let target = state.export_dir.join(safe_name);
+    fs::write(&target, bytes).map_err(|e|e.to_string())?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn open_export_folder(state: State<AppState>) -> Result<(),String>{
+    fs::create_dir_all(&state.export_dir).map_err(|e|e.to_string())?;
+    Command::new("explorer.exe").arg(&state.export_dir).spawn().map_err(|e|e.to_string())?;
     Ok(())
 }
 
@@ -696,12 +736,15 @@ pub fn run(){
         let db_path=data_dir.join("clinic-cases.db");
         init_db(&db_path).map_err(|e|std::io::Error::new(std::io::ErrorKind::Other,e))?;
 
-        let backup_dir=app.path().document_dir()
-            .unwrap_or_else(|_|data_dir.clone())
-            .join("Clinic Cases Backups");
+        let documents_dir=app.path().document_dir().unwrap_or_else(|_|data_dir.clone());
+
+        let backup_dir=documents_dir.join("Clinic Cases Backups");
         fs::create_dir_all(&backup_dir)?;
 
-        let state=AppState{db_path,backup_dir};
+        let export_dir=documents_dir.join("Clinic Cases Exports");
+        fs::create_dir_all(&export_dir)?;
+
+        let state=AppState{db_path,backup_dir,export_dir};
 
         if backup_only {
           if let Some(window) = app.get_webview_window("main") {
@@ -728,7 +771,7 @@ pub fn run(){
         save_case,register_patient,add_visit,list_patients,get_patient_details,update_patient,
         set_patient_archived,set_patient_blacklisted,delete_patient,get_stats,
         list_doctors,save_doctor,delete_doctor,run_report,create_backup,list_backups,
-        restore_backup,open_backup_folder
+        restore_backup,open_backup_folder,save_export,open_export_folder
       ])
       .run(tauri::generate_context!())
       .expect("error while running Clinic Cases System");

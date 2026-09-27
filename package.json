@@ -1,7 +1,7 @@
 {
   "name": "clinic-cases-system",
   "private": true,
-  "version": "3.5.0",
+  "version": "3.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port 1420",
@@ -10,7 +10,9 @@
     "tauri:build": "tauri build --no-bundle"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.0.0"
+    "@tauri-apps/api": "^2.0.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.3"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

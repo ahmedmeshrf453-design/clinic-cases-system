@@ -1,4 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import './style.css';
 
 type Patient = {
@@ -32,6 +34,8 @@ type Visit = {
   notes: string;
   fee: string;
   visitType: string;
+  patientName: string;
+  patientPhone: string;
   createdAt: string;
 };
 
@@ -96,6 +100,165 @@ function displayDate(v: string) {
   return y && m && d ? `${d}/${m}/${y}` : v;
 }
 
+
+type ExportFormat = 'pdf' | 'png';
+
+function safeExportName(v: string) {
+  return v.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
+}
+
+function reportPeriodLabel(from: string, to: string) {
+  return from === to ? displayDate(from) : `${displayDate(from)} إلى ${displayDate(to)}`;
+}
+
+function exportVisitRows(rows: Visit[], includePatient: boolean) {
+  return `
+    <table class="export-table">
+      <thead>
+        <tr>
+          <th>التاريخ</th>
+          <th>الوقت</th>
+          ${includePatient ? '<th>المريض</th><th>رقم التليفون</th>' : ''}
+          <th>نوع الزيارة</th>
+          <th>الطبيب</th>
+          <th>سعر الكشف</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.length ? rows.map(v => `
+          <tr>
+            <td>${esc(displayDate(v.visitDate))}</td>
+            <td class="ltr">${esc(v.visitTime || '—')}</td>
+            ${includePatient ? `<td>${esc(v.patientName || '—')}</td><td class="ltr">${esc(v.patientPhone || '—')}</td>` : ''}
+            <td>${esc(v.visitType || 'زيارة')}</td>
+            <td>${esc(v.doctor || '—')}</td>
+            <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="${includePatient ? 7 : 5}">لا توجد بيانات</td></tr>`}
+      </tbody>
+    </table>`;
+}
+
+function exportSheet(title: string, subtitle: string, body: string) {
+  return `
+    <div class="export-document">
+      <div class="export-brand">
+        <div>
+          <h1>عيادات العقاد التخصصية</h1>
+          <p>رعاية تليق بك</p>
+        </div>
+        <div class="export-ak-mark">AK</div>
+      </div>
+      <div class="export-rule"></div>
+      <div class="export-title">
+        <h2>${esc(title)}</h2>
+        <p>${esc(subtitle)}</p>
+      </div>
+      ${body}
+      <div class="export-footer">تم إنشاء الملف من نظام عيادات العقاد التخصصية</div>
+    </div>`;
+}
+
+async function captureAndSaveExport(html: string, baseName: string, format: ExportFormat) {
+  const host = document.createElement('div');
+  host.className = 'export-capture-host';
+  host.innerHTML = html;
+  document.body.appendChild(host);
+
+  try {
+    if ('fonts' in document) {
+      await (document as Document & {fonts?: FontFaceSet}).fonts?.ready;
+    }
+    await new Promise(resolve => setTimeout(resolve, 80));
+
+    const canvas = await html2canvas(host, {
+      scale: 1.6,
+      backgroundColor: '#ffffff',
+      logging: false,
+      useCORS: true
+    });
+
+    let fileName = '';
+    let base64Data = '';
+
+    if (format === 'png') {
+      fileName = `${safeExportName(baseName)}.png`;
+      base64Data = canvas.toDataURL('image/png', 1).split(',')[1];
+    } else {
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 8;
+      const drawWidth = pageWidth - (margin * 2);
+      const drawHeight = canvas.height * drawWidth / canvas.width;
+      const image = canvas.toDataURL('image/jpeg', 0.92);
+
+      let remaining = drawHeight;
+      let y = margin;
+      pdf.addImage(image, 'JPEG', margin, y, drawWidth, drawHeight);
+      remaining -= (pageHeight - margin * 2);
+
+      while (remaining > 0) {
+        pdf.addPage();
+        y = margin - (drawHeight - remaining);
+        pdf.addImage(image, 'JPEG', margin, y, drawWidth, drawHeight);
+        remaining -= (pageHeight - margin * 2);
+      }
+
+      fileName = `${safeExportName(baseName)}.pdf`;
+      base64Data = pdf.output('datauristring').split(',')[1];
+    }
+
+    const saved = await invoke<string>('save_export', {
+      input: { fileName, base64Data }
+    });
+    toast(`تم الحفظ على الجهاز: ${saved}`);
+  } catch (err) {
+    toast(`تعذر إنشاء الملف: ${String(err)}`, 'error');
+  } finally {
+    host.remove();
+  }
+}
+
+async function exportPatientFile(details: PatientDetails, format: ExportFormat) {
+  const p = details.patient;
+  const body = `
+    <div class="export-patient-grid">
+      <div><span>اسم المريض</span><strong>${esc(p.fullName || '—')}</strong></div>
+      <div><span>رقم التليفون</span><strong class="ltr">${esc(p.phone || '—')}</strong></div>
+      <div><span>السن</span><strong>${p.age ?? '—'}</strong></div>
+      <div><span>النوع</span><strong>${esc(p.gender || '—')}</strong></div>
+      <div class="wide"><span>العنوان</span><strong>${esc(p.address || '—')}</strong></div>
+      <div><span>الحالة</span><strong>${p.blacklisted ? 'Black List' : 'عادي'}</strong></div>
+      <div><span>عدد الزيارات</span><strong>${p.visitsCount}</strong></div>
+    </div>
+    <h3 class="export-section-heading">سجل الزيارات</h3>
+    ${exportVisitRows(details.visits, false)}
+  `;
+  await captureAndSaveExport(
+    exportSheet('ملف المريض', p.fullName || 'بدون اسم', body),
+    `ملف المريض - ${p.fullName || p.phone || p.id}`,
+    format
+  );
+}
+
+async function exportReportFile(result: ReportResult, from: string, to: string, doctor: string, format: ExportFormat) {
+  const body = `
+    <div class="export-summary">
+      <div><span>الفترة</span><strong>${esc(reportPeriodLabel(from, to))}</strong></div>
+      <div><span>الطبيب</span><strong>${esc(doctor || 'كل الأطباء')}</strong></div>
+      <div><span>عدد الزيارات</span><strong>${result.totalVisits}</strong></div>
+      <div><span>عدد المرضى</span><strong>${result.uniquePatients}</strong></div>
+    </div>
+    ${exportVisitRows(result.rows, true)}
+  `;
+  await captureAndSaveExport(
+    exportSheet('ملخص الحالات والتقرير', reportPeriodLabel(from, to), body),
+    `تقرير الحالات - ${from} - ${to}`,
+    format
+  );
+}
+
 function navButton(id: Screen, icon: string, label: string) {
   return `<button class="nav ${screen===id?'active':''}" data-screen="${id}">
     <span class="nav-icon">${icon}</span><span>${label}</span>
@@ -136,6 +299,7 @@ function shell(content: string, title: string, subtitle: string) {
       </aside>
 
       <main class="main">
+        <div class="system-watermark" aria-hidden="true"></div>
         <section class="clinic-header">
           <div class="clinic-identity">
             <img class="clinic-logo" src="/clinic-logo-header.jpg" alt="لوجو عيادات العقاد التخصصية" />
@@ -293,32 +457,27 @@ async function renderScreen() {
 
 function patientTable(rows: Patient[], archived: boolean) {
   return `
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>المريض</th><th>رقم التليفون</th><th>السن/النوع</th><th>آخر طبيب</th>
-          <th>آخر زيارة</th><th>الزيارات</th><th>الحالة</th><th></th>
-        </tr></thead>
-        <tbody>
-          ${rows.length ? rows.map(p => `
-            <tr class="${p.blacklisted ? 'blacklisted-row' : ''}">
-              <td><button class="link patient-open" data-id="${esc(p.id)}">${esc(p.fullName || 'بدون اسم')}</button></td>
-              <td class="ltr">${esc(p.phone || '—')}</td>
-              <td>${p.age ?? '—'} ${p.gender ? `• ${esc(p.gender)}` : ''}</td>
-              <td>${esc(p.doctor || '—')}</td>
-              <td>${displayDate(p.lastVisitDate)} ${p.lastVisitTime ? `<small>${esc(p.lastVisitTime)}</small>`:''}</td>
-              <td><span class="count-badge">${p.visitsCount}</span></td>
-              <td>${p.blacklisted ? '<span class="blacklist-badge">Black List</span>' : '<span class="ok-badge">عادي</span>'}</td>
-              <td class="row-actions">
-                ${archived
-                  ? `<button class="icon-action restore" data-restore="${esc(p.id)}" title="استعادة">↶</button>`
-                  : `<button class="icon-action edit" data-edit="${esc(p.id)}" title="تعديل">✎</button>`
-                }
-              </td>
-            </tr>
-          `).join('') : `<tr><td colspan="8" class="empty-row">لا توجد بيانات</td></tr>`}
-        </tbody>
-      </table>
+    <div class="patient-files-grid">
+      ${rows.length ? rows.map(p => `
+        <article class="patient-file-card ${p.blacklisted ? 'is-blacklisted' : ''}">
+          <button class="patient-file-open patient-open" data-id="${esc(p.id)}" title="فتح ملف المريض">
+            <span class="patient-file-icon">
+              <span class="patient-file-fold"></span>
+              <span class="patient-file-logo">AK</span>
+              <span class="patient-file-lines"></span>
+            </span>
+            <strong>${esc(p.fullName || 'بدون اسم')}</strong>
+            <span class="patient-file-phone ltr">${esc(p.phone || 'بدون رقم')}</span>
+            <small>${p.visitsCount} زيارة ${p.blacklisted ? '• Black List' : ''}</small>
+          </button>
+          <div class="patient-file-actions">
+            ${archived
+              ? `<button class="icon-action restore" data-restore="${esc(p.id)}" title="استعادة">↶</button>`
+              : `<button class="icon-action edit" data-edit="${esc(p.id)}" title="تعديل">✎</button>`
+            }
+          </div>
+        </article>
+      `).join('') : `<div class="empty-block">لا توجد ملفات مرضى</div>`}
     </div>`;
 }
 
@@ -413,25 +572,39 @@ async function renderToday() {
     <section class="card">
       <div class="card-head">
         <div><h2>زيارات اليوم</h2><p>${displayDate(today())} — ${result.totalVisits} زيارة</p></div>
+        <div class="filters">
+          <button class="btn ghost small" id="todayImage">حفظ صورة</button>
+          <button class="btn primary small" id="todayPdf">حفظ PDF</button>
+        </div>
       </div>
-      ${visitTable(result.rows)}
+      ${visitTable(result.rows, true)}
     </section>
   `, 'زيارات اليوم', 'كل الزيارات المسجلة في تاريخ اليوم');
+
+  document.querySelector<HTMLButtonElement>('#todayImage')!.onclick = () =>
+    exportReportFile(result, today(), today(), '', 'png');
+  document.querySelector<HTMLButtonElement>('#todayPdf')!.onclick = () =>
+    exportReportFile(result, today(), today(), '', 'pdf');
 }
 
-function visitTable(rows: Visit[]) {
+function visitTable(rows: Visit[], showPatient = false) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>التاريخ</th><th>الوقت</th><th>نوع الزيارة</th><th>الطبيب</th><th>سعر الكشف</th></tr></thead>
+        <thead><tr>
+          <th>التاريخ</th><th>الوقت</th>
+          ${showPatient ? '<th>المريض</th><th>رقم التليفون</th>' : ''}
+          <th>نوع الزيارة</th><th>الطبيب</th><th>سعر الكشف</th>
+        </tr></thead>
         <tbody>${rows.length ? rows.map(v => `
           <tr>
             <td>${displayDate(v.visitDate)}</td>
             <td class="ltr">${esc(v.visitTime)}</td>
+            ${showPatient ? `<td>${esc(v.patientName || '—')}</td><td class="ltr">${esc(v.patientPhone || '—')}</td>` : ''}
             <td><span class="visit-type-badge">${esc(v.visitType || 'زيارة')}</span></td>
             <td>${esc(v.doctor || '—')}</td>
             <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
-          </tr>`).join('') : `<tr><td colspan="5" class="empty-row">لا توجد زيارات</td></tr>`}
+          </tr>`).join('') : `<tr><td colspan="${showPatient ? 7 : 5}" class="empty-row">لا توجد زيارات</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -480,34 +653,92 @@ async function renderDoctors() {
 }
 
 async function renderReports() {
-  const from = today().slice(0,8) + '01';
+  const now = new Date();
+  const monthFrom = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  const monthLast = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+  const monthTo = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(monthLast).padStart(2,'0')}`;
+
   shell(`
     <section class="card">
-      <div class="card-head"><div><h2>التقارير</h2><p>فلترة الزيارات حسب التاريخ والطبيب</p></div></div>
+      <div class="card-head">
+        <div><h2>التقارير</h2><p>يومي أو شهري أو أي فترة تختارها</p></div>
+        <button class="btn ghost small" id="openExportsFolder">فتح مجلد الملفات</button>
+      </div>
+
+      <div class="report-quick-ranges">
+        <button class="btn ghost small" id="rangeToday">اليوم</button>
+        <button class="btn ghost small" id="rangeMonth">الشهر الحالي</button>
+        <span>أو اختر الفترة يدويًا</span>
+      </div>
+
       <div class="report-filters">
-        <label>من<input id="reportFrom" type="date" value="${from}"></label>
+        <label>من<input id="reportFrom" type="date" value="${monthFrom}"></label>
         <label>إلى<input id="reportTo" type="date" value="${today()}"></label>
         <label>الطبيب<select id="reportDoctor"><option value="">كل الأطباء</option>${doctors.filter(d=>d.active).map(d=>`<option>${esc(d.name)}</option>`).join('')}</select></label>
         <button class="btn primary" id="runReportBtn">عرض التقرير</button>
       </div>
+
+      <div class="report-export-bar">
+        <button class="btn ghost small" id="reportImage">حفظ صورة</button>
+        <button class="btn primary small" id="reportPdf">حفظ PDF</button>
+      </div>
+
       <div id="reportResult" class="report-result"></div>
     </section>
-  `, 'التقارير', 'تقارير الزيارات بدون أي اتصال بالإنترنت');
+  `, 'التقارير', 'ملخص الحالات لأي مدة تختارها');
+
+  let currentResult: ReportResult | null = null;
+
+  const queryValues = () => ({
+    from: (document.querySelector<HTMLInputElement>('#reportFrom')!).value,
+    to: (document.querySelector<HTMLInputElement>('#reportTo')!).value,
+    doctor: (document.querySelector<HTMLSelectElement>('#reportDoctor')!).value
+  });
+
   const run = async () => {
-    const result = await invoke<ReportResult>('run_report', { query: {
-      from: (document.querySelector<HTMLInputElement>('#reportFrom')!).value,
-      to: (document.querySelector<HTMLInputElement>('#reportTo')!).value,
-      doctor: (document.querySelector<HTMLSelectElement>('#reportDoctor')!).value
-    }});
+    const q = queryValues();
+    const result = await invoke<ReportResult>('run_report', { query: q });
+    currentResult = result;
     document.querySelector<HTMLDivElement>('#reportResult')!.innerHTML = `
       <div class="report-stats">
         <div><span>عدد الزيارات</span><strong>${result.totalVisits}</strong></div>
         <div><span>مرضى مختلفون</span><strong>${result.uniquePatients}</strong></div>
+        <div><span>الفترة</span><strong class="small-value">${esc(reportPeriodLabel(q.from, q.to))}</strong></div>
       </div>
-      ${visitTable(result.rows)}
+      ${visitTable(result.rows, true)}
     `;
   };
+
   document.querySelector<HTMLButtonElement>('#runReportBtn')!.onclick = run;
+
+  document.querySelector<HTMLButtonElement>('#rangeToday')!.onclick = async () => {
+    (document.querySelector<HTMLInputElement>('#reportFrom')!).value = today();
+    (document.querySelector<HTMLInputElement>('#reportTo')!).value = today();
+    await run();
+  };
+
+  document.querySelector<HTMLButtonElement>('#rangeMonth')!.onclick = async () => {
+    (document.querySelector<HTMLInputElement>('#reportFrom')!).value = monthFrom;
+    (document.querySelector<HTMLInputElement>('#reportTo')!).value = monthTo;
+    await run();
+  };
+
+  document.querySelector<HTMLButtonElement>('#reportImage')!.onclick = async () => {
+    if (!currentResult) await run();
+    const q = queryValues();
+    if (currentResult) await exportReportFile(currentResult, q.from, q.to, q.doctor, 'png');
+  };
+
+  document.querySelector<HTMLButtonElement>('#reportPdf')!.onclick = async () => {
+    if (!currentResult) await run();
+    const q = queryValues();
+    if (currentResult) await exportReportFile(currentResult, q.from, q.to, q.doctor, 'pdf');
+  };
+
+  document.querySelector<HTMLButtonElement>('#openExportsFolder')!.onclick = async () => {
+    await invoke('open_export_folder');
+  };
+
   await run();
 }
 
@@ -576,6 +807,8 @@ async function openPatient(id: string) {
         </div>
 
         <div class="profile-actions">
+          <button class="btn ghost small" id="patientExportImage">حفظ صورة</button>
+          <button class="btn ghost small" id="patientExportPdf">حفظ PDF</button>
           <button class="btn ghost small" id="editPatientFromDetails">✎ تعديل البيانات</button>
           <button class="btn ${p.blacklisted ? 'ghost' : 'danger-outline'} small" id="toggleBlacklist">
             ${p.blacklisted ? 'إزالة من Black List' : '⛔ إضافة إلى Black List'}
@@ -596,6 +829,11 @@ async function openPatient(id: string) {
   document.querySelector<HTMLDivElement>('#patientModalBackdrop')!.onclick = e => {
     if (e.target === e.currentTarget) close();
   };
+
+  document.querySelector<HTMLButtonElement>('#patientExportImage')!.onclick = () =>
+    exportPatientFile(details, 'png');
+  document.querySelector<HTMLButtonElement>('#patientExportPdf')!.onclick = () =>
+    exportPatientFile(details, 'pdf');
 
   document.querySelector<HTMLButtonElement>('#editPatientFromDetails')!.onclick = () => {
     close();
@@ -647,12 +885,12 @@ async function openPatientRegistrationModal() {
         </div>
         <form id="patientRegisterForm">
           <div class="section-title">بيانات المريض</div>
-          <div class="form-grid">
-            <label class="span2">الاسم بالكامل<input name="fullName"></label>
-            <label class="span2">رقم التليفون<input class="ltr" name="phone" inputmode="tel"></label>
-            <label>السن<input name="age" type="number" min="0" max="130"></label>
-            <label>النوع<select name="gender"><option value="">—</option><option>ذكر</option><option>أنثى</option></select></label>
-            <label class="span2">العنوان (اختياري)<input name="address"></label>
+          <div class="patient-register-grid">
+            <label class="field-name">الاسم بالكامل<input name="fullName"></label>
+            <label class="field-phone">رقم التليفون<input class="ltr" name="phone" inputmode="tel"></label>
+            <label class="field-age">السن<input name="age" type="number" min="0" max="130"></label>
+            <label class="field-gender">النوع<select name="gender"><option value="">—</option><option>ذكر</option><option>أنثى</option></select></label>
+            <label class="field-address">العنوان (اختياري)<input name="address"></label>
           </div>
           <div class="form-actions">
             <button type="button" class="btn ghost" id="cancelCase">إلغاء</button>

@@ -172,3 +172,317 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
 .icon-action.danger{
   color:#b3261e;
 }
+
+
+/* ===== V3.6 file cards + exports ===== */
+.main{
+  position:relative;
+  isolation:isolate;
+}
+
+.main > *:not(.system-watermark){
+  position:relative;
+  z-index:1;
+}
+
+/* Uses the exact uploaded logo image, but only reveals the AK emblem as watermark. */
+.system-watermark{
+  position:absolute;
+  z-index:0;
+  pointer-events:none;
+  width:360px;
+  height:190px;
+  left:50%;
+  top:340px;
+  transform:translateX(-50%);
+  opacity:.045;
+  background-image:url('/clinic-logo-header.jpg');
+  background-repeat:no-repeat;
+  background-size:360px auto;
+  background-position:center -154px;
+  filter:grayscale(.08);
+}
+
+.patient-files-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(175px,1fr));
+  gap:16px;
+  padding:5px 0;
+}
+
+.patient-file-card{
+  position:relative;
+  min-height:225px;
+  background:#fff;
+  border:1px solid #dfe7ee;
+  border-radius:15px;
+  box-shadow:0 7px 22px #17334e0c;
+  overflow:hidden;
+}
+
+.patient-file-card.is-blacklisted{
+  border-color:#eababa;
+  background:#fffafa;
+}
+
+.patient-file-open{
+  width:100%;
+  min-height:190px;
+  border:0;
+  background:transparent;
+  padding:17px 12px 10px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  text-align:center;
+  color:#18344f;
+}
+
+.patient-file-open:hover{
+  background:#f9fcfe;
+}
+
+.patient-file-icon{
+  position:relative;
+  width:72px;
+  height:88px;
+  border:2px solid #88a7b7;
+  border-radius:8px;
+  background:linear-gradient(160deg,#ffffff,#eef7f8);
+  box-shadow:0 8px 18px #18384c14;
+  margin-bottom:12px;
+}
+
+.patient-file-fold{
+  position:absolute;
+  left:-2px;
+  top:-2px;
+  width:23px;
+  height:23px;
+  background:linear-gradient(225deg,#fff 0 48%,#9bb8c5 49% 52%,#dcebed 53%);
+  border-top-left-radius:8px;
+}
+
+.patient-file-logo{
+  position:absolute;
+  inset:24px 0 auto;
+  font-size:24px;
+  font-weight:900;
+  letter-spacing:-2px;
+  color:#0a7583;
+}
+
+.patient-file-lines{
+  position:absolute;
+  bottom:14px;
+  right:14px;
+  left:14px;
+  height:2px;
+  background:#b4c7d0;
+  box-shadow:0 -8px #c5d4db,0 -16px #d7e1e5;
+}
+
+.patient-file-open strong{
+  width:100%;
+  font-size:14px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.patient-file-phone{
+  margin-top:5px;
+  color:#52657a;
+  font-size:12px;
+}
+
+.patient-file-open small{
+  margin-top:7px;
+  color:#8190a2;
+  font-size:10px;
+}
+
+.patient-file-actions{
+  position:absolute;
+  left:9px;
+  bottom:9px;
+}
+
+.patient-register-grid{
+  display:grid;
+  grid-template-columns:minmax(210px,1.5fr) 220px 105px 130px;
+  gap:11px;
+  align-items:end;
+}
+
+.patient-register-grid label{
+  display:grid;
+  gap:5px;
+  color:#53637a;
+  font-size:12px;
+}
+
+.patient-register-grid .field-address{
+  grid-column:1/-1;
+}
+
+.report-quick-ranges,
+.report-export-bar{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:11px;
+}
+
+.report-quick-ranges span{
+  color:#7a899c;
+  font-size:11px;
+}
+
+.report-stats .small-value{
+  font-size:14px;
+  padding-top:4px;
+}
+
+.export-capture-host{
+  position:fixed;
+  left:-20000px;
+  top:0;
+  width:1100px;
+  background:#fff;
+  color:#12263d;
+  direction:rtl;
+  z-index:-1;
+}
+
+.export-document{
+  width:1100px;
+  box-sizing:border-box;
+  background:#fff;
+  padding:46px 52px;
+  font-family:Arial,"Segoe UI",Tahoma,sans-serif;
+}
+
+.export-brand{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+
+.export-brand h1{
+  margin:0;
+  font-size:30px;
+  color:#0a2342;
+}
+
+.export-brand p{
+  margin:5px 0 0;
+  font-size:16px;
+  font-weight:700;
+  color:#0b8792;
+}
+
+.export-ak-mark{
+  width:76px;
+  height:76px;
+  display:grid;
+  place-items:center;
+  border:2px solid #72a9b0;
+  border-radius:50%;
+  font-size:27px;
+  font-weight:900;
+  color:#087987;
+  background:#f5fbfb;
+}
+
+.export-rule{
+  height:2px;
+  background:#dce7ec;
+  margin:22px 0;
+}
+
+.export-title h2{
+  margin:0;
+  font-size:24px;
+}
+
+.export-title p{
+  color:#718196;
+  margin:6px 0 22px;
+}
+
+.export-patient-grid,
+.export-summary{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:10px;
+  margin-bottom:22px;
+}
+
+.export-patient-grid>div,
+.export-summary>div{
+  padding:11px 13px;
+  border:1px solid #dfe8ee;
+  border-radius:9px;
+  background:#f9fbfc;
+}
+
+.export-patient-grid .wide{
+  grid-column:span 2;
+}
+
+.export-patient-grid span,
+.export-summary span{
+  display:block;
+  color:#78879a;
+  font-size:11px;
+  margin-bottom:5px;
+}
+
+.export-patient-grid strong,
+.export-summary strong{
+  font-size:14px;
+}
+
+.export-section-heading{
+  margin:22px 0 10px;
+  font-size:18px;
+}
+
+.export-table{
+  width:100%;
+  border-collapse:collapse;
+  white-space:normal;
+  font-size:12px;
+}
+
+.export-table th{
+  background:#edf4f6;
+  color:#263c53;
+  padding:9px;
+  border:1px solid #d7e3e8;
+}
+
+.export-table td{
+  padding:9px;
+  border:1px solid #e0e8ec;
+  vertical-align:top;
+}
+
+.export-footer{
+  margin-top:26px;
+  padding-top:12px;
+  border-top:1px solid #e1e8ed;
+  text-align:center;
+  color:#8a97a7;
+  font-size:10px;
+}
+
+@media(max-width:1100px){
+  .patient-register-grid{
+    grid-template-columns:1fr 1fr;
+  }
+  .patient-register-grid .field-address{
+    grid-column:1/-1;
+  }
+}
