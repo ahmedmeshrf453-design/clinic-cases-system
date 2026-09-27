@@ -1,0 +1,121 @@
+name: Clinic Cases Windows V3 Installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure NSIS installer and desktop shortcut
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/windows src-tauri/icons
+
+          test -f src-tauri/icons/icon.ico
+
+          cat > src-tauri/windows/hooks.nsh <<'EOF'
+          !macro NSIS_HOOK_POSTINSTALL
+            CreateShortCut "$DESKTOP\Clinic Cases System.lnk" "$INSTDIR\clinic-cases-system.exe" "" "$INSTDIR\clinic-cases-system.exe" 0 SW_SHOWNORMAL "" "Clinic Cases System"
+          !macroend
+
+          !macro NSIS_HOOK_PREUNINSTALL
+            Delete "$DESKTOP\Clinic Cases System.lnk"
+          !macroend
+          EOF
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p = Path("src-tauri/tauri.conf.json")
+          cfg = json.loads(p.read_text(encoding="utf-8"))
+
+          cfg["productName"] = "Clinic Cases System"
+          cfg["version"] = "3.0.0"
+
+          bundle = cfg.setdefault("bundle", {})
+          bundle["active"] = True
+          bundle["targets"] = ["nsis"]
+          bundle["icon"] = ["icons/icon.ico"]
+
+          windows = bundle.setdefault("windows", {})
+          windows["nsis"] = {
+              "installerIcon": "icons/icon.ico",
+              "uninstallerIcon": "icons/icon.ico",
+              "installerHooks": "./windows/hooks.nsh",
+              "installMode": "currentUser",
+              "startMenuFolder": "Clinic Cases System"
+          }
+
+          p.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(p.read_text(encoding="utf-8"))
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Validate frontend
+        shell: bash
+        run: npm run build
+
+      - name: Build NSIS Setup EXE
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify installer and portable EXE
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "NSIS setup EXE was not generated" }
+
+          $portable = "src-tauri\target\release\clinic-cases-system.exe"
+          if (-not (Test-Path $portable)) { throw "Portable EXE was not generated" }
+
+          Write-Host "Installer:" $installer.FullName
+          Write-Host "Portable:" $portable
+
+      - name: Commit installer configuration only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/tauri.conf.json src-tauri/windows/hooks.nsh .gitignore
+          if git diff --cached --quiet; then
+            echo "No installer config changes to commit"
+          else
+            git commit -m "V3: add Windows installer with desktop shortcut"
+            git push
+          fi
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V3-Installer
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Upload portable EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V3-Portable
+          path: src-tauri/target/release/clinic-cases-system.exe
+          if-no-files-found: error
