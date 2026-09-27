@@ -222,7 +222,7 @@ async function captureAndSaveExport(html: string, baseName: string, format: Expo
     const saved = await invoke<string>('save_export', {
       input: { fileName, base64Data }
     });
-    toast(`تم الحفظ على الجهاز: ${saved}`);
+    toast(`تم تنزيل الملف بنجاح في Downloads: ${saved}`);
   } catch (err) {
     toast(`تعذر إنشاء الملف: ${String(err)}`, 'error');
   } finally {
@@ -291,8 +291,8 @@ function ensureCaseContextMenu() {
     <div id="caseContextMenu" class="case-context-menu" dir="rtl">
       <button data-action="open">فتح ملف المريض</button>
       <button data-action="edit">تعديل البيانات</button>
-      <button data-action="pdf">طباعة / حفظ PDF</button>
-      <button data-action="png">حفظ صورة</button>
+      <button data-action="pdf">طباعة / تحميل PDF</button>
+      <button data-action="png">تحميل صورة</button>
       <button data-action="copy">نسخ رقم التليفون</button>
     </div>
   `);
@@ -684,8 +684,8 @@ async function renderToday() {
           <p>اليوم التشغيلي يبدأ 11:00 صباحًا • ${displayDate(dayKey)} • ${result.totalVisits} حالة</p>
         </div>
         <div class="filters">
-          <button class="btn ghost small" id="todayImage">حفظ صورة</button>
-          <button class="btn primary small" id="todayPdf">حفظ PDF</button>
+          <button class="btn ghost small" id="todayImage">تحميل صورة</button>
+          <button class="btn primary small" id="todayPdf">تحميل PDF</button>
         </div>
       </div>
 
@@ -810,7 +810,7 @@ async function renderReports() {
     <section class="card">
       <div class="card-head">
         <div><h2>التقارير</h2><p>يومي أو شهري أو أي فترة تختارها</p></div>
-        <button class="btn ghost small" id="openExportsFolder">فتح مجلد الملفات</button>
+        <button class="btn ghost small" id="openExportsFolder">فتح مجلد التحميلات</button>
       </div>
 
       <div class="report-quick-ranges">
@@ -827,8 +827,8 @@ async function renderReports() {
       </div>
 
       <div class="report-export-bar">
-        <button class="btn ghost small" id="reportImage">حفظ صورة</button>
-        <button class="btn primary small" id="reportPdf">حفظ PDF</button>
+        <button class="btn ghost small" id="reportImage">تحميل صورة</button>
+        <button class="btn primary small" id="reportPdf">تحميل PDF</button>
       </div>
 
       <div id="reportResult" class="report-result"></div>
@@ -956,8 +956,8 @@ async function openPatient(id: string) {
         </div>
 
         <div class="profile-actions">
-          <button class="btn ghost small" id="patientExportImage">حفظ صورة</button>
-          <button class="btn ghost small" id="patientExportPdf">حفظ PDF</button>
+          <button class="btn ghost small" id="patientExportImage">تحميل صورة</button>
+          <button class="btn ghost small" id="patientExportPdf">تحميل PDF</button>
           <button class="btn ghost small" id="editPatientFromDetails">✎ تعديل البيانات</button>
           <button class="btn ${p.blacklisted ? 'ghost' : 'danger-outline'} small" id="toggleBlacklist">
             ${p.blacklisted ? 'إزالة من Black List' : '⛔ إضافة إلى Black List'}

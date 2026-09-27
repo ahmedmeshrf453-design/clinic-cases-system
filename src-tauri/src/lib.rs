@@ -690,8 +690,27 @@ fn save_export(state: State<AppState>, input: SaveExportInput) -> Result<String,
         .decode(input.base64_data.trim())
         .map_err(|e| format!("تعذر قراءة الملف: {}", e))?;
 
-    let target = state.export_dir.join(safe_name);
+    let requested = PathBuf::from(safe_name.trim());
+    let stem = requested.file_stem()
+        .and_then(|x| x.to_str())
+        .unwrap_or("clinic-export");
+    let ext = requested.extension()
+        .and_then(|x| x.to_str())
+        .unwrap_or("");
+
+    let stamp = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+    let unique_name = if ext.is_empty() {
+        format!("{} - {}", stem, stamp)
+    } else {
+        format!("{} - {}.{}", stem, stamp, ext)
+    };
+
+    let target = state.export_dir.join(unique_name);
     fs::write(&target, bytes).map_err(|e|e.to_string())?;
+
+    let select_arg = format!("/select,{}", target.to_string_lossy());
+    let _ = Command::new("explorer.exe").arg(select_arg).spawn();
+
     Ok(target.to_string_lossy().to_string())
 }
 
@@ -804,7 +823,8 @@ pub fn run(){
         let backup_dir=documents_dir.join("Clinic Cases Backups");
         fs::create_dir_all(&backup_dir)?;
 
-        let export_dir=documents_dir.join("Clinic Cases Exports");
+        let downloads_dir=app.path().download_dir().unwrap_or_else(|_|documents_dir.clone());
+        let export_dir=downloads_dir.join("تسجيل حالات عيادات العقاد");
         fs::create_dir_all(&export_dir)?;
 
         let state=AppState{db_path,backup_dir,export_dir};
