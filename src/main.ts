@@ -217,15 +217,16 @@ function updateClock() {
   const zone = document.querySelector<HTMLElement>('#clockZone');
 
   if (t) {
-    t.textContent = d.toLocaleTimeString('ar-EG', {
+    t.textContent = d.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit'
+      second: '2-digit',
+      hour12: true
     });
   }
 
   if (dt) {
-    dt.textContent = d.toLocaleDateString('ar-EG', {
+    dt.textContent = d.toLocaleDateString('en-GB', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
@@ -240,7 +241,7 @@ function updateClock() {
 
   if (zone) {
     const systemZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Windows';
-    zone.textContent = `متزامن مع Windows • ${systemZone} • ${timezoneOffsetLabel(d)}`;
+    zone.textContent = `Windows Sync • ${systemZone} • ${timezoneOffsetLabel(d)}`;
   }
 }
 

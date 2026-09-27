@@ -76,3 +76,48 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
   .live-clock-panel{min-width:210px}
   .connection-panel{min-width:180px}
 }
+
+
+/* ===== V3.2.1 logo + English time ===== */
+.clinic-header{
+  min-height:146px;
+}
+
+.clinic-identity{
+  gap:18px;
+}
+
+.clinic-logo{
+  width:138px;
+  height:138px;
+  object-fit:contain;
+  object-position:center;
+  background:#fff;
+  border-radius:12px;
+  padding:2px;
+}
+
+.live-clock-panel{
+  min-width:270px;
+}
+
+.clock-main{
+  font-size:30px;
+  letter-spacing:.2px;
+}
+
+.clock-date{
+  direction:ltr;
+  font-variant-numeric:tabular-nums;
+}
+
+.clock-zone{
+  direction:ltr;
+}
+
+@media(max-width:1250px){
+  .clinic-header{min-height:128px}
+  .clinic-logo{width:112px;height:112px}
+  .live-clock-panel{min-width:220px}
+  .clock-main{font-size:26px}
+}
