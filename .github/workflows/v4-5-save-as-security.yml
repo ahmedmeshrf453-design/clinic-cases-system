@@ -1,0 +1,219 @@
+name: Clinic Cases V4.5 Save As Security Hardening
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply V4.5 Save As and security hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > _patch.b64 <<'PATCHEOF'
+          CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAppbXBvcnQganNvbgoKbWFpbl9wYXRoID0gUGF0aCgnc3JjL21haW4udHMnKQpzID0g
+          bWFpbl9wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0ndXRmLTgnKQoKZGlhbG9nX2ltcG9ydCA9ICJpbXBvcnQgeyBzYXZlIGFzIHNh
+          dmVEaWFsb2cgfSBmcm9tICdAdGF1cmktYXBwcy9wbHVnaW4tZGlhbG9nJzsiCmlmIGRpYWxvZ19pbXBvcnQgbm90IGluIHM6CiAg
+          ICBhbmNob3IgPSAiaW1wb3J0IHsgaW52b2tlIH0gZnJvbSAnQHRhdXJpLWFwcHMvYXBpL2NvcmUnOyIKICAgIGlmIGFuY2hvciBu
+          b3QgaW4gczoKICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KCdUYXVyaSBjb3JlIGltcG9ydCBtYXJrZXIgbm90IGZvdW5kJykKICAg
+          IHMgPSBzLnJlcGxhY2UoYW5jaG9yLCBhbmNob3IgKyAnXG4nICsgZGlhbG9nX2ltcG9ydCwgMSkKCm9sZCA9ICcnJyAgICBjb25z
+          dCBzYXZlZCA9IGF3YWl0IGludm9rZTxzdHJpbmc+KCdzYXZlX2V4cG9ydCcsIHsKICAgICAgaW5wdXQ6IHsgZmlsZU5hbWUsIGJh
+          c2U2NERhdGEgfQogICAgfSk7CiAgICB0b2FzdChg2KrZhSDYqtmG2LLZitmEINin2YTZhdmE2YEg2KjZhtis2KfYrSDZgdmKIERv
+          d25sb2FkczogJHtzYXZlZH1gKTsnJycKCm5ldyA9ICcnJyAgICBjb25zdCBzZWxlY3RlZFBhdGggPSBhd2FpdCBzYXZlRGlhbG9n
+          KHsKICAgICAgdGl0bGU6ICfYp9iu2KrZitin2LEg2YXZg9in2YYg2K3Zgdi4INin2YTZhdmE2YEnLAogICAgICBkZWZhdWx0UGF0
+          aDogZmlsZU5hbWUsCiAgICAgIGZpbHRlcnM6IFt7CiAgICAgICAgbmFtZTogZm9ybWF0ID09PSAncGRmJyA/ICdQREYnIDogJ1BO
+          RycsCiAgICAgICAgZXh0ZW5zaW9uczogW2Zvcm1hdF0KICAgICAgfV0KICAgIH0pOwoKICAgIGlmICghc2VsZWN0ZWRQYXRoKSB7
+          CiAgICAgIHRvYXN0KCfYqtmFINil2YTYutin2KEg2KfZhNit2YHYuCcpOwogICAgICByZXR1cm47CiAgICB9CgogICAgY29uc3Qg
+          c2F2ZWQgPSBhd2FpdCBpbnZva2U8c3RyaW5nPignc2F2ZV9leHBvcnQnLCB7CiAgICAgIGlucHV0OiB7IGZpbGVOYW1lLCBiYXNl
+          NjREYXRhLCB0YXJnZXRQYXRoOiBzZWxlY3RlZFBhdGggfQogICAgfSk7CiAgICB0b2FzdChg2KrZhSDYrdmB2Lgg2KfZhNmF2YTZ
+          gSDYqNmG2KzYp9itOiAke3NhdmVkfWApOycnJwoKaWYgb2xkIG5vdCBpbiBzOgogICAgcmFpc2UgU3lzdGVtRXhpdCgnQ3VycmVu
+          dCBleHBvcnQgc2F2ZSBibG9jayBub3QgZm91bmQnKQpzID0gcy5yZXBsYWNlKG9sZCwgbmV3LCAxKQptYWluX3BhdGgud3JpdGVf
+          dGV4dChzLCBlbmNvZGluZz0ndXRmLTgnKQoKbGliX3BhdGggPSBQYXRoKCdzcmMtdGF1cmkvc3JjL2xpYi5ycycpCnIgPSBsaWJf
+          cGF0aC5yZWFkX3RleHQoZW5jb2Rpbmc9J3V0Zi04JykKCm9sZCA9ICcnJ3N0cnVjdCBTYXZlRXhwb3J0SW5wdXQgewogICAgZmls
+          ZV9uYW1lOiBTdHJpbmcsCiAgICBiYXNlNjRfZGF0YTogU3RyaW5nLAp9JycnCm5ldyA9ICcnJ3N0cnVjdCBTYXZlRXhwb3J0SW5w
+          dXQgewogICAgZmlsZV9uYW1lOiBTdHJpbmcsCiAgICBiYXNlNjRfZGF0YTogU3RyaW5nLAogICAgdGFyZ2V0X3BhdGg6IFN0cmlu
+          ZywKfScnJwppZiBvbGQgbm90IGluIHI6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCdTYXZlRXhwb3J0SW5wdXQgbWFya2VyIG5vdCBm
+          b3VuZCcpCnIgPSByLnJlcGxhY2Uob2xkLCBuZXcsIDEpCgpzdGFydCA9IHIuaW5kZXgoJyNbdGF1cmk6OmNvbW1hbmRdXG5mbiBy
+          ZXN0b3JlX2JhY2t1cCgnKQplbmQgPSByLmluZGV4KCdcbiNbdGF1cmk6OmNvbW1hbmRdXG5mbiBzYXZlX2V4cG9ydCcsIHN0YXJ0
+          KQpyZXN0b3JlX2ZuID0gJycnI1t0YXVyaTo6Y29tbWFuZF0KZm4gcmVzdG9yZV9iYWNrdXAoc3RhdGU6IFN0YXRlPEFwcFN0YXRl
+          PiwgcGF0aDogU3RyaW5nKSAtPiBSZXN1bHQ8KCksU3RyaW5nPnsKICAgIGxldCBiYWNrdXBfcm9vdCA9IGZzOjpjYW5vbmljYWxp
+          emUoJnN0YXRlLmJhY2t1cF9kaXIpCiAgICAgICAgLm1hcF9lcnIofF98ICLYqti52LDYsSDYp9mE2YjYtdmI2YQg2KXZhNmJINmF
+          2KzZhNivINin2YTZhtiz2K4g2KfZhNin2K3YqtmK2KfYt9mK2KkiLnRvX3N0cmluZygpKT87CgogICAgbGV0IHNvdXJjZSA9IGZz
+          OjpjYW5vbmljYWxpemUoUGF0aEJ1Zjo6ZnJvbShwYXRoKSkKICAgICAgICAubWFwX2Vycih8X3wgItmF2YTZgSDYp9mE2YbYs9iu
+          2Kkg2LrZitixINmF2YjYrNmI2K8iLnRvX3N0cmluZygpKT87CgogICAgaWYgIXNvdXJjZS5zdGFydHNfd2l0aCgmYmFja3VwX3Jv
+          b3QpIHsKICAgICAgICByZXR1cm4gRXJyKCLZhNij2LPYqNin2Kgg2KfZhNij2YXYp9mGINmK2YXZg9mGINin2LPYqti52KfYr9ip
+          INin2YTZhtiz2K4g2KfZhNmF2YjYrNmI2K/YqSDYr9in2K7ZhCDZhdis2YTYryDYp9mE2YbYs9iuINin2YTYp9it2KrZitin2LfZ
+          itipINmB2YLYtyIuaW50bygpKTsKICAgIH0KCiAgICBpZiBzb3VyY2UuZXh0ZW5zaW9uKCkuYW5kX3RoZW4ofHh8IHgudG9fc3Ry
+          KCkpLm1hcCh8eHwgeC5lcV9pZ25vcmVfYXNjaWlfY2FzZSgiZGIiKSkgIT0gU29tZSh0cnVlKSB7CiAgICAgICAgcmV0dXJuIEVy
+          cigi2KfZhdiq2K/Yp9ivINmF2YTZgSDYp9mE2YbYs9iu2Kkg2LrZitixINi12KfZhNitIi5pbnRvKCkpOwogICAgfQoKICAgIGxl
+          dCB0ZXN0PUNvbm5lY3Rpb246Om9wZW4oJnNvdXJjZSkubWFwX2Vycih8X3wi2YXZhNmBINin2YTZhtiz2K7YqSDYutmK2LEg2LXY
+          p9mE2K0iLnRvX3N0cmluZygpKT87CiAgICBsZXQgb2s6T3B0aW9uPFN0cmluZz49dGVzdC5xdWVyeV9yb3coCiAgICAgICAgIlNF
+          TEVDVCBuYW1lIEZST00gc3FsaXRlX21hc3RlciBXSEVSRSB0eXBlPSd0YWJsZScgQU5EIG5hbWU9J3BhdGllbnRzJyIsCiAgICAg
+          ICAgW10sCiAgICAgICAgfHJ8ci5nZXQoMCkKICAgICkub3B0aW9uYWwoKS5tYXBfZXJyKHxlfGUudG9fc3RyaW5nKCkpPzsKICAg
+          IGRyb3AodGVzdCk7CgogICAgaWYgb2suaXNfbm9uZSgpewogICAgICAgIHJldHVybiBFcnIoItin2YTZhdmE2YEg2YTZitizINmG
+          2LPYrtipINi12KfZhNit2Kkg2YTZhNmG2LjYp9mFIi5pbnRvKCkpOwogICAgfQoKICAgIGxldCBzYWZldHk9c3RhdGUuYmFja3Vw
+          X2Rpci5qb2luKGZvcm1hdCEoCiAgICAgICAgImJlZm9yZS1yZXN0b3JlLXt9LmRiIiwKICAgICAgICBMb2NhbDo6bm93KCkuZm9y
+          bWF0KCIlWS0lbS0lZF8lSC0lTS0lUyIpCiAgICApKTsKICAgIGNoZWNrcG9pbnRfYW5kX2NvcHkoJnN0YXRlLCZzYWZldHkpPzsK
+          CiAgICBsZXQgd2FsPVBhdGhCdWY6OmZyb20oZm9ybWF0ISgie30td2FsIixzdGF0ZS5kYl9wYXRoLnRvX3N0cmluZ19sb3NzeSgp
+          KSk7CiAgICBsZXQgc2htPVBhdGhCdWY6OmZyb20oZm9ybWF0ISgie30tc2htIixzdGF0ZS5kYl9wYXRoLnRvX3N0cmluZ19sb3Nz
+          eSgpKSk7CiAgICBsZXQgXz1mczo6cmVtb3ZlX2ZpbGUoJndhbCk7CiAgICBsZXQgXz1mczo6cmVtb3ZlX2ZpbGUoJnNobSk7Cgog
+          ICAgZnM6OmNvcHkoJnNvdXJjZSwmc3RhdGUuZGJfcGF0aCkubWFwX2Vycih8ZXxlLnRvX3N0cmluZygpKT87CiAgICBpbml0X2Ri
+          KCZzdGF0ZS5kYl9wYXRoKT87CiAgICBPaygoKSkKfQonJycKciA9IHJbOnN0YXJ0XSArIHJlc3RvcmVfZm4gKyByW2VuZDpdCgpz
+          dGFydCA9IHIuaW5kZXgoJyNbdGF1cmk6OmNvbW1hbmRdXG5mbiBzYXZlX2V4cG9ydCgnKQplbmQgPSByLmluZGV4KCdcbiNbdGF1
+          cmk6OmNvbW1hbmRdXG5mbiBvcGVuX2V4cG9ydF9mb2xkZXInLCBzdGFydCkKc2F2ZV9mbiA9ICcnJyNbdGF1cmk6OmNvbW1hbmRd
+          CmZuIHNhdmVfZXhwb3J0KF9zdGF0ZTogU3RhdGU8QXBwU3RhdGU+LCBpbnB1dDogU2F2ZUV4cG9ydElucHV0KSAtPiBSZXN1bHQ8
+          U3RyaW5nLFN0cmluZz57CiAgICBjb25zdCBNQVhfRVhQT1JUX0JZVEVTOiB1c2l6ZSA9IDMwICogMTAyNCAqIDEwMjQ7CiAgICBj
+          b25zdCBNQVhfQkFTRTY0X0NIQVJTOiB1c2l6ZSA9IDQyICogMTAyNCAqIDEwMjQ7CgogICAgaWYgaW5wdXQudGFyZ2V0X3BhdGgu
+          dHJpbSgpLmlzX2VtcHR5KCkgewogICAgICAgIHJldHVybiBFcnIoItmE2YUg2YrYqtmFINin2K7YqtmK2KfYsSDZhdmD2KfZhiDZ
+          hNmE2K3Zgdi4Ii5pbnRvKCkpOwogICAgfQoKICAgIGlmIGlucHV0LmJhc2U2NF9kYXRhLmxlbigpID4gTUFYX0JBU0U2NF9DSEFS
+          UyB7CiAgICAgICAgcmV0dXJuIEVycigi2K3YrNmFINin2YTZhdmE2YEg2KPZg9io2LEg2YXZhiDYp9mE2K3YryDYp9mE2YXYs9mF
+          2YjYrSIuaW50bygpKTsKICAgIH0KCiAgICBsZXQgaW50ZW5kZWRfcGF0aCA9IFBhdGhCdWY6OmZyb20oaW5wdXQuZmlsZV9uYW1l
+          LnRyaW0oKSk7CiAgICBsZXQgaW50ZW5kZWRfZXh0ID0gaW50ZW5kZWRfcGF0aC5leHRlbnNpb24oKQogICAgICAgIC5hbmRfdGhl
+          bih8eHwgeC50b19zdHIoKSkKICAgICAgICAudW53cmFwX29yKCIiKQogICAgICAgIC50b19hc2NpaV9sb3dlcmNhc2UoKTsKCiAg
+          ICBpZiBpbnRlbmRlZF9leHQgIT0gInBkZiIgJiYgaW50ZW5kZWRfZXh0ICE9ICJwbmciIHsKICAgICAgICByZXR1cm4gRXJyKCLZ
+          htmI2Lkg2KfZhNmF2YTZgSDYutmK2LEg2YXYs9mF2YjYrSIuaW50bygpKTsKICAgIH0KCiAgICBsZXQgdGFyZ2V0ID0gUGF0aEJ1
+          Zjo6ZnJvbShpbnB1dC50YXJnZXRfcGF0aC50cmltKCkpOwoKICAgIGlmIHRhcmdldC5maWxlX25hbWUoKS5pc19ub25lKCkgewog
+          ICAgICAgIHJldHVybiBFcnIoItmF2LPYp9ixINin2YTYrdmB2Lgg2LrZitixINi12KfZhNitIi5pbnRvKCkpOwogICAgfQoKICAg
+          IGxldCB0YXJnZXRfZXh0ID0gdGFyZ2V0LmV4dGVuc2lvbigpCiAgICAgICAgLmFuZF90aGVuKHx4fCB4LnRvX3N0cigpKQogICAg
+          ICAgIC51bndyYXBfb3IoIiIpCiAgICAgICAgLnRvX2FzY2lpX2xvd2VyY2FzZSgpOwoKICAgIGlmIHRhcmdldF9leHQgIT0gaW50
+          ZW5kZWRfZXh0IHsKICAgICAgICByZXR1cm4gRXJyKCLYp9mF2KrYr9in2K8g2KfZhNmF2YTZgSDZhNinINmK2LfYp9io2YIg2YbZ
+          iNi5INin2YTZhdmE2YEg2KfZhNiw2Yog2YrYqtmFINit2YHYuNmHIi5pbnRvKCkpOwogICAgfQoKICAgIGxldCBwYXJlbnQgPSB0
+          YXJnZXQucGFyZW50KCkKICAgICAgICAub2tfb3JfZWxzZSh8fCAi2YXYs9in2LEg2KfZhNit2YHYuCDYutmK2LEg2LXYp9mE2K0i
+          LnRvX3N0cmluZygpKT87CgogICAgaWYgIXBhcmVudC5leGlzdHMoKSB8fCAhcGFyZW50LmlzX2RpcigpIHsKICAgICAgICByZXR1
+          cm4gRXJyKCLYp9mE2YXYrNmE2K8g2KfZhNmF2K7Yqtin2LEg2LrZitixINmF2YjYrNmI2K8iLmludG8oKSk7CiAgICB9CgogICAg
+          bGV0IGJ5dGVzID0gZ2VuZXJhbF9wdXJwb3NlOjpTVEFOREFSRAogICAgICAgIC5kZWNvZGUoaW5wdXQuYmFzZTY0X2RhdGEudHJp
+          bSgpKQogICAgICAgIC5tYXBfZXJyKHxffCAi2KjZitin2YbYp9iqINin2YTZhdmE2YEg2LrZitixINi12KfZhNit2KkiLnRvX3N0
+          cmluZygpKT87CgogICAgaWYgYnl0ZXMuaXNfZW1wdHkoKSB8fCBieXRlcy5sZW4oKSA+IE1BWF9FWFBPUlRfQllURVMgewogICAg
+          ICAgIHJldHVybiBFcnIoItit2KzZhSDYp9mE2YXZhNmBINi62YrYsSDYtdin2YTYrSIuaW50bygpKTsKICAgIH0KCiAgICBsZXQg
+          c2lnbmF0dXJlX29rID0gbWF0Y2ggaW50ZW5kZWRfZXh0LmFzX3N0cigpIHsKICAgICAgICAicGRmIiA9PiBieXRlcy5zdGFydHNf
+          d2l0aChiIiVQREYtIiksCiAgICAgICAgInBuZyIgPT4gYnl0ZXMuc3RhcnRzX3dpdGgoJlsweDg5LCBiJ1AnLCBiJ04nLCBiJ0cn
+          LCAweDBELCAweDBBLCAweDFBLCAweDBBXSksCiAgICAgICAgXyA9PiBmYWxzZSwKICAgIH07CgogICAgaWYgIXNpZ25hdHVyZV9v
+          ayB7CiAgICAgICAgcmV0dXJuIEVycigi2YXYrdiq2YjZiSDYp9mE2YXZhNmBINmE2Kcg2YrYt9in2KjZgiDZhtmI2LnZhyIuaW50
+          bygpKTsKICAgIH0KCiAgICBmczo6d3JpdGUoJnRhcmdldCwgJmJ5dGVzKS5tYXBfZXJyKHxlfCBmb3JtYXQhKCLYqti52LDYsSDY
+          rdmB2Lgg2KfZhNmF2YTZgToge30iLCBlKSk/OwoKICAgIGxldCBzZWxlY3RfYXJnID0gZm9ybWF0ISgiL3NlbGVjdCx7fSIsIHRh
+          cmdldC50b19zdHJpbmdfbG9zc3koKSk7CiAgICBsZXQgXyA9IENvbW1hbmQ6Om5ldygiZXhwbG9yZXIuZXhlIikuYXJnKHNlbGVj
+          dF9hcmcpLnNwYXduKCk7CgogICAgT2sodGFyZ2V0LnRvX3N0cmluZ19sb3NzeSgpLnRvX3N0cmluZygpKQp9CicnJwpyID0gcls6
+          c3RhcnRdICsgc2F2ZV9mbiArIHJbZW5kOl0KCm9sZF9wcmFnbWEgPSAnY29ubi5leGVjdXRlX2JhdGNoKCJQUkFHTUEgZm9yZWln
+          bl9rZXlzPU9OOyBQUkFHTUEgam91cm5hbF9tb2RlPVdBTDsgUFJBR01BIGJ1c3lfdGltZW91dD0zMDAwOyIpJwpuZXdfcHJhZ21h
+          ID0gJ2Nvbm4uZXhlY3V0ZV9iYXRjaCgiUFJBR01BIGZvcmVpZ25fa2V5cz1PTjsgUFJBR01BIGpvdXJuYWxfbW9kZT1XQUw7IFBS
+          QUdNQSBidXN5X3RpbWVvdXQ9MzAwMDsgUFJBR01BIHRydXN0ZWRfc2NoZW1hPU9GRjsgUFJBR01BIHNlY3VyZV9kZWxldGU9T047
+          IiknCmlmIG9sZF9wcmFnbWEgbm90IGluIHI6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCdTUUxpdGUgcHJhZ21hIG1hcmtlciBub3Qg
+          Zm91bmQnKQpyID0gci5yZXBsYWNlKG9sZF9wcmFnbWEsIG5ld19wcmFnbWEsIDEpCgpidWlsZGVyID0gJ3RhdXJpOjpCdWlsZGVy
+          OjpkZWZhdWx0KCknCmlmICcucGx1Z2luKHRhdXJpX3BsdWdpbl9kaWFsb2c6OmluaXQoKSknIG5vdCBpbiByOgogICAgaWYgYnVp
+          bGRlciBub3QgaW4gcjoKICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KCdUYXVyaSBidWlsZGVyIG1hcmtlciBub3QgZm91bmQnKQog
+          ICAgciA9IHIucmVwbGFjZShidWlsZGVyLCBidWlsZGVyICsgJ1xuICAgICAgLnBsdWdpbih0YXVyaV9wbHVnaW5fZGlhbG9nOjpp
+          bml0KCkpJywgMSkKCmxpYl9wYXRoLndyaXRlX3RleHQociwgZW5jb2Rpbmc9J3V0Zi04JykKCnBrZ19wYXRoID0gUGF0aCgncGFj
+          a2FnZS5qc29uJykKcGtnID0ganNvbi5sb2Fkcyhwa2dfcGF0aC5yZWFkX3RleHQoZW5jb2Rpbmc9J3V0Zi04JykpCnBrZ1sndmVy
+          c2lvbiddID0gJzQuNS4wJwpwa2cuc2V0ZGVmYXVsdCgnZGVwZW5kZW5jaWVzJywge30pWydAdGF1cmktYXBwcy9wbHVnaW4tZGlh
+          bG9nJ10gPSAnXjIuMC4wJwpwa2dfcGF0aC53cml0ZV90ZXh0KGpzb24uZHVtcHMocGtnLCBlbnN1cmVfYXNjaWk9RmFsc2UsIGlu
+          ZGVudD0yKSArICdcbicsIGVuY29kaW5nPSd1dGYtOCcpCgpjYXJnb19wYXRoID0gUGF0aCgnc3JjLXRhdXJpL0NhcmdvLnRvbWwn
+          KQpjYXJnbyA9IGNhcmdvX3BhdGgucmVhZF90ZXh0KGVuY29kaW5nPSd1dGYtOCcpCmlmICd0YXVyaS1wbHVnaW4tZGlhbG9nJyBu
+          b3QgaW4gY2FyZ286CiAgICBjYXJnbyArPSAnXG50YXVyaS1wbHVnaW4tZGlhbG9nID0gIjIiXG4nCmxpbmVzID0gY2FyZ28uc3Bs
+          aXRsaW5lcygpCmZvciBpLCBsaW5lIGluIGVudW1lcmF0ZShsaW5lcyk6CiAgICBpZiBsaW5lLnN0YXJ0c3dpdGgoJ3ZlcnNpb24g
+          PSAiJyk6CiAgICAgICAgbGluZXNbaV0gPSAndmVyc2lvbiA9ICI0LjUuMCInCiAgICAgICAgYnJlYWsKY2FyZ29fcGF0aC53cml0
+          ZV90ZXh0KCdcbicuam9pbihsaW5lcykgKyAnXG4nLCBlbmNvZGluZz0ndXRmLTgnKQoKY2FwX3BhdGggPSBQYXRoKCdzcmMtdGF1
+          cmkvY2FwYWJpbGl0aWVzL2RlZmF1bHQuanNvbicpCmNhcCA9IGpzb24ubG9hZHMoY2FwX3BhdGgucmVhZF90ZXh0KGVuY29kaW5n
+          PSd1dGYtOCcpKQpwZXJtaXNzaW9ucyA9IGNhcC5zZXRkZWZhdWx0KCdwZXJtaXNzaW9ucycsIFtdKQppZiAnZGlhbG9nOmFsbG93
+          LXNhdmUnIG5vdCBpbiBwZXJtaXNzaW9uczoKICAgIHBlcm1pc3Npb25zLmFwcGVuZCgnZGlhbG9nOmFsbG93LXNhdmUnKQpjYXBf
+          cGF0aC53cml0ZV90ZXh0KGpzb24uZHVtcHMoY2FwLCBlbnN1cmVfYXNjaWk9RmFsc2UsIGluZGVudD0yKSArICdcbicsIGVuY29k
+          aW5nPSd1dGYtOCcpCgpjb25mX3BhdGggPSBQYXRoKCdzcmMtdGF1cmkvdGF1cmkuY29uZi5qc29uJykKY29uZiA9IGpzb24ubG9h
+          ZHMoY29uZl9wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0ndXRmLTgnKSkKY29uZlsndmVyc2lvbiddID0gJzQuNS4wJwp3aW5kb3cg
+          PSBjb25mWydhcHAnXVsnd2luZG93cyddWzBdCndpbmRvd1snZGV2dG9vbHMnXSA9IEZhbHNlCndpbmRvd1snZ2VuZXJhbEF1dG9m
+          aWxsRW5hYmxlZCddID0gRmFsc2UKd2luZG93Wyd6b29tSG90a2V5c0VuYWJsZWQnXSA9IEZhbHNlCmNvbmZbJ2FwcCddWydzZWN1
+          cml0eSddWydjc3AnXSA9ICgKICAgICJkZWZhdWx0LXNyYyAnc2VsZicgYXNzZXQ6OyAiCiAgICAiY29ubmVjdC1zcmMgaXBjOiBo
+          dHRwOi8vaXBjLmxvY2FsaG9zdDsgIgogICAgImltZy1zcmMgJ3NlbGYnIGFzc2V0OiBodHRwOi8vYXNzZXQubG9jYWxob3N0IGRh
+          dGE6IGJsb2I6OyAiCiAgICAic3R5bGUtc3JjICdzZWxmJyAndW5zYWZlLWlubGluZSc7ICIKICAgICJzY3JpcHQtc3JjICdzZWxm
+          JzsgIgogICAgImZvbnQtc3JjICdzZWxmJyBkYXRhOjsgIgogICAgIm9iamVjdC1zcmMgJ25vbmUnOyAiCiAgICAiZnJhbWUtc3Jj
+          ICdub25lJzsgIgogICAgImJhc2UtdXJpICdub25lJzsgIgogICAgImZvcm0tYWN0aW9uICdub25lJyIKKQpjb25mX3BhdGgud3Jp
+          dGVfdGV4dChqc29uLmR1bXBzKGNvbmYsIGVuc3VyZV9hc2NpaT1GYWxzZSwgaW5kZW50PTIpICsgJ1xuJywgZW5jb2Rpbmc9J3V0
+          Zi04JykKCnByaW50KCdWNC41IFNhdmUgQXMgKyBzZWN1cml0eSBoYXJkZW5pbmcgYXBwbGllZC4nKQo=
+          PATCHEOF
+          tr -d '\r\n ' < _patch.b64 > _patch.clean.b64
+          python -c "import base64; open('_v45_patch.py','wb').write(base64.b64decode(open('_patch.clean.b64','rb').read()))"
+          python _v45_patch.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Validate frontend
+        shell: bash
+        run: npm run build
+
+      - name: Validate Rust
+        shell: bash
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Security configuration gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          conf = json.loads(Path('src-tauri/tauri.conf.json').read_text(encoding='utf-8'))
+          cap = json.loads(Path('src-tauri/capabilities/default.json').read_text(encoding='utf-8'))
+          main = Path('src/main.ts').read_text(encoding='utf-8')
+          lib = Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')
+
+          assert conf['app']['security']['csp'], 'CSP must be enabled'
+          assert conf['app']['windows'][0].get('devtools') is False, 'DevTools must be disabled'
+          assert conf['app']['windows'][0].get('generalAutofillEnabled') is False, 'Autofill must be disabled'
+          assert 'dialog:allow-save' in cap['permissions'], 'Save dialog permission missing'
+          assert '@tauri-apps/plugin-dialog' in Path('package.json').read_text(encoding='utf-8')
+          assert 'targetPath' in main and 'saveDialog' in main
+          assert 'MAX_EXPORT_BYTES' in lib
+          assert 'source.starts_with(&backup_root)' in lib
+          assert 'trusted_schema=OFF' in lib
+          print('Security gate passed')
+          PY
+
+      - name: Build V4.5 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify Setup EXE
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          Write-Host "Installer:" $installer.FullName
+
+      - name: Commit validated V4.5 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src-tauri/src/lib.rs src-tauri/capabilities/default.json src-tauri/tauri.conf.json package.json src-tauri/Cargo.toml
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V4.5: native Save As and security hardening"
+            git push
+          fi
+
+      - name: Upload V4.5 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V4.5-Save-As-Security-Installer
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
