@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::{Local, Timelike};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, process::Command};
@@ -395,18 +395,121 @@ fn open_backup_folder(state: State<AppState>) -> Result<(),String>{
     Ok(())
 }
 
+
+const DAILY_BACKUP_TASK: &str = "Clinic Cases Daily Backup 4AM";
+const CATCHUP_BACKUP_TASK: &str = "Clinic Cases Backup CatchUp";
+
+fn run_hidden_command(program: &str, args: &[String]) -> Result<(), String> {
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+
+    let status = cmd.status().map_err(|e| e.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("{} exited with status {}", program, status))
+    }
+}
+
+fn ensure_backup_tasks() -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let action = format!("\\\"{}\\\" --backup-only", exe.to_string_lossy());
+
+    let daily_args = vec![
+        "/Create".to_string(),
+        "/F".to_string(),
+        "/SC".to_string(),
+        "DAILY".to_string(),
+        "/ST".to_string(),
+        "04:00".to_string(),
+        "/RL".to_string(),
+        "LIMITED".to_string(),
+        "/TN".to_string(),
+        DAILY_BACKUP_TASK.to_string(),
+        "/TR".to_string(),
+        action.clone(),
+    ];
+    run_hidden_command("schtasks.exe", &daily_args)?;
+
+    let catchup_args = vec![
+        "/Create".to_string(),
+        "/F".to_string(),
+        "/SC".to_string(),
+        "ONLOGON".to_string(),
+        "/RL".to_string(),
+        "LIMITED".to_string(),
+        "/TN".to_string(),
+        CATCHUP_BACKUP_TASK.to_string(),
+        "/TR".to_string(),
+        action,
+    ];
+    run_hidden_command("schtasks.exe", &catchup_args)?;
+
+    Ok(())
+}
+
+fn automatic_backup_due(state: &AppState) -> Result<bool, String> {
+    let now = Local::now();
+
+    if now.hour() < 4 {
+        return Ok(false);
+    }
+
+    let daily = state.backup_dir.join(format!(
+        "clinic-cases-auto-{}.db",
+        now.format("%Y-%m-%d")
+    ));
+
+    if daily.exists() {
+        return Ok(false);
+    }
+
+    checkpoint_and_copy(state, &daily)?;
+    Ok(true)
+}
+
 pub fn run(){
+    let backup_only = std::env::args().any(|arg| arg == "--backup-only");
+
     tauri::Builder::default()
-      .setup(|app|{
+      .setup(move |app|{
         let data_dir=app.path().app_data_dir()?;
         fs::create_dir_all(&data_dir)?;
+
         let db_path=data_dir.join("clinic-cases.db");
         init_db(&db_path).map_err(|e|std::io::Error::new(std::io::ErrorKind::Other,e))?;
-        let backup_dir=app.path().document_dir().unwrap_or_else(|_|data_dir.clone()).join("Clinic Cases Backups");
+
+        let backup_dir=app.path().document_dir()
+            .unwrap_or_else(|_|data_dir.clone())
+            .join("Clinic Cases Backups");
         fs::create_dir_all(&backup_dir)?;
+
         let state=AppState{db_path,backup_dir};
-        let daily=state.backup_dir.join(format!("clinic-cases-auto-{}.db",Local::now().format("%Y-%m-%d")));
-        if !daily.exists(){let _=checkpoint_and_copy(&state,&daily);}
+
+        if backup_only {
+          if let Some(window) = app.get_webview_window("main") {
+            let _ = window.hide();
+          }
+
+          let _ = automatic_backup_due(&state);
+
+          // Tauri 2: exit through AppHandle, not App.
+          app.handle().exit(0);
+          return Ok(());
+        }
+
+        // Windows schedules the real daily 04:00 backup using local system time.
+        let _ = ensure_backup_tasks();
+
+        // Catch-up if Windows/device missed 04:00.
+        let _ = automatic_backup_due(&state);
+
         app.manage(state);
         Ok(())
       })

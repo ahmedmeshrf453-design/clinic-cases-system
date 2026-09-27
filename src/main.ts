@@ -503,7 +503,7 @@ async function renderBackups() {
   shell(`
     <section class="card">
       <div class="card-head toolbar">
-        <div><h2>النسخ الاحتياطية</h2><p>النسخ محفوظة في Documents / Clinic Cases Backups</p></div>
+        <div><h2>النسخ الاحتياطية</h2><p>نسخة تلقائية يوميًا الساعة 4:00 صباحًا • الحفظ في Documents / Clinic Cases Backups</p></div>
         <div class="filters">
           <button class="btn ghost small" id="openBackupFolder">فتح المجلد</button>
           <button class="btn primary small" id="backupNow">＋ إنشاء نسخة الآن</button>
