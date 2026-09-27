@@ -269,6 +269,91 @@ async function exportReportFile(result: ReportResult, from: string, to: string, 
   );
 }
 
+
+let caseMenuPatientId = '';
+let caseMenuPatientPhone = '';
+let caseMenuBound = false;
+
+async function exportPatientById(id: string, format: ExportFormat) {
+  const details = await invoke<PatientDetails>('get_patient_details', { id });
+  await exportPatientFile(details, format);
+}
+
+function closeCaseContextMenu() {
+  document.querySelector<HTMLDivElement>('#caseContextMenu')?.classList.remove('show');
+}
+
+function ensureCaseContextMenu() {
+  if (caseMenuBound) return;
+  caseMenuBound = true;
+
+  document.body.insertAdjacentHTML('beforeend', `
+    <div id="caseContextMenu" class="case-context-menu" dir="rtl">
+      <button data-action="open">فتح ملف المريض</button>
+      <button data-action="edit">تعديل البيانات</button>
+      <button data-action="pdf">طباعة / حفظ PDF</button>
+      <button data-action="png">حفظ صورة</button>
+      <button data-action="copy">نسخ رقم التليفون</button>
+    </div>
+  `);
+
+  const menu = document.querySelector<HTMLDivElement>('#caseContextMenu')!;
+
+  const openMenu = (x: number, y: number, id: string, phone: string) => {
+    caseMenuPatientId = id;
+    caseMenuPatientPhone = phone;
+    menu.style.left = `${Math.min(x, window.innerWidth - 230)}px`;
+    menu.style.top = `${Math.min(y, window.innerHeight - 260)}px`;
+    menu.classList.add('show');
+  };
+
+  document.addEventListener('contextmenu', (event) => {
+    const target = (event.target as HTMLElement).closest<HTMLElement>('.patient-file-card, .visit-context-row');
+    if (!target) return;
+
+    const id = target.dataset.patientId || '';
+    if (!id) return;
+
+    event.preventDefault();
+    openMenu(event.clientX, event.clientY, id, target.dataset.patientPhone || '');
+  });
+
+  menu.addEventListener('click', async (event) => {
+    const btn = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
+    if (!btn || !caseMenuPatientId) return;
+
+    const action = btn.dataset.action || '';
+    closeCaseContextMenu();
+
+    try {
+      if (action === 'open') {
+        openPatient(caseMenuPatientId);
+      } else if (action === 'edit') {
+        openEditPatient(caseMenuPatientId);
+      } else if (action === 'pdf') {
+        await exportPatientById(caseMenuPatientId, 'pdf');
+      } else if (action === 'png') {
+        await exportPatientById(caseMenuPatientId, 'png');
+      } else if (action === 'copy') {
+        if (caseMenuPatientPhone) {
+          await navigator.clipboard.writeText(caseMenuPatientPhone);
+          toast('تم نسخ رقم التليفون');
+        } else {
+          toast('لا يوجد رقم تليفون مسجل', 'error');
+        }
+      }
+    } catch (err) {
+      toast(`تعذر تنفيذ الإجراء: ${String(err)}`, 'error');
+    }
+  });
+
+  document.addEventListener('click', () => closeCaseContextMenu());
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeCaseContextMenu();
+  });
+  document.addEventListener('scroll', () => closeCaseContextMenu(), true);
+}
+
 function navButton(id: Screen, icon: string, label: string) {
   return `<button class="nav ${screen===id?'active':''}" data-screen="${id}">
     <span class="nav-icon">${icon}</span><span>${label}</span>
@@ -476,7 +561,7 @@ function patientTable(rows: Patient[], archived: boolean) {
   return `
     <div class="patient-files-grid">
       ${rows.length ? rows.map(p => `
-        <article class="patient-file-card ${p.blacklisted ? 'is-blacklisted' : ''}">
+        <article class="patient-file-card ${p.blacklisted ? 'is-blacklisted' : ''}" data-patient-id="${esc(p.id)}" data-patient-phone="${esc(p.phone || '')}">
           <button class="patient-file-open patient-open" data-id="${esc(p.id)}" title="فتح ملف المريض">
             <span class="patient-file-icon">
               <span class="patient-file-fold"></span>
@@ -542,6 +627,7 @@ async function renderDashboard() {
     </div>
   `, 'لوحة التحكم', 'نظرة سريعة على حركة العيادة اليوم');
   bindPatientActions();
+      ensureCaseContextMenu();
   document.querySelector<HTMLButtonElement>('#allPatientsBtn')!.onclick = () => navigate('patients');
   document.querySelector<HTMLButtonElement>('#quickNew')!.onclick = () => openCaseModal();
   document.querySelector<HTMLButtonElement>('#quickToday')!.onclick = () => navigate('today');
@@ -569,6 +655,7 @@ async function renderPatients(archived: boolean) {
     </section>
   `, archived ? 'الأرشيف' : 'المرضى', archived ? 'الملفات التي تم أرشفتها بدون حذف' : 'كل ملفات المرضى وسجل زياراتهم');
   bindPatientActions();
+      ensureCaseContextMenu();
   const input = document.querySelector<HTMLInputElement>('#patientSearch')!;
   let timer: number | undefined;
   input.oninput = () => {
@@ -577,6 +664,7 @@ async function renderPatients(archived: boolean) {
       const data = await invoke<Patient[]>('list_patients', { query: { search: input.value.trim(), archivedOnly: archived, limit: 500 } });
       document.querySelector<HTMLDivElement>('#patientTable')!.innerHTML = patientTable(data, archived);
       bindPatientActions();
+      ensureCaseContextMenu();
     }, 180);
   };
   const n = document.querySelector<HTMLButtonElement>('#newFromPatients');
@@ -587,6 +675,7 @@ async function renderToday() {
   const dayKey = businessDay();
   const result = await invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } });
 
+  ensureCaseContextMenu();
   shell(`
     <section class="card">
       <div class="card-head">
@@ -640,6 +729,7 @@ async function renderToday() {
         ${patientTable(rows, false)}
       `;
       bindPatientActions();
+      ensureCaseContextMenu();
     }, 180);
   };
 }
@@ -654,7 +744,7 @@ function visitTable(rows: Visit[], showPatient = false) {
           <th>نوع الزيارة</th><th>الطبيب</th><th>سعر الكشف</th>
         </tr></thead>
         <tbody>${rows.length ? rows.map(v => `
-          <tr>
+          <tr class="visit-context-row" data-patient-id="${esc(v.patientId)}" data-patient-name="${esc(v.patientName || '')}" data-patient-phone="${esc(v.patientPhone || '')}">
             <td>${displayDate(v.visitDate)}</td>
             <td class="ltr">${esc(v.visitTime)}</td>
             ${showPatient ? `<td>${esc(v.patientName || '—')}</td><td class="ltr">${esc(v.patientPhone || '—')}</td>` : ''}

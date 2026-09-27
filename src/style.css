@@ -547,3 +547,81 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
   font-weight:800;
   color:#274764;
 }
+
+
+/* ===== V3.8 context menu + watermark fix ===== */
+.system-watermark{
+  position:fixed !important;
+  left:50% !important;
+  top:310px !important;
+  transform:translateX(-50%) !important;
+  width:540px !important;
+  height:420px !important;
+  opacity:.05 !important;
+  background-image:url('/clinic-logo-emblem.png') !important;
+  background-repeat:no-repeat !important;
+  background-position:center !important;
+  background-size:contain !important;
+  pointer-events:none !important;
+  z-index:0 !important;
+  filter:none !important;
+}
+
+.main{
+  position:relative;
+  isolation:isolate;
+}
+
+.main > *:not(.system-watermark){
+  position:relative;
+  z-index:1;
+}
+
+.case-context-menu{
+  position:fixed;
+  width:220px;
+  background:#ffffff;
+  border:1px solid #d9e5ec;
+  border-radius:14px;
+  box-shadow:0 22px 50px rgba(16,42,67,.18);
+  padding:8px;
+  display:none;
+  z-index:9999;
+}
+
+.case-context-menu.show{
+  display:block;
+}
+
+.case-context-menu button{
+  width:100%;
+  border:0;
+  background:transparent;
+  padding:11px 12px;
+  text-align:right;
+  border-radius:10px;
+  color:#17324c;
+  font-size:13px;
+  cursor:pointer;
+}
+
+.case-context-menu button:hover{
+  background:#f1f7fb;
+}
+
+.patient-file-card,
+.visit-context-row{
+  cursor:context-menu;
+}
+
+.visit-context-row:hover td{
+  background:#fbfdff;
+}
+
+@media (max-width: 900px){
+  .system-watermark{
+    width:300px !important;
+    height:230px !important;
+    top:250px !important;
+  }
+}
