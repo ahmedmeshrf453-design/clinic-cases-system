@@ -1,0 +1,55 @@
+name: Windows Offline V2 Build FINAL
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Recreate Windows Offline V2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path(".github/workflows/clinic-cases-windows-offline-v2-fixed.yml")
+          text = p.read_text(encoding="utf-8")
+          marker = "      - name: Convert project to Windows Offline V2\n        shell: bash\n        run: |\n"
+          start = text.index(marker) + len(marker)
+          end = text.index("\n      - name: Setup Node", start)
+          block = text[start:end]
+          lines = [(line[10:] if line.startswith("          ") else line) for line in block.splitlines()]
+          Path("_convert_windows_v2.sh").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+          bash _convert_windows_v2.sh
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: npm install
+
+      - name: Build Windows EXE
+        shell: bash
+        run: npm run tauri:build
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V2-EXE
+          path: src-tauri/target/release/clinic-cases-system.exe
+          if-no-files-found: error
