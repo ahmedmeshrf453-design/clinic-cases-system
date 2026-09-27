@@ -1,0 +1,78 @@
+name: Clinic Cases Windows V3 TS FIX
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fix FormData TypeScript typing
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path("src/main.ts")
+          s = p.read_text(encoding="utf-8")
+
+          old = "new FormData(e.currentTarget)"
+          count = s.count(old)
+
+          if count != 3:
+              raise SystemExit(f"Expected exactly 3 FormData occurrences, found {count}")
+
+          s = s.replace(old, "new FormData(e.currentTarget as HTMLFormElement)")
+          p.write_text(s, encoding="utf-8")
+
+          print("Patched exactly 3 FormData TypeScript errors.")
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: TypeScript and frontend validation
+        shell: bash
+        run: npm run build
+
+      - name: Build Windows V3 EXE
+        shell: bash
+        run: npm run tauri:build
+
+      - name: Commit validated TypeScript fix only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V3: fix FormData TypeScript typing"
+            git push
+          fi
+
+      - name: Upload Windows V3 EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V3-TS-FIX-EXE
+          path: src-tauri/target/release/clinic-cases-system.exe
+          if-no-files-found: error
