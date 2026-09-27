@@ -625,3 +625,41 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
     top:250px !important;
   }
 }
+
+
+/* ===== V4.0 branding fix ===== */
+.main{
+  position:relative;
+  isolation:isolate;
+}
+
+.system-watermark{
+  position:absolute;
+  left:50%;
+  top:170px;
+  transform:translateX(-50%);
+  width:min(46vw, 520px);
+  height:min(46vw, 520px);
+  background:url('/clinic-logo-emblem.png') center/contain no-repeat;
+  opacity:.055;
+  pointer-events:none;
+  z-index:0;
+  user-select:none;
+}
+
+.main > *{
+  position:relative;
+  z-index:1;
+}
+
+.main > .system-watermark{
+  z-index:0;
+}
+
+@media (max-width: 1024px){
+  .system-watermark{
+    width:min(62vw, 360px);
+    height:min(62vw, 360px);
+    top:150px;
+  }
+}
