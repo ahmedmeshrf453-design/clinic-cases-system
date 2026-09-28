@@ -103,7 +103,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '5.5.0'
+  version: '5.6.0'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -205,9 +205,10 @@ function doctorBreakdown(rows: Visit[]) {
   return [...map.entries()].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0], 'ar'));
 }
 
-function filteredReportResult(base: ReportResult, visitType: string): ReportResult {
+function filteredReportResult(base: ReportResult, visitType: string, bookingSource = ''): ReportResult {
   const rows = base.rows.filter(v =>
-    (!visitType || v.visitType === visitType)
+    (!visitType || v.visitType === visitType) &&
+    (!bookingSource || (v.bookingSource || 'عادي') === bookingSource)
   );
   const ids = new Set(rows.map(v => v.patientId));
   return {
@@ -1008,6 +1009,15 @@ async function renderToday() {
             <option>استشارة</option>
           </select>
         </label>
+        <label>مصدر الحجز
+          <select id="todaySourceFilter">
+            <option value="">كل المصادر</option>
+            <option>عادي</option>
+            <option>فيزيتا</option>
+            <option>اكشف</option>
+            <option>كلينيدو</option>
+          </select>
+        </label>
       </div>
 
       <div id="todayVisitTable">${visitTable(baseResult.rows, true)}</div>
@@ -1025,11 +1035,13 @@ async function renderToday() {
 
   const doctorFilter = document.querySelector<HTMLSelectElement>('#todayDoctorFilter')!;
   const typeFilter = document.querySelector<HTMLSelectElement>('#todayTypeFilter')!;
+  const sourceFilter = document.querySelector<HTMLSelectElement>('#todaySourceFilter')!;
   const tableHost = document.querySelector<HTMLDivElement>('#todayVisitTable')!;
 
   const filteredRows = () => baseResult.rows.filter(v =>
     (!doctorFilter.value || v.doctor === doctorFilter.value) &&
-    (!typeFilter.value || v.visitType === typeFilter.value)
+    (!typeFilter.value || v.visitType === typeFilter.value) &&
+    (!sourceFilter.value || (v.bookingSource || 'عادي') === sourceFilter.value)
   );
 
   const applyFilters = () => {
@@ -1039,6 +1051,7 @@ async function renderToday() {
 
   doctorFilter.onchange = applyFilters;
   typeFilter.onchange = applyFilters;
+  sourceFilter.onchange = applyFilters;
 
   document.querySelector<HTMLButtonElement>('#todayImage')!.onclick = () => {
     const rows = filteredRows();
@@ -1252,8 +1265,17 @@ async function openDoctorProfile(doctor: Doctor) {
         </div>
 
         <div class="doctor-profile-export-bar">
-          <button class="btn ghost small" id="doctorProfilePng">تحميل صورة</button>
-          <button class="btn primary small" id="doctorProfilePdf">تحميل PDF</button>
+          <div class="doctor-profile-source-filter">
+            <button class="btn ghost small active" data-doctor-source-filter="">كل المصادر</button>
+            <button class="btn ghost small" data-doctor-source-filter="عادي">عادي</button>
+            <button class="btn ghost small" data-doctor-source-filter="فيزيتا">فيزيتا</button>
+            <button class="btn ghost small" data-doctor-source-filter="اكشف">اكشف</button>
+            <button class="btn ghost small" data-doctor-source-filter="كلينيدو">كلينيدو</button>
+          </div>
+          <div class="doctor-profile-export-actions">
+            <button class="btn ghost small" id="doctorProfilePng">تحميل صورة</button>
+            <button class="btn primary small" id="doctorProfilePdf">تحميل PDF</button>
+          </div>
         </div>
 
         <div id="doctorProfileBody">
@@ -1270,6 +1292,26 @@ async function openDoctorProfile(doctor: Doctor) {
   const body = document.querySelector<HTMLDivElement>('#doctorProfileBody')!;
 
   let currentResult: ReportResult = { totalVisits: 0, uniquePatients: 0, rows: [] };
+  let selectedDoctorSource = '';
+
+  const renderSourceDetails = () => {
+    const filteredRows = currentResult.rows.filter(v =>
+      !selectedDoctorSource || (v.bookingSource || 'عادي') === selectedDoctorSource
+    );
+    const detailHost = document.querySelector<HTMLDivElement>('#doctorSourceDetails');
+    const countHost = document.querySelector<HTMLElement>('#doctorSourceDetailsCount');
+    const labelHost = document.querySelector<HTMLElement>('#doctorSourceDetailsLabel');
+    if (detailHost) detailHost.innerHTML = doctorReadOnlyVisitTable(filteredRows);
+    if (countHost) countHost.textContent = `${filteredRows.length} حالة`;
+    if (labelHost) labelHost.textContent = selectedDoctorSource ? `المصدر: ${selectedDoctorSource}` : 'كل المصادر';
+
+    document.querySelectorAll<HTMLButtonElement>('[data-doctor-source-filter]').forEach(button => {
+      button.classList.toggle('active', (button.dataset.doctorSourceFilter || '') === selectedDoctorSource);
+    });
+    document.querySelectorAll<HTMLElement>('[data-doctor-source-card]').forEach(card => {
+      card.classList.toggle('selected', (card.dataset.doctorSourceCard || '') === selectedDoctorSource);
+    });
+  };
 
   const render = async () => {
     const from = fromInput.value;
@@ -1299,7 +1341,7 @@ async function openDoctorProfile(doctor: Doctor) {
 
         <div class="doctor-source-grid">
           ${sources.map(item => `
-            <article class="doctor-source-card">
+            <article class="doctor-source-card" data-doctor-source-card="${esc(item.source)}" role="button" tabindex="0">
               <div class="doctor-source-icon">⌁</div>
               <div class="doctor-source-name">${esc(item.source)}</div>
               <strong>${item.count} حالة</strong>
@@ -1315,13 +1357,29 @@ async function openDoctorProfile(doctor: Doctor) {
         <div class="doctor-profile-section-head">
           <div>
             <h3>تفاصيل الحالات</h3>
-            <p>${esc(reportPeriodLabel(from, to))}</p>
+            <p>${esc(reportPeriodLabel(from, to))} • <span id="doctorSourceDetailsLabel">كل المصادر</span></p>
           </div>
-          <strong>${currentResult.totalVisits} حالة</strong>
+          <strong id="doctorSourceDetailsCount">${currentResult.totalVisits} حالة</strong>
         </div>
 
-        ${doctorReadOnlyVisitTable(currentResult.rows)}
+        <div id="doctorSourceDetails">${doctorReadOnlyVisitTable(currentResult.rows)}</div>
       `;
+
+      document.querySelectorAll<HTMLElement>('[data-doctor-source-card]').forEach(card => {
+        const apply = () => {
+          selectedDoctorSource = card.dataset.doctorSourceCard || '';
+          renderSourceDetails();
+        };
+        card.onclick = apply;
+        card.onkeydown = event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            apply();
+          }
+        };
+      });
+
+      renderSourceDetails();
     } catch (err) {
       body.innerHTML = `<div class="empty-block">تعذر تحميل بيانات الطبيب</div>`;
       toast(`تعذر تحميل التقرير: ${String(err)}`, 'error');
@@ -1342,6 +1400,13 @@ async function openDoctorProfile(doctor: Doctor) {
   };
 
   document.querySelector<HTMLButtonElement>('#doctorRunRange')!.onclick = render;
+
+  document.querySelectorAll<HTMLButtonElement>('[data-doctor-source-filter]').forEach(button => {
+    button.onclick = () => {
+      selectedDoctorSource = button.dataset.doctorSourceFilter || '';
+      renderSourceDetails();
+    };
+  });
 
   document.querySelector<HTMLButtonElement>('#doctorProfilePng')!.onclick = async () => {
     await render();
@@ -1504,6 +1569,15 @@ async function renderReports() {
             <option>استشارة</option>
           </select>
         </label>
+        <label>مصدر الحجز
+          <select id="reportBookingSource">
+            <option value="">كل المصادر</option>
+            <option>عادي</option>
+            <option>فيزيتا</option>
+            <option>اكشف</option>
+            <option>كلينيدو</option>
+          </select>
+        </label>
         <button class="btn primary" id="runReportBtn">عرض التقرير</button>
       </div>
 
@@ -1523,13 +1597,14 @@ async function renderReports() {
     from: document.querySelector<HTMLInputElement>('#reportFrom')!.value,
     to: document.querySelector<HTMLInputElement>('#reportTo')!.value,
     doctor: document.querySelector<HTMLSelectElement>('#reportDoctor')!.value,
-    visitType: document.querySelector<HTMLSelectElement>('#reportVisitType')!.value
+    visitType: document.querySelector<HTMLSelectElement>('#reportVisitType')!.value,
+    bookingSource: document.querySelector<HTMLSelectElement>('#reportBookingSource')!.value
   });
 
   const renderResult = () => {
     if (!currentBaseResult) return;
     const q = queryValues();
-    const result = filteredReportResult(currentBaseResult, q.visitType);
+    const result = filteredReportResult(currentBaseResult, q.visitType, q.bookingSource);
     currentResult = result;
     const metrics = reportMetrics(result.rows);
     const doctorRows = doctorBreakdown(result.rows);
@@ -1573,6 +1648,7 @@ async function renderReports() {
 
   document.querySelector<HTMLButtonElement>('#runReportBtn')!.onclick = run;
   document.querySelector<HTMLSelectElement>('#reportVisitType')!.onchange = renderResult;
+  document.querySelector<HTMLSelectElement>('#reportBookingSource')!.onchange = renderResult;
 
   document.querySelector<HTMLButtonElement>('#rangeToday')!.onclick = async () => {
     const d = businessDay();

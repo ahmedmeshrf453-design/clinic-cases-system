@@ -1257,3 +1257,13 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
 .doctor-profile-table{max-height:360px}
 @media(max-width:1350px){.doctor-icon-grid{grid-template-columns:repeat(3,minmax(210px,1fr))}}
 @media(max-width:1000px){.doctor-icon-grid{grid-template-columns:repeat(2,minmax(210px,1fr))}.doctor-profile-total-grid,.doctor-source-grid{grid-template-columns:repeat(2,1fr)}.doctor-period-bar{grid-template-columns:1fr 1fr}}
+
+/* V5.6 source filters */
+.doctor-profile-export-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.doctor-profile-source-filter,.doctor-profile-export-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.doctor-profile-source-filter .btn.active{background:#0a6075;color:#fff;border-color:#0a6075}
+.doctor-source-card{cursor:pointer;transition:transform .13s ease,box-shadow .13s ease,border-color .13s ease}
+.doctor-source-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(10,35,66,.08)}
+.doctor-source-card.selected{border-color:#0a6075;box-shadow:0 0 0 2px rgba(10,96,117,.11)}
+.report-filters-v48{grid-template-columns:160px 160px minmax(190px,1fr) minmax(160px,1fr) minmax(160px,1fr) auto}
+.today-filter-panel{grid-template-columns:repeat(3,minmax(180px,1fr))}
