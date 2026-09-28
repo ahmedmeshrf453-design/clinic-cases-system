@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose, Engine as _};
-use chrono::{Duration, Local, NaiveDate, Timelike};
+use chrono::{Duration, Local, NaiveDate, NaiveTime, Timelike};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, process::Command};
@@ -177,16 +177,86 @@ fn get_operational_start_hour(conn: &Connection) -> Result<u32, String> {
     Ok(raw.parse::<u32>().unwrap_or(11).min(23))
 }
 
+fn validate_patient_fields(
+    full_name: &str,
+    phone: &str,
+    age: Option<i64>,
+    address: &str,
+) -> Result<(), String> {
+    let name = full_name.trim();
+    let phone = phone.trim();
+
+    if name.is_empty() && phone.is_empty() {
+        return Err("يجب إدخال اسم المريض أو رقم التليفون على الأقل".into());
+    }
+    if name.len() > 160 {
+        return Err("اسم المريض أطول من المسموح".into());
+    }
+    if phone.len() > 40 {
+        return Err("رقم التليفون أطول من المسموح".into());
+    }
+    if address.len() > 500 {
+        return Err("العنوان أطول من المسموح".into());
+    }
+    if let Some(value) = age {
+        if !(0..=130).contains(&value) {
+            return Err("السن غير صالح".into());
+        }
+    }
+    Ok(())
+}
+
+fn validate_visit_fields(
+    visit_type: &str,
+    doctor: &str,
+    fee: &str,
+    status: &str,
+    visit_date: &str,
+    visit_time: &str,
+) -> Result<(), String> {
+    let allowed_status = ["لم يحدد", "حضر", "لم يحضر", "ملغي", "مؤجل"];
+    if !allowed_status.contains(&status.trim()) {
+        return Err("حالة الزيارة غير صالحة".into());
+    }
+
+    let allowed_type = ["كشف جديد", "استشارة"];
+    if !allowed_type.contains(&visit_type.trim()) {
+        return Err("نوع الزيارة غير صالح".into());
+    }
+
+    if doctor.trim().len() > 160 {
+        return Err("اسم الطبيب أطول من المسموح".into());
+    }
+
+    NaiveDate::parse_from_str(visit_date.trim(), "%Y-%m-%d")
+        .map_err(|_| "تاريخ الزيارة غير صالح".to_string())?;
+
+    if !visit_time.trim().is_empty() {
+        NaiveTime::parse_from_str(visit_time.trim(), "%H:%M")
+            .map_err(|_| "وقت الزيارة غير صالح".to_string())?;
+    }
+
+    if !fee.trim().is_empty() {
+        let amount = fee.trim().parse::<f64>()
+            .map_err(|_| "سعر الكشف غير صالح".to_string())?;
+        if !amount.is_finite() || amount < 0.0 || amount > 1_000_000.0 {
+            return Err("سعر الكشف غير صالح".into());
+        }
+    }
+
+    Ok(())
+}
+
 fn open_db(state: &AppState) -> Result<Connection, String> {
     let conn = Connection::open(&state.db_path).map_err(|e| e.to_string())?;
-    conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON;")
+    conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; PRAGMA wal_autocheckpoint=1000;")
         .map_err(|e| e.to_string())?;
     Ok(conn)
 }
 
 fn init_db(path: &PathBuf) -> Result<(), String> {
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
-    conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=3000;")
+    conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; PRAGMA wal_autocheckpoint=1000;")
         .map_err(|e| e.to_string())?;
 
     conn.execute_batch(r#"
@@ -292,6 +362,21 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
             []
         ).map_err(|e| e.to_string())?;
     }
+
+    conn.execute_batch(r#"
+      CREATE INDEX IF NOT EXISTS idx_patients_phone
+        ON patients(phone);
+      CREATE INDEX IF NOT EXISTS idx_patients_archived_updated
+        ON patients(archived, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_visits_patient_date_time
+        ON visits(patient_id, visit_date DESC, visit_time DESC);
+      CREATE INDEX IF NOT EXISTS idx_visits_date_time
+        ON visits(visit_date DESC, visit_time DESC);
+      CREATE INDEX IF NOT EXISTS idx_visits_doctor_date
+        ON visits(doctor, visit_date DESC, visit_time DESC);
+      CREATE INDEX IF NOT EXISTS idx_visits_status
+        ON visits(status);
+    "#).map_err(|e| e.to_string())?;
 
     // Seed the requested doctors once. Later edits/deletes remain untouched.
     conn.execute_batch(r#"
@@ -430,14 +515,27 @@ fn register_patient(state: State<AppState>, input: RegisterPatientInput) -> Resu
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let phone = input.phone.trim().to_string();
 
+    validate_patient_fields(
+        input.full_name.trim(),
+        &phone,
+        input.age,
+        input.address.trim(),
+    )?;
+
     if !phone.is_empty() {
-        let existing: Option<String> = conn.query_row(
-            "SELECT id FROM patients WHERE phone=?1 LIMIT 1",
+        let existing: Option<(String, i64)> = conn.query_row(
+            "SELECT id,archived FROM patients WHERE phone=?1 ORDER BY updated_at DESC LIMIT 1",
             params![phone],
-            |row| row.get(0)
+            |row| Ok((row.get(0)?, row.get(1)?))
         ).optional().map_err(|e| e.to_string())?;
 
-        if let Some(id) = existing {
+        if let Some((id, archived)) = existing {
+            if archived != 0 {
+                conn.execute(
+                    "UPDATE patients SET archived=0,updated_at=?1 WHERE id=?2",
+                    params![now, id]
+                ).map_err(|e| e.to_string())?;
+            }
             return Ok(RegisterPatientResult { id, existed: true });
         }
     }
@@ -457,6 +555,15 @@ fn register_patient(state: State<AppState>, input: RegisterPatientInput) -> Resu
 
 #[tauri::command]
 fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, String> {
+    validate_visit_fields(
+        input.visit_type.trim(),
+        input.doctor.trim(),
+        input.fee.trim(),
+        input.status.trim(),
+        input.visit_date.trim(),
+        input.visit_time.trim(),
+    )?;
+
     let mut conn = open_db(&state)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -523,23 +630,14 @@ fn get_visit(state: State<AppState>, id: String) -> Result<Visit, String> {
 
 #[tauri::command]
 fn update_visit(state: State<AppState>, input: UpdateVisitInput) -> Result<(), String> {
-    if input.visit_date.trim().is_empty() {
-        return Err("تاريخ الزيارة مطلوب".into());
-    }
-
-    let allowed_status = ["لم يحدد", "حضر", "لم يحضر", "ملغي", "مؤجل"];
-    if !allowed_status.contains(&input.status.trim()) {
-        return Err("حالة الزيارة غير صالحة".into());
-    }
-
-    let allowed_type = ["كشف جديد", "استشارة"];
-    if !allowed_type.contains(&input.visit_type.trim()) {
-        return Err("نوع الزيارة غير صالح".into());
-    }
-
-    if input.fee.len() > 32 || input.doctor.len() > 160 || input.visit_time.len() > 8 {
-        return Err("بيانات الزيارة أطول من المسموح".into());
-    }
+    validate_visit_fields(
+        input.visit_type.trim(),
+        input.doctor.trim(),
+        input.fee.trim(),
+        input.status.trim(),
+        input.visit_date.trim(),
+        input.visit_time.trim(),
+    )?;
 
     let mut conn = open_db(&state)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -583,6 +681,7 @@ fn update_visit(state: State<AppState>, input: UpdateVisitInput) -> Result<(), S
 
 #[tauri::command]
 fn delete_visit(state: State<AppState>, id: String) -> Result<(), String> {
+    create_safety_backup(&state, "before-delete-visit")?;
     let mut conn = open_db(&state)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -640,6 +739,7 @@ fn set_patient_blacklisted(state: State<AppState>, input: BlacklistInput) -> Res
 
 #[tauri::command]
 fn delete_patient(state: State<AppState>, id: String) -> Result<(), String> {
+    create_safety_backup(&state, "before-delete-patient")?;
     let mut conn = open_db(&state)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM visits WHERE patient_id=?1", params![id])
@@ -679,6 +779,13 @@ fn get_patient_details(state: State<AppState>, id: String) -> Result<PatientDeta
 
 #[tauri::command]
 fn update_patient(state: State<AppState>, input: UpdatePatientInput) -> Result<(), String> {
+    validate_patient_fields(
+        input.full_name.trim(),
+        input.phone.trim(),
+        input.age,
+        input.address.trim(),
+    )?;
+
     let conn = open_db(&state)?;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     conn.execute(
@@ -839,6 +946,14 @@ fn checkpoint_and_copy(state:&AppState,target:&PathBuf)->Result<(),String>{
     Ok(())
 }
 
+fn create_safety_backup(state: &AppState, prefix: &str) -> Result<PathBuf, String> {
+    fs::create_dir_all(&state.backup_dir).map_err(|e| e.to_string())?;
+    let stamp = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+    let target = state.backup_dir.join(format!("{}-{}.db", prefix, stamp));
+    checkpoint_and_copy(state, &target)?;
+    Ok(target)
+}
+
 
 #[tauri::command]
 fn get_settings(state: State<AppState>) -> Result<SettingsInfo, String> {
@@ -973,16 +1088,30 @@ fn restore_backup(state: State<AppState>, path: String) -> Result<(),String>{
     }
 
     let test=Connection::open(&source).map_err(|_|"ملف النسخة غير صالح".to_string())?;
-    let ok:Option<String>=test.query_row(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='patients'",
-        [],
-        |r|r.get(0)
-    ).optional().map_err(|e|e.to_string())?;
-    drop(test);
 
-    if ok.is_none(){
-        return Err("الملف ليس نسخة صالحة للنظام".into());
+    let quick_check: String = test.query_row(
+        "PRAGMA quick_check",
+        [],
+        |row| row.get(0)
+    ).map_err(|_| "تعذر فحص سلامة النسخة".to_string())?;
+
+    if !quick_check.eq_ignore_ascii_case("ok") {
+        return Err("النسخة الاحتياطية تالفة ولا يمكن استعادتها".into());
     }
+
+    for required_table in ["patients", "visits"] {
+        let exists: Option<String> = test.query_row(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?1",
+            params![required_table],
+            |row| row.get(0)
+        ).optional().map_err(|e| e.to_string())?;
+
+        if exists.is_none() {
+            return Err("الملف ليس نسخة صالحة للنظام".into());
+        }
+    }
+
+    drop(test);
 
     let safety=state.backup_dir.join(format!(
         "before-restore-{}.db",
@@ -1209,7 +1338,7 @@ pub fn run(){
         Ok(())
       })
       .invoke_handler(tauri::generate_handler![
-        save_case,register_patient,add_visit,get_visit,update_visit,delete_visit,
+        register_patient,add_visit,get_visit,update_visit,delete_visit,
         list_patients,get_patient_details,update_patient,
         set_patient_archived,set_patient_blacklisted,set_visit_status,delete_patient,get_stats,
         list_doctors,save_doctor,delete_doctor,run_report,get_settings,save_settings,health_check,
@@ -1217,4 +1346,93 @@ pub fn run(){
       ])
       .run(tauri::generate_context!())
       .expect("error while running Clinic Cases System");
+}
+
+
+#[cfg(test)]
+mod production_tests {
+    use super::*;
+
+    fn test_db_path(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "clinic-cases-{}-{}.db",
+            label,
+            Uuid::new_v4()
+        ))
+    }
+
+    fn cleanup(path: &PathBuf) {
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_file(PathBuf::from(format!("{}-wal", path.to_string_lossy())));
+        let _ = fs::remove_file(PathBuf::from(format!("{}-shm", path.to_string_lossy())));
+    }
+
+    #[test]
+    fn init_db_creates_required_schema_and_indexes() {
+        let path = test_db_path("schema");
+        init_db(&path).expect("init_db failed");
+
+        let conn = Connection::open(&path).expect("open failed");
+
+        for table in ["patients", "visits", "doctors", "app_meta"] {
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                params![table],
+                |row| row.get(0)
+            ).expect("table query failed");
+            assert_eq!(count, 1, "missing table: {}", table);
+        }
+
+        for index in [
+            "idx_patients_phone",
+            "idx_patients_archived_updated",
+            "idx_visits_patient_date_time",
+            "idx_visits_date_time",
+            "idx_visits_doctor_date",
+            "idx_visits_status",
+        ] {
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
+                params![index],
+                |row| row.get(0)
+            ).expect("index query failed");
+            assert_eq!(count, 1, "missing index: {}", index);
+        }
+
+        let has_status: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='status'",
+            [],
+            |row| row.get(0)
+        ).expect("status query failed");
+        assert_eq!(has_status, 1);
+
+        drop(conn);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn patient_validation_rejects_empty_identity() {
+        assert!(validate_patient_fields("", "", None, "").is_err());
+        assert!(validate_patient_fields("مريض", "", Some(30), "").is_ok());
+        assert!(validate_patient_fields("", "01000000000", Some(30), "").is_ok());
+    }
+
+    #[test]
+    fn visit_validation_rejects_bad_values() {
+        assert!(validate_visit_fields(
+            "كشف جديد", "طبيب", "300", "حضر", "2026-09-28", "13:30"
+        ).is_ok());
+
+        assert!(validate_visit_fields(
+            "نوع غير صالح", "طبيب", "300", "حضر", "2026-09-28", "13:30"
+        ).is_err());
+
+        assert!(validate_visit_fields(
+            "كشف جديد", "طبيب", "-1", "حضر", "2026-09-28", "13:30"
+        ).is_err());
+
+        assert!(validate_visit_fields(
+            "كشف جديد", "طبيب", "300", "حضر", "bad-date", "13:30"
+        ).is_err());
+    }
 }
