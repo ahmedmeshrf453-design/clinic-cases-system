@@ -103,7 +103,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '5.4.0'
+  version: '5.5.0'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -1111,45 +1111,365 @@ function visitTable(rows: Visit[], showPatient = false) {
     </div>`;
 }
 
+function doctorInitials(name: string) {
+  const cleaned = String(name || '').replace(/^د[./\s-]*/u, '').trim();
+  const parts = cleaned.split(/\s+/).filter(Boolean).slice(0, 2);
+  return parts.map(part => part.charAt(0)).join('') || 'DR';
+}
+
+function doctorSourceSummary(rows: Visit[]) {
+  const sources = ['عادي', 'فيزيتا', 'اكشف', 'كلينيدو'];
+  return sources.map(source => {
+    const sourceRows = rows.filter(v => (v.bookingSource || 'عادي') === source);
+    return {
+      source,
+      count: sourceRows.length,
+      totalFee: sourceRows.reduce((sum, v) => sum + moneyNumber(v.fee), 0),
+      clinicAmount: sourceRows.reduce((sum, v) => sum + moneyNumber(v.clinicAmount), 0),
+      doctorAmount: sourceRows.reduce((sum, v) => sum + moneyNumber(v.doctorAmount), 0),
+    };
+  });
+}
+
+function doctorReadOnlyVisitTable(rows: Visit[]) {
+  return `
+    <div class="table-wrap doctor-profile-table">
+      <table>
+        <thead>
+          <tr>
+            <th>التاريخ</th>
+            <th>الوقت</th>
+            <th>المريض</th>
+            <th>رقم التليفون</th>
+            <th>نوع الزيارة</th>
+            <th>المصدر</th>
+            <th>سعر الكشف</th>
+            <th>مبلغ العيادات</th>
+            <th>مبلغ الطبيب</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map(v => `
+            <tr>
+              <td>${esc(displayDate(v.visitDate))}</td>
+              <td class="ltr">${esc(v.visitTime || '—')}</td>
+              <td>${esc(v.patientName || '—')}</td>
+              <td class="ltr">${esc(v.patientPhone || '—')}</td>
+              <td>${esc(v.visitType || 'زيارة')}</td>
+              <td><span class="booking-source-badge">${esc(v.bookingSource || 'عادي')}</span></td>
+              <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
+              <td class="ltr">${v.clinicAmount ? `${esc(v.clinicAmount)} ج.م` : '—'}</td>
+              <td class="ltr">${v.doctorAmount ? `${esc(v.doctorAmount)} ج.م` : '—'}</td>
+            </tr>
+          `).join('') : `<tr><td colspan="9" class="empty-row">لا توجد حالات في الفترة المختارة</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+async function exportDoctorProfileReport(
+  doctor: Doctor,
+  result: ReportResult,
+  from: string,
+  to: string,
+  format: ExportFormat
+) {
+  const metrics = reportMetrics(result.rows);
+  const sources = doctorSourceSummary(result.rows);
+
+  const sourceTable = `
+    <h3 class="export-section-heading">ملخص حسب مصدر الحجز</h3>
+    <table class="export-table">
+      <thead>
+        <tr>
+          <th>المصدر</th>
+          <th>عدد الحالات</th>
+          <th>إجمالي الكشف</th>
+          <th>مبلغ العيادات</th>
+          <th>مبلغ الطبيب</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sources.map(item => `
+          <tr>
+            <td>${esc(item.source)}</td>
+            <td>${item.count}</td>
+            <td class="ltr">${item.totalFee.toFixed(2)} ج.م</td>
+            <td class="ltr">${item.clinicAmount.toFixed(2)} ج.م</td>
+            <td class="ltr">${item.doctorAmount.toFixed(2)} ج.م</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>`;
+
+  const body = `
+    <div class="export-summary export-summary-v48">
+      <div><span>الطبيب</span><strong>${esc(doctor.name)}</strong></div>
+      <div><span>الفترة</span><strong>${esc(reportPeriodLabel(from, to))}</strong></div>
+      <div><span>عدد الحالات</span><strong>${metrics.totalVisits}</strong></div>
+      <div><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+      <div><span>إجمالي مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)} ج.م</strong></div>
+      <div><span>إجمالي مبلغ الطبيب</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)} ج.م</strong></div>
+    </div>
+    ${sourceTable}
+    <h3 class="export-section-heading">تفاصيل الحالات</h3>
+    ${exportVisitRows(result.rows, true)}
+  `;
+
+  await captureAndSaveExport(
+    exportSheet(`تقرير الطبيب - ${doctor.name}`, reportPeriodLabel(from, to), body),
+    `تقرير الطبيب - ${doctor.name} - ${from} - ${to}`,
+    format
+  );
+}
+
+async function openDoctorProfile(doctor: Doctor) {
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+  const activeDay = businessDay();
+  const [year, month] = activeDay.split('-').map(Number);
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+
+  root.innerHTML = `
+    <div class="modal-backdrop">
+      <section class="modal doctor-profile-modal">
+        <div class="modal-head doctor-profile-head">
+          <div class="doctor-profile-identity">
+            <div class="doctor-profile-avatar">${esc(doctorInitials(doctor.name))}</div>
+            <div>
+              <h2>${esc(doctor.name)}</h2>
+              <p>${esc(doctor.specialty || 'بدون تخصص')}</p>
+            </div>
+          </div>
+          <button class="modal-close" id="closeDoctorProfile">×</button>
+        </div>
+
+        <div class="doctor-period-bar">
+          <button class="btn ghost small" id="doctorTodayRange">اليوم</button>
+          <button class="btn ghost small" id="doctorMonthRange">الشهر الحالي</button>
+          <label>من<input id="doctorFrom" type="date" value="${activeDay}"></label>
+          <label>إلى<input id="doctorTo" type="date" value="${activeDay}"></label>
+          <button class="btn primary small" id="doctorRunRange">عرض الفترة</button>
+        </div>
+
+        <div class="doctor-profile-export-bar">
+          <button class="btn ghost small" id="doctorProfilePng">تحميل صورة</button>
+          <button class="btn primary small" id="doctorProfilePdf">تحميل PDF</button>
+        </div>
+
+        <div id="doctorProfileBody">
+          <div class="empty-block">جاري تحميل بيانات الطبيب...</div>
+        </div>
+      </section>
+    </div>`;
+
+  const close = () => root.innerHTML = '';
+  document.querySelector<HTMLButtonElement>('#closeDoctorProfile')!.onclick = close;
+
+  const fromInput = document.querySelector<HTMLInputElement>('#doctorFrom')!;
+  const toInput = document.querySelector<HTMLInputElement>('#doctorTo')!;
+  const body = document.querySelector<HTMLDivElement>('#doctorProfileBody')!;
+
+  let currentResult: ReportResult = { totalVisits: 0, uniquePatients: 0, rows: [] };
+
+  const render = async () => {
+    const from = fromInput.value;
+    const to = toInput.value;
+    if (!from || !to) {
+      toast('حدد تاريخ البداية والنهاية', 'error');
+      return;
+    }
+
+    body.innerHTML = `<div class="empty-block">جاري تحميل البيانات...</div>`;
+
+    try {
+      currentResult = await invoke<ReportResult>('run_report', {
+        query: { from, to, doctor: doctor.name }
+      });
+
+      const metrics = reportMetrics(currentResult.rows);
+      const sources = doctorSourceSummary(currentResult.rows);
+
+      body.innerHTML = `
+        <div class="doctor-profile-total-grid">
+          <article><span>إجمالي الحالات</span><strong>${metrics.totalVisits}</strong></article>
+          <article><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></article>
+          <article><span>إجمالي مبلغ الطبيب</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)} ج.م</strong></article>
+          <article><span>إجمالي مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)} ج.م</strong></article>
+        </div>
+
+        <div class="doctor-source-grid">
+          ${sources.map(item => `
+            <article class="doctor-source-card">
+              <div class="doctor-source-icon">⌁</div>
+              <div class="doctor-source-name">${esc(item.source)}</div>
+              <strong>${item.count} حالة</strong>
+              <div class="doctor-source-money">
+                <span>للطبيب <b class="ltr">${item.doctorAmount.toFixed(2)} ج.م</b></span>
+                <span>للعيادات <b class="ltr">${item.clinicAmount.toFixed(2)} ج.م</b></span>
+                <span>إجمالي الكشف <b class="ltr">${item.totalFee.toFixed(2)} ج.م</b></span>
+              </div>
+            </article>
+          `).join('')}
+        </div>
+
+        <div class="doctor-profile-section-head">
+          <div>
+            <h3>تفاصيل الحالات</h3>
+            <p>${esc(reportPeriodLabel(from, to))}</p>
+          </div>
+          <strong>${currentResult.totalVisits} حالة</strong>
+        </div>
+
+        ${doctorReadOnlyVisitTable(currentResult.rows)}
+      `;
+    } catch (err) {
+      body.innerHTML = `<div class="empty-block">تعذر تحميل بيانات الطبيب</div>`;
+      toast(`تعذر تحميل التقرير: ${String(err)}`, 'error');
+    }
+  };
+
+  document.querySelector<HTMLButtonElement>('#doctorTodayRange')!.onclick = async () => {
+    const day = businessDay();
+    fromInput.value = day;
+    toInput.value = day;
+    await render();
+  };
+
+  document.querySelector<HTMLButtonElement>('#doctorMonthRange')!.onclick = async () => {
+    fromInput.value = monthStart;
+    toInput.value = activeDay;
+    await render();
+  };
+
+  document.querySelector<HTMLButtonElement>('#doctorRunRange')!.onclick = render;
+
+  document.querySelector<HTMLButtonElement>('#doctorProfilePng')!.onclick = async () => {
+    await render();
+    await exportDoctorProfileReport(doctor, currentResult, fromInput.value, toInput.value, 'png');
+  };
+
+  document.querySelector<HTMLButtonElement>('#doctorProfilePdf')!.onclick = async () => {
+    await render();
+    await exportDoctorProfileReport(doctor, currentResult, fromInput.value, toInput.value, 'pdf');
+  };
+
+  await render();
+}
+
 async function renderDoctors() {
+  const dayKey = businessDay();
+  const todayReport = await invoke<ReportResult>('run_report', {
+    query: { from: dayKey, to: dayKey, doctor: '' }
+  });
+
+  const todayByDoctor = new Map<string, { count: number; doctorAmount: number }>();
+  for (const visit of todayReport.rows) {
+    const name = (visit.doctor || '').trim();
+    if (!name) continue;
+    const item = todayByDoctor.get(name) || { count: 0, doctorAmount: 0 };
+    item.count += 1;
+    item.doctorAmount += moneyNumber(visit.doctorAmount);
+    todayByDoctor.set(name, item);
+  }
+
   shell(`
     <section class="card">
       <div class="card-head toolbar">
-        <div><h2>الأطباء</h2><p>قائمة الأطباء المستخدمة أثناء تسجيل الزيارة</p></div>
+        <div>
+          <h2>الأطباء</h2>
+          <p>اضغط على أي دكتور لفتح ملفه والإحصائيات والحسابات</p>
+        </div>
         <button class="btn primary small" id="addDoctorBtn">＋ إضافة طبيب</button>
       </div>
-      <div class="doctor-grid">
-        ${doctors.length ? doctors.map(d => `
-          <article class="doctor-card ${d.active?'':'inactive'}">
-            <div class="doctor-avatar">⚕</div>
-            <div class="doctor-info"><strong>${esc(d.name)}</strong><span>${esc(d.specialty || 'بدون تخصص')}</span></div>
-            <div class="doctor-actions">
-              <button class="icon-action edit" data-doctor-edit="${esc(d.id)}" title="تعديل">✎</button>
-              <button class="icon-action danger" data-doctor-delete="${esc(d.id)}" title="حذف">🗑</button>
-              <button class="switch ${d.active?'on':''}" data-doctor-toggle="${esc(d.id)}" data-active="${d.active}">${d.active?'نشط':'غير نشط'}</button>
-            </div>
-          </article>`).join('') : `<div class="empty-block">لم يتم إضافة أطباء بعد</div>`}
+
+      <div class="doctor-icon-grid">
+        ${doctors.length ? doctors.map(d => {
+          const todayItem = todayByDoctor.get(d.name) || { count: 0, doctorAmount: 0 };
+          return `
+            <article class="doctor-icon-card ${d.active ? '' : 'inactive'}" data-doctor-open="${esc(d.id)}" role="button" tabindex="0">
+              <div class="doctor-icon-visual">
+                <span class="doctor-icon-symbol">⚕</span>
+                <span class="doctor-icon-initials">${esc(doctorInitials(d.name))}</span>
+              </div>
+
+              <div class="doctor-icon-copy">
+                <strong>${esc(d.name)}</strong>
+                <span>${esc(d.specialty || 'بدون تخصص')}</span>
+              </div>
+
+              <div class="doctor-icon-today">
+                <span>${todayItem.count} حالة اليوم</span>
+                <b class="ltr">${todayItem.doctorAmount.toFixed(2)} ج.م للطبيب</b>
+              </div>
+
+              <div class="doctor-icon-actions">
+                <button class="icon-action edit" data-doctor-edit="${esc(d.id)}" title="تعديل">✎</button>
+                <button class="icon-action danger" data-doctor-delete="${esc(d.id)}" title="حذف">🗑</button>
+                <button class="switch ${d.active ? 'on' : ''}" data-doctor-toggle="${esc(d.id)}" data-active="${d.active}">
+                  ${d.active ? 'نشط' : 'غير نشط'}
+                </button>
+              </div>
+            </article>`;
+        }).join('') : `<div class="empty-block">لم يتم إضافة أطباء بعد</div>`}
       </div>
     </section>
-  `, 'الأطباء', 'إدارة قائمة الأطباء والتخصصات');
+  `, 'الأطباء', 'ملفات الأطباء وملخص الحالات والحسابات');
+
   document.querySelector<HTMLButtonElement>('#addDoctorBtn')!.onclick = () => openDoctorModal();
-  document.querySelectorAll<HTMLButtonElement>('[data-doctor-edit]').forEach(b => {
-    const d = doctors.find(x => x.id === b.dataset.doctorEdit);
-    if (d) b.onclick = () => openDoctorModal(d);
+
+  document.querySelectorAll<HTMLElement>('[data-doctor-open]').forEach(card => {
+    const doctor = doctors.find(d => d.id === card.dataset.doctorOpen);
+    if (!doctor) return;
+
+    const open = () => openDoctorProfile(doctor);
+    card.onclick = event => {
+      if ((event.target as HTMLElement).closest('button')) return;
+      open();
+    };
+    card.onkeydown = event => {
+      if ((event.key === 'Enter' || event.key === ' ') && !(event.target as HTMLElement).closest('button')) {
+        event.preventDefault();
+        open();
+      }
+    };
   });
-  document.querySelectorAll<HTMLButtonElement>('[data-doctor-toggle]').forEach(b => b.onclick = async () => {
-    const d = doctors.find(x => x.id === b.dataset.doctorToggle);
-    if (!d) return;
-    await invoke('save_doctor', { input: { id: d.id, name: d.name, specialty: d.specialty, active: !d.active } });
-    await renderScreen();
+
+  document.querySelectorAll<HTMLButtonElement>('[data-doctor-edit]').forEach(button => {
+    const doctor = doctors.find(d => d.id === button.dataset.doctorEdit);
+    if (!doctor) return;
+    button.onclick = event => {
+      event.stopPropagation();
+      openDoctorModal(doctor);
+    };
   });
-  document.querySelectorAll<HTMLButtonElement>('[data-doctor-delete]').forEach(b => b.onclick = async () => {
-    const d = doctors.find(x => x.id === b.dataset.doctorDelete);
-    if (!d) return;
-    if (!confirm(`حذف الطبيب ${d.name} من القائمة؟ الزيارات القديمة لن تُحذف.`)) return;
-    await invoke('delete_doctor', { id: d.id });
-    toast('تم حذف الطبيب');
-    await renderScreen();
+
+  document.querySelectorAll<HTMLButtonElement>('[data-doctor-toggle]').forEach(button => {
+    button.onclick = async event => {
+      event.stopPropagation();
+      const doctor = doctors.find(d => d.id === button.dataset.doctorToggle);
+      if (!doctor) return;
+      await invoke('save_doctor', {
+        input: {
+          id: doctor.id,
+          name: doctor.name,
+          specialty: doctor.specialty,
+          active: !doctor.active
+        }
+      });
+      await renderScreen();
+    };
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-doctor-delete]').forEach(button => {
+    button.onclick = async event => {
+      event.stopPropagation();
+      const doctor = doctors.find(d => d.id === button.dataset.doctorDelete);
+      if (!doctor) return;
+      if (!confirm(`حذف الطبيب ${doctor.name} من القائمة؟ الزيارات القديمة لن تُحذف.`)) return;
+      await invoke('delete_doctor', { id: doctor.id });
+      toast('تم حذف الطبيب');
+      await renderScreen();
+    };
   });
 }
 

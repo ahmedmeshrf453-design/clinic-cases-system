@@ -1221,3 +1221,39 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
 .dashboard-clickable:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(10,35,66,.09)}
 .dashboard-clickable:focus-visible{outline:2px solid #0a6075;outline-offset:3px}
 .dashboard-clickable .stat-icon{pointer-events:none}
+
+/* V5.5 doctor profiles */
+.doctor-icon-grid{display:grid;grid-template-columns:repeat(4,minmax(210px,1fr));gap:14px}
+.doctor-icon-card{position:relative;display:flex;flex-direction:column;gap:11px;min-height:240px;padding:16px;border:1px solid #dfe7ef;border-radius:16px;background:#fff;box-shadow:0 5px 18px rgba(10,35,66,.045);cursor:pointer;transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease}
+.doctor-icon-card:hover{transform:translateY(-3px);border-color:#bfd1df;box-shadow:0 12px 28px rgba(10,35,66,.09)}
+.doctor-icon-card:focus-visible{outline:2px solid #0c8793;outline-offset:3px}
+.doctor-icon-card.inactive{opacity:.58}
+.doctor-icon-visual{width:76px;height:76px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(145deg,#eef7fa,#e3f1f2);color:#0a6075;position:relative}
+.doctor-icon-symbol{font-size:31px;line-height:1}
+.doctor-icon-initials{position:absolute;left:7px;bottom:5px;min-width:25px;height:20px;padding:0 5px;display:grid;place-items:center;border-radius:7px;background:#0a2342;color:#fff;font-size:9px;font-weight:800}
+.doctor-icon-copy{min-height:58px}.doctor-icon-copy strong{display:block;color:#102b49;font-size:15px}.doctor-icon-copy span{display:block;margin-top:5px;color:#77869a;font-size:11px;line-height:1.5}
+.doctor-icon-today{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:9px 10px;border-radius:10px;background:#f5f8fb;color:#66788d;font-size:10px}
+.doctor-icon-today b{color:#0a6075;font-size:10px}
+.doctor-icon-actions{margin-top:auto;display:flex;gap:6px;align-items:center;padding-top:10px;border-top:1px solid #edf1f5}
+.doctor-profile-modal{width:min(1280px,96vw);max-height:94vh}
+.doctor-profile-head{align-items:center}
+.doctor-profile-identity{display:flex;align-items:center;gap:13px}
+.doctor-profile-avatar{width:58px;height:58px;border-radius:15px;display:grid;place-items:center;background:#e8f3f6;color:#0a6075;font-size:18px;font-weight:900}
+.doctor-period-bar{display:grid;grid-template-columns:auto auto minmax(145px,1fr) minmax(145px,1fr) auto;gap:9px;align-items:end;background:#f7f9fc;border:1px solid #e4eaf0;border-radius:13px;padding:12px;margin-bottom:10px}
+.doctor-period-bar label{display:grid;gap:5px;font-size:10px;color:#66788d}
+.doctor-profile-export-bar{display:flex;justify-content:flex-end;gap:7px;margin-bottom:12px}
+.doctor-profile-total-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.doctor-profile-total-grid article{background:#f3f8fa;border:1px solid #e4edf1;border-radius:12px;padding:12px}
+.doctor-profile-total-grid span,.doctor-profile-total-grid strong{display:block}
+.doctor-profile-total-grid span{font-size:10px;color:#75859a}.doctor-profile-total-grid strong{margin-top:5px;font-size:19px;color:#0a2342}
+.doctor-source-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.doctor-source-card{padding:13px;border:1px solid #e2e9ef;border-radius:13px;background:#fff}
+.doctor-source-icon{width:31px;height:31px;border-radius:9px;display:grid;place-items:center;background:#edf5f7;color:#0b7180;margin-bottom:7px}
+.doctor-source-name{font-size:12px;color:#53657b;margin-bottom:3px}.doctor-source-card>strong{font-size:18px;color:#0a2342}
+.doctor-source-money{display:grid;gap:4px;margin-top:10px;padding-top:9px;border-top:1px solid #edf1f5}
+.doctor-source-money span{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:#75859a}.doctor-source-money b{color:#183b5b}
+.doctor-profile-section-head{display:flex;justify-content:space-between;align-items:end;gap:12px;margin:6px 0 9px}
+.doctor-profile-section-head h3{margin:0;color:#173a5e}.doctor-profile-section-head p{margin:3px 0 0;color:#8290a2;font-size:10px}
+.doctor-profile-table{max-height:360px}
+@media(max-width:1350px){.doctor-icon-grid{grid-template-columns:repeat(3,minmax(210px,1fr))}}
+@media(max-width:1000px){.doctor-icon-grid{grid-template-columns:repeat(2,minmax(210px,1fr))}.doctor-profile-total-grid,.doctor-source-grid{grid-template-columns:repeat(2,1fr)}.doctor-period-bar{grid-template-columns:1fr 1fr}}
