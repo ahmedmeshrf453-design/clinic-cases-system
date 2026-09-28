@@ -36,6 +36,7 @@ type Visit = {
   notes: string;
   fee: string;
   visitType: string;
+  bookingSource: string;
   status: string;
   patientName: string;
   patientPhone: string;
@@ -100,7 +101,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '5.0.0'
+  version: '5.1.0'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -150,6 +151,12 @@ function displayDate(v: string) {
 function visitStatusOptions(current = '') {
   const value = current || 'لم يحدد';
   const options = ['لم يحدد', 'حضر', 'لم يحضر', 'ملغي', 'مؤجل'];
+  return options.map(x => `<option value="${esc(x)}" ${x === value ? 'selected' : ''}>${esc(x)}</option>`).join('');
+}
+
+function bookingSourceOptions(current = '') {
+  const value = current || 'عادي';
+  const options = ['فيزيتا', 'اكشف', 'كلينيدو', 'عادي'];
   return options.map(x => `<option value="${esc(x)}" ${x === value ? 'selected' : ''}>${esc(x)}</option>`).join('');
 }
 
@@ -246,6 +253,7 @@ function exportVisitRows(rows: Visit[], includePatient: boolean) {
           <th>الوقت</th>
           ${includePatient ? '<th>المريض</th><th>رقم التليفون</th>' : ''}
           <th>نوع الزيارة</th>
+          <th>مصدر الحجز</th>
           <th>حالة الزيارة</th>
           <th>الطبيب</th>
           <th>سعر الكشف</th>
@@ -258,11 +266,12 @@ function exportVisitRows(rows: Visit[], includePatient: boolean) {
             <td class="ltr">${esc(v.visitTime || '—')}</td>
             ${includePatient ? `<td>${esc(v.patientName || '—')}</td><td class="ltr">${esc(v.patientPhone || '—')}</td>` : ''}
             <td>${esc(v.visitType || 'زيارة')}</td>
+            <td>${esc(v.bookingSource || 'عادي')}</td>
             <td>${esc(v.status || 'لم يحدد')}</td>
             <td>${esc(v.doctor || '—')}</td>
             <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
           </tr>
-        `).join('') : `<tr><td colspan="${includePatient ? 8 : 6}">لا توجد بيانات</td></tr>`}
+        `).join('') : `<tr><td colspan="${includePatient ? 9 : 7}">لا توجد بيانات</td></tr>`}
       </tbody>
     </table>`;
 }
@@ -1084,7 +1093,7 @@ function visitTable(rows: Visit[], showPatient = false) {
         <thead><tr>
           <th>التاريخ</th><th>الوقت</th>
           ${showPatient ? '<th>المريض</th><th>رقم التليفون</th>' : ''}
-          <th>نوع الزيارة</th><th>حالة الزيارة</th><th>الطبيب</th><th>سعر الكشف</th><th>إجراءات</th>
+          <th>نوع الزيارة</th><th>مصدر الحجز</th><th>حالة الزيارة</th><th>الطبيب</th><th>سعر الكشف</th><th>إجراءات</th>
         </tr></thead>
         <tbody>${rows.length ? rows.map(v => `
           <tr class="visit-context-row" data-patient-id="${esc(v.patientId)}" data-patient-name="${esc(v.patientName || '')}" data-patient-phone="${esc(v.patientPhone || '')}">
@@ -1092,6 +1101,7 @@ function visitTable(rows: Visit[], showPatient = false) {
             <td class="ltr">${esc(v.visitTime)}</td>
             ${showPatient ? `<td>${esc(v.patientName || '—')}</td><td class="ltr">${esc(v.patientPhone || '—')}</td>` : ''}
             <td><span class="visit-type-badge">${esc(v.visitType || 'زيارة')}</span></td>
+            <td><span class="booking-source-badge">${esc(v.bookingSource || 'عادي')}</span></td>
             <td>
               <select class="visit-status-select" data-visit-status-id="${esc(v.id)}" data-previous-status="${esc(v.status || 'لم يحدد')}">
                 ${visitStatusOptions(v.status)}
@@ -1105,7 +1115,7 @@ function visitTable(rows: Visit[], showPatient = false) {
                 <button class="icon-action danger" type="button" data-delete-visit="${esc(v.id)}" title="حذف الزيارة">🗑</button>
               </div>
             </td>
-          </tr>`).join('') : `<tr><td colspan="${showPatient ? 9 : 7}" class="empty-row">لا توجد زيارات</td></tr>`}
+          </tr>`).join('') : `<tr><td colspan="${showPatient ? 10 : 8}" class="empty-row">لا توجد زيارات</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -1615,6 +1625,9 @@ async function openVisitModal(patient: Patient) {
             <label class="span2">الطبيب
               <select name="doctor">${doctorOptions(patient.doctor || '')}</select>
             </label>
+            <label>مصدر الحجز
+              <select name=\"bookingSource\">${bookingSourceOptions('عادي')}</select>
+            </label>
             <label>سعر الكشف
               <input class="ltr" name="fee" type="number" min="0" step="0.01" placeholder="يكتب يدويًا">
             </label>
@@ -1655,6 +1668,7 @@ async function openVisitModal(patient: Patient) {
       await invoke('add_visit', { input: {
         patientId: patient.id,
         visitType: String(fd.get('visitType')||''),
+        bookingSource: String(fd.get('bookingSource')||'عادي'),
         doctor: String(fd.get('doctor')||'').trim(),
         fee: String(fd.get('fee')||'').trim(),
         status: String(fd.get('visitStatus')||'لم يحدد'),
@@ -1702,6 +1716,9 @@ async function openEditVisitModal(visitId: string) {
             <label class="span2">الطبيب
               <select name="doctor">${doctorSelect}</select>
             </label>
+            <label>مصدر الحجز
+              <select name=\"bookingSource\">${bookingSourceOptions(visit.bookingSource)}</select>
+            </label>
             <label>سعر الكشف
               <input class="ltr" name="fee" type="number" min="0" step="0.01" value="${esc(visit.fee || '')}">
             </label>
@@ -1736,6 +1753,7 @@ async function openEditVisitModal(visitId: string) {
       await invoke('update_visit', { input: {
         id: visit.id,
         visitType: String(fd.get('visitType') || ''),
+        bookingSource: String(fd.get('bookingSource') || 'عادي'),
         doctor: String(fd.get('doctor') || '').trim(),
         fee: String(fd.get('fee') || '').trim(),
         status: String(fd.get('status') || 'لم يحدد'),
