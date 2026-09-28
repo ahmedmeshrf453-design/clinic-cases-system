@@ -1,0 +1,590 @@
+name: Clinic Cases V5.2 Doctor Clinic Amounts
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply V5.2 doctor and clinic amounts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+
+          # ================= FRONTEND =================
+          p = Path("src/main.ts")
+          s = p.read_text(encoding="utf-8")
+
+          def replace_once(old, new, label):
+              global s
+              if old not in s:
+                  raise SystemExit(f"MAIN marker not found: {label}")
+              s = s.replace(old, new, 1)
+
+          # Visit fields
+          replace_once(
+              """  fee: string;
+            visitType: string;""",
+              """  fee: string;
+            clinicAmount: string;
+            doctorAmount: string;
+            visitType: string;""",
+              "Visit amount fields"
+          )
+
+          # Money helpers + metrics
+          replace_once(
+              """function visitFeeNumber(v: Visit) {
+            const n = Number(String(v.fee || '').replace(',', '.'));
+            return Number.isFinite(n) ? n : 0;
+          }
+
+          function reportMetrics(rows: Visit[]) {
+            const patientIds = new Set(rows.map(v => v.patientId));
+            return {
+              totalVisits: rows.length,
+              uniquePatients: patientIds.size,
+              revenue: rows.reduce((sum, v) => sum + visitFeeNumber(v), 0),""",
+              """function moneyNumber(value: string) {
+            const n = Number(String(value || '').replace(',', '.'));
+            return Number.isFinite(n) ? n : 0;
+          }
+
+          function visitFeeNumber(v: Visit) {
+            return moneyNumber(v.fee);
+          }
+
+          function reportMetrics(rows: Visit[]) {
+            const patientIds = new Set(rows.map(v => v.patientId));
+            return {
+              totalVisits: rows.length,
+              uniquePatients: patientIds.size,
+              revenue: rows.reduce((sum, v) => sum + visitFeeNumber(v), 0),
+              clinicTotal: rows.reduce((sum, v) => sum + moneyNumber(v.clinicAmount), 0),
+              doctorTotal: rows.reduce((sum, v) => sum + moneyNumber(v.doctorAmount), 0),""",
+              "report metrics"
+          )
+
+          # Doctor breakdown tracks split
+          replace_once(
+              """function doctorBreakdown(rows: Visit[]) {
+            const map = new Map<string, {count:number; revenue:number; attended:number}>();
+            for (const v of rows) {
+              const doctor = (v.doctor || '').trim() || 'بدون طبيب';
+              const item = map.get(doctor) || { count: 0, revenue: 0, attended: 0 };
+              item.count += 1;
+              item.revenue += visitFeeNumber(v);
+              if (v.status === 'حضر') item.attended += 1;
+              map.set(doctor, item);
+            }""",
+              """function doctorBreakdown(rows: Visit[]) {
+            const map = new Map<string, {count:number; revenue:number; clinicTotal:number; doctorTotal:number; attended:number}>();
+            for (const v of rows) {
+              const doctor = (v.doctor || '').trim() || 'بدون طبيب';
+              const item = map.get(doctor) || { count: 0, revenue: 0, clinicTotal: 0, doctorTotal: 0, attended: 0 };
+              item.count += 1;
+              item.revenue += visitFeeNumber(v);
+              item.clinicTotal += moneyNumber(v.clinicAmount);
+              item.doctorTotal += moneyNumber(v.doctorAmount);
+              if (v.status === 'حضر') item.attended += 1;
+              map.set(doctor, item);
+            }""",
+              "doctor breakdown"
+          )
+
+          # Export columns
+          replace_once(
+              """          <th>سعر الكشف</th>
+                </tr>""",
+              """          <th>سعر الكشف</th>
+                  <th>مبلغ العيادات</th>
+                  <th>مبلغ الطبيب</th>
+                </tr>""",
+              "export headers"
+          )
+          replace_once(
+              """            <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
+                    </tr>""",
+              """            <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
+                      <td class="ltr">${v.clinicAmount ? `${esc(v.clinicAmount)} ج.م` : '—'}</td>
+                      <td class="ltr">${v.doctorAmount ? `${esc(v.doctorAmount)} ج.م` : '—'}</td>
+                    </tr>""",
+              "export amount rows"
+          )
+          s = s.replace('${includePatient ? 9 : 7}', '${includePatient ? 11 : 9}', 1)
+
+          # Add visit form - amount fields immediately after fee
+          replace_once(
+              """            <label>سعر الكشف
+                        <input class="ltr" name="fee" type="number" min="0" step="0.01" placeholder="يكتب يدويًا">
+                      </label>
+                      <label>حالة الزيارة""",
+              """            <label>سعر الكشف
+                        <input class="ltr" name="fee" type="number" min="0" step="0.01" placeholder="يكتب يدويًا">
+                      </label>
+                      <label>مبلغ العيادات
+                        <input class="ltr" name="clinicAmount" type="number" min="0" step="0.01" placeholder="يكتب يدويًا">
+                      </label>
+                      <label>مبلغ الطبيب
+                        <input class="ltr" name="doctorAmount" type="number" min="0" step="0.01" placeholder="يكتب يدويًا">
+                      </label>
+                      <label>حالة الزيارة""",
+              "add visit amount inputs"
+          )
+          replace_once(
+              """        fee: String(fd.get('fee')||'').trim(),
+                  status:""",
+              """        fee: String(fd.get('fee')||'').trim(),
+                  clinicAmount: String(fd.get('clinicAmount')||'').trim(),
+                  doctorAmount: String(fd.get('doctorAmount')||'').trim(),
+                  status:""",
+              "add visit amount payload"
+          )
+
+          # Edit visit
+          replace_once(
+              """            <label>سعر الكشف
+                        <input class="ltr" name="fee" type="number" min="0" step="0.01" value="${esc(visit.fee || '')}">
+                      </label>
+                      <label>حالة الزيارة""",
+              """            <label>سعر الكشف
+                        <input class="ltr" name="fee" type="number" min="0" step="0.01" value="${esc(visit.fee || '')}">
+                      </label>
+                      <label>مبلغ العيادات
+                        <input class="ltr" name="clinicAmount" type="number" min="0" step="0.01" value="${esc(visit.clinicAmount || '')}">
+                      </label>
+                      <label>مبلغ الطبيب
+                        <input class="ltr" name="doctorAmount" type="number" min="0" step="0.01" value="${esc(visit.doctorAmount || '')}">
+                      </label>
+                      <label>حالة الزيارة""",
+              "edit visit amount inputs"
+          )
+          replace_once(
+              """        fee: String(fd.get('fee') || '').trim(),
+                  status:""",
+              """        fee: String(fd.get('fee') || '').trim(),
+                  clinicAmount: String(fd.get('clinicAmount') || '').trim(),
+                  doctorAmount: String(fd.get('doctorAmount') || '').trim(),
+                  status:""",
+              "edit visit amount payload"
+          )
+
+          # On-screen visit table
+          replace_once(
+              """<th>نوع الزيارة</th><th>مصدر الحجز</th><th>حالة الزيارة</th><th>الطبيب</th><th>سعر الكشف</th><th>إجراءات</th>""",
+              """<th>نوع الزيارة</th><th>مصدر الحجز</th><th>حالة الزيارة</th><th>الطبيب</th><th>سعر الكشف</th><th>مبلغ العيادات</th><th>مبلغ الطبيب</th><th>إجراءات</th>""",
+              "visit table headers"
+          )
+          replace_once(
+              """            <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
+                      <td>
+                        <div class="visit-row-actions">""",
+              """            <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
+                      <td class="ltr">${v.clinicAmount ? `${esc(v.clinicAmount)} ج.م` : '—'}</td>
+                      <td class="ltr">${v.doctorAmount ? `${esc(v.doctorAmount)} ج.م` : '—'}</td>
+                      <td>
+                        <div class="visit-row-actions">""",
+              "visit table amounts"
+          )
+          s = s.replace('${showPatient ? 10 : 8}', '${showPatient ? 12 : 10}', 1)
+
+          # Today summary includes both totals
+          replace_once(
+              """        <div><span>التحصيل</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+                  <div><span>حضر</span>""",
+              """        <div><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+                  <div><span>مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)} ج.م</strong></div>
+                  <div><span>مبلغ الأطباء</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)} ج.م</strong></div>
+                  <div><span>حضر</span>""",
+              "today financial summary"
+          )
+
+          # Reports summary includes both totals
+          replace_once(
+              """        <div><span>إجمالي التحصيل</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+                  <div><span>حضر</span>""",
+              """        <div><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+                  <div><span>مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)} ج.م</strong></div>
+                  <div><span>مبلغ الأطباء</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)} ج.م</strong></div>
+                  <div><span>حضر</span>""",
+              "report financial summary"
+          )
+
+          # Doctor breakdown card shows the split
+          replace_once(
+              """              <b class="ltr">${item.revenue.toFixed(2)} ج.م</b>
+                        </article>""",
+              """              <div class="doctor-money-split">
+                          <b class="ltr">${item.revenue.toFixed(2)} ج.م إجمالي</b>
+                          <small class="ltr">${item.clinicTotal.toFixed(2)} عيادات</small>
+                          <small class="ltr">${item.doctorTotal.toFixed(2)} طبيب</small>
+                        </div>
+                        </article>""",
+              "doctor report split"
+          )
+
+          # Export report summary - all financial totals
+          export_marker = """      <div><span>إجمالي التحصيل</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>"""
+          if export_marker in s:
+              s = s.replace(
+                  export_marker,
+                  """      <div><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+                    <div><span>مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)} ج.م</strong></div>
+                    <div><span>مبلغ الأطباء</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)} ج.م</strong></div>""",
+                  1
+              )
+
+          s = s.replace("version: '5.1.0'", "version: '5.2.0'", 1)
+          p.write_text(s, encoding="utf-8")
+
+          # ================= BACKEND =================
+          p = Path("src-tauri/src/lib.rs")
+          r = p.read_text(encoding="utf-8")
+
+          def rreplace(old, new, label):
+              global r
+              if old not in r:
+                  raise SystemExit(f"RUST marker not found: {label}")
+              r = r.replace(old, new, 1)
+
+          # Input structs
+          rreplace(
+              """    patient_id: String, visit_type: String, booking_source: String, doctor: String, fee: String, status: String,
+              visit_date: String, visit_time: String,""",
+              """    patient_id: String, visit_type: String, booking_source: String, doctor: String, fee: String,
+              clinic_amount: String, doctor_amount: String, status: String,
+              visit_date: String, visit_time: String,""",
+              "AddVisitInput"
+          )
+          rreplace(
+              """    id: String, visit_type: String, booking_source: String, doctor: String, fee: String, status: String,
+              visit_date: String, visit_time: String,""",
+              """    id: String, visit_type: String, booking_source: String, doctor: String, fee: String,
+              clinic_amount: String, doctor_amount: String, status: String,
+              visit_date: String, visit_time: String,""",
+              "UpdateVisitInput"
+          )
+
+          # Visit struct
+          rreplace(
+              """    notes: String, fee: String, visit_type: String, status: String, booking_source: String,
+              patient_name: String, patient_phone: String, created_at: String,""",
+              """    notes: String, fee: String, visit_type: String, status: String, booking_source: String,
+              clinic_amount: String, doctor_amount: String,
+              patient_name: String, patient_phone: String, created_at: String,""",
+              "Visit struct"
+          )
+
+          # New DB schema
+          rreplace(
+              """        booking_source TEXT NOT NULL DEFAULT 'عادي',
+                  complaint TEXT NOT NULL DEFAULT '',""",
+              """        booking_source TEXT NOT NULL DEFAULT 'عادي',
+                  clinic_amount TEXT NOT NULL DEFAULT '',
+                  doctor_amount TEXT NOT NULL DEFAULT '',
+                  complaint TEXT NOT NULL DEFAULT '',""",
+              "visits schema amounts"
+          )
+
+          # Migration for existing DB
+          anchor = """    if has_booking_source == 0 {
+              conn.execute(
+                  "ALTER TABLE visits ADD COLUMN booking_source TEXT NOT NULL DEFAULT 'عادي'",
+                  []
+              ).map_err(|e| e.to_string())?;
+          }
+          """
+          if anchor not in r:
+              raise SystemExit("RUST marker not found: booking migration anchor")
+          migration = anchor + """
+              let has_clinic_amount: i64 = conn.query_row(
+                  "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='clinic_amount'",
+                  [],
+                  |row| row.get(0)
+              ).map_err(|e| e.to_string())?;
+              if has_clinic_amount == 0 {
+                  conn.execute(
+                      "ALTER TABLE visits ADD COLUMN clinic_amount TEXT NOT NULL DEFAULT ''",
+                      []
+                  ).map_err(|e| e.to_string())?;
+              }
+
+              let has_doctor_amount: i64 = conn.query_row(
+                  "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='doctor_amount'",
+                  [],
+                  |row| row.get(0)
+              ).map_err(|e| e.to_string())?;
+              if has_doctor_amount == 0 {
+                  conn.execute(
+                      "ALTER TABLE visits ADD COLUMN doctor_amount TEXT NOT NULL DEFAULT ''",
+                      []
+                  ).map_err(|e| e.to_string())?;
+              }
+          """
+          r = r.replace(anchor, migration, 1)
+
+          # Map visit columns 16/17
+          rreplace(
+              """        status: row.get(14)?, booking_source: row.get(15)?,""",
+              """        status: row.get(14)?, booking_source: row.get(15)?,
+                  clinic_amount: row.get(16)?, doctor_amount: row.get(17)?,""",
+              "map_visit amounts"
+          )
+
+          # Append columns to the 3 active Visit SELECTs
+          select_pairs = [
+              (
+                  "'' AS patient_name,'' AS patient_phone,status,booking_source\n         FROM visits WHERE patient_id=?1",
+                  "'' AS patient_name,'' AS patient_phone,status,booking_source,clinic_amount,doctor_amount\n         FROM visits WHERE patient_id=?1"
+              ),
+              (
+                  "p.full_name,p.phone,v.status,v.booking_source\n         FROM visits v\n         JOIN patients p ON p.id=v.patient_id",
+                  "p.full_name,p.phone,v.status,v.booking_source,v.clinic_amount,v.doctor_amount\n         FROM visits v\n         JOIN patients p ON p.id=v.patient_id"
+              ),
+              (
+                  "p.full_name,p.phone,v.status,v.booking_source\n         FROM visits v JOIN patients p ON p.id=v.patient_id",
+                  "p.full_name,p.phone,v.status,v.booking_source,v.clinic_amount,v.doctor_amount\n         FROM visits v JOIN patients p ON p.id=v.patient_id"
+              )
+          ]
+          for old, new in select_pairs:
+              if old not in r:
+                  raise SystemExit("RUST marker not found: active SELECT amount columns")
+              r = r.replace(old, new, 1)
+
+          # Money validation helper
+          helper_anchor = """fn validate_visit_fields(
+              visit_type: &str,"""
+          idx = r.find(helper_anchor)
+          if idx < 0:
+              raise SystemExit("RUST marker not found: validate_visit_fields")
+          helper = """fn validate_split_amount(value: &str, label: &str) -> Result<(), String> {
+              if value.trim().is_empty() {
+                  return Ok(());
+              }
+              let amount = value.trim().parse::<f64>()
+                  .map_err(|_| format!("{} غير صالح", label))?;
+              if !amount.is_finite() || amount < 0.0 || amount > 1_000_000.0 {
+                  return Err(format!("{} غير صالح", label));
+              }
+              Ok(())
+          }
+
+          """
+          r = r[:idx] + helper + r[idx:]
+
+          # Add visit: validate amounts
+          marker = """    let allowed_source = ["فيزيتا", "اكشف", "كلينيدو", "عادي"];
+              if !allowed_source.contains(&input.booking_source.trim()) {
+                  return Err("مصدر الحجز غير صالح".into());
+              }
+
+              validate_visit_fields("""
+          replacement = """    let allowed_source = ["فيزيتا", "اكشف", "كلينيدو", "عادي"];
+              if !allowed_source.contains(&input.booking_source.trim()) {
+                  return Err("مصدر الحجز غير صالح".into());
+              }
+              validate_split_amount(&input.clinic_amount, "مبلغ العيادات")?;
+              validate_split_amount(&input.doctor_amount, "مبلغ الطبيب")?;
+
+              validate_visit_fields("""
+          if marker not in r:
+              raise SystemExit("RUST marker not found: add amount validation")
+          r = r.replace(marker, replacement, 1)
+
+          # Add visit INSERT
+          rreplace(
+              """           id,patient_id,visit_date,visit_time,doctor,specialty,fee,visit_type,status,booking_source,
+                     complaint,diagnosis,notes,created_at,updated_at
+                   ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'','','',?11,?11)",""",
+              """           id,patient_id,visit_date,visit_time,doctor,specialty,fee,visit_type,status,booking_source,clinic_amount,doctor_amount,
+                     complaint,diagnosis,notes,created_at,updated_at
+                   ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'','','',?13,?13)",""",
+              "add visit insert columns"
+          )
+          rreplace(
+              """            input.booking_source.trim(),
+                  now""",
+              """            input.booking_source.trim(),
+                  input.clinic_amount.trim(), input.doctor_amount.trim(),
+                  now""",
+              "add visit insert params"
+          )
+
+          # Update visit validate amounts - second allowed_source occurrence
+          occurrences = [m.start() for m in re.finditer(re.escape(marker), r)]
+          if not occurrences:
+              # V5.1 update block has same source validation, but after add replacement its exact marker remains once
+              update_marker = """    let allowed_source = ["فيزيتا", "اكشف", "كلينيدو", "عادي"];
+              if !allowed_source.contains(&input.booking_source.trim()) {
+                  return Err("مصدر الحجز غير صالح".into());
+              }
+
+              validate_visit_fields("""
+              if update_marker not in r:
+                  raise SystemExit("RUST marker not found: update amount validation")
+              r = r.replace(
+                  update_marker,
+                  """    let allowed_source = ["فيزيتا", "اكشف", "كلينيدو", "عادي"];
+              if !allowed_source.contains(&input.booking_source.trim()) {
+                  return Err("مصدر الحجز غير صالح".into());
+              }
+              validate_split_amount(&input.clinic_amount, "مبلغ العيادات")?;
+              validate_split_amount(&input.doctor_amount, "مبلغ الطبيب")?;
+
+              validate_visit_fields(""",
+                  1
+              )
+
+          # Update SQL
+          rreplace(
+              """SET visit_date=?1,visit_time=?2,doctor=?3,specialty=?4,fee=?5,visit_type=?6,status=?7,booking_source=?8,updated_at=?9
+                   WHERE id=?10""",
+              """SET visit_date=?1,visit_time=?2,doctor=?3,specialty=?4,fee=?5,visit_type=?6,status=?7,booking_source=?8,clinic_amount=?9,doctor_amount=?10,updated_at=?11
+                   WHERE id=?12""",
+              "update visit SQL"
+          )
+          rreplace(
+              """input.fee.trim(), input.visit_type.trim(), input.status.trim(), input.booking_source.trim(), now, input.id""",
+              """input.fee.trim(), input.visit_type.trim(), input.status.trim(), input.booking_source.trim(),
+                      input.clinic_amount.trim(), input.doctor_amount.trim(), now, input.id""",
+              "update visit params"
+          )
+
+          p.write_text(r, encoding="utf-8")
+
+          # ================= CSS =================
+          p = Path("src/style.css")
+          css = p.read_text(encoding="utf-8")
+          if "/* V5.2 doctor clinic amounts */" not in css:
+              css += """
+          /* V5.2 doctor clinic amounts */
+          .doctor-money-split{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+          .doctor-money-split small{font-size:10px;color:#66788d}
+          """
+          p.write_text(css, encoding="utf-8")
+
+          # ================= VERSIONS =================
+          p = Path("package.json")
+          data = json.loads(p.read_text(encoding="utf-8"))
+          data["version"] = "5.2.0"
+          p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          p = Path("src-tauri/tauri.conf.json")
+          data = json.loads(p.read_text(encoding="utf-8"))
+          data["version"] = "5.2.0"
+          p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          p = Path("src-tauri/Cargo.toml")
+          lines = p.read_text(encoding="utf-8").splitlines()
+          for i, line in enumerate(lines):
+              if line.startswith('version = "'):
+                  lines[i] = 'version = "5.2.0"'
+                  break
+          p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+          print("V5.2 doctor/clinic amounts patch applied")
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust compile check
+        shell: bash
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture
+
+      - name: V5.2 financial split gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          main = Path("src/main.ts").read_text(encoding="utf-8")
+          lib = Path("src-tauri/src/lib.rs").read_text(encoding="utf-8")
+          conf = json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+
+          for term in [
+              "clinicAmount", "doctorAmount",
+              "مبلغ العيادات", "مبلغ الطبيب",
+              "clinicTotal", "doctorTotal"
+          ]:
+              assert term in main, term
+
+          for term in [
+              "clinic_amount", "doctor_amount",
+              "ALTER TABLE visits ADD COLUMN clinic_amount",
+              "ALTER TABLE visits ADD COLUMN doctor_amount",
+              "validate_split_amount"
+          ]:
+              assert term in lib, term
+
+          assert conf["version"] == "5.2.0"
+          print("V5.2 financial split gate passed")
+          PY
+
+      - name: Build V5.2 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          if ($installer.Length -lt 1000000) { throw "Setup EXE is unexpectedly small" }
+          Write-Host "Installer:" $installer.FullName
+          Write-Host "Size:" $installer.Length
+
+      - name: Commit validated V5.2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src/style.css src-tauri/src/lib.rs src-tauri/tauri.conf.json package.json src-tauri/Cargo.toml
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V5.2: add clinic and doctor visit amounts"
+            git push
+          fi
+
+      - name: Upload V5.2 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V5.2-Doctor-Clinic-Amounts-Installer
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
