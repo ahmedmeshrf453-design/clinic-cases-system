@@ -156,6 +156,54 @@ function reportPeriodLabel(from: string, to: string) {
   return from === to ? displayDate(from) : `${displayDate(from)} إلى ${displayDate(to)}`;
 }
 
+
+function visitFeeNumber(v: Visit) {
+  const n = Number(String(v.fee || '').replace(',', '.'));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function reportMetrics(rows: Visit[]) {
+  const patientIds = new Set(rows.map(v => v.patientId));
+  return {
+    totalVisits: rows.length,
+    uniquePatients: patientIds.size,
+    revenue: rows.reduce((sum, v) => sum + visitFeeNumber(v), 0),
+    attended: rows.filter(v => v.status === 'حضر').length,
+    noShow: rows.filter(v => v.status === 'لم يحضر').length,
+    cancelled: rows.filter(v => v.status === 'ملغي').length,
+    postponed: rows.filter(v => v.status === 'مؤجل').length,
+    unspecified: rows.filter(v => !v.status || v.status === 'لم يحدد').length,
+    newVisits: rows.filter(v => v.visitType === 'كشف جديد').length,
+    consultations: rows.filter(v => v.visitType === 'استشارة').length
+  };
+}
+
+function doctorBreakdown(rows: Visit[]) {
+  const map = new Map<string, {count:number; revenue:number; attended:number}>();
+  for (const v of rows) {
+    const doctor = (v.doctor || '').trim() || 'بدون طبيب';
+    const item = map.get(doctor) || { count: 0, revenue: 0, attended: 0 };
+    item.count += 1;
+    item.revenue += visitFeeNumber(v);
+    if (v.status === 'حضر') item.attended += 1;
+    map.set(doctor, item);
+  }
+  return [...map.entries()].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0], 'ar'));
+}
+
+function filteredReportResult(base: ReportResult, status: string, visitType: string): ReportResult {
+  const rows = base.rows.filter(v =>
+    (!status || (v.status || 'لم يحدد') === status) &&
+    (!visitType || v.visitType === visitType)
+  );
+  const ids = new Set(rows.map(v => v.patientId));
+  return {
+    totalVisits: rows.length,
+    uniquePatients: ids.size,
+    rows
+  };
+}
+
 function exportVisitRows(rows: Visit[], includePatient: boolean) {
   return `
     <table class="export-table">
@@ -368,13 +416,41 @@ async function exportPatientFile(details: PatientDetails, format: ExportFormat) 
 }
 
 async function exportReportFile(result: ReportResult, from: string, to: string, doctor: string, format: ExportFormat) {
+  const metrics = reportMetrics(result.rows);
+  const doctorRows = doctorBreakdown(result.rows);
+
+  const doctorSummary = doctorRows.length ? `
+    <h3 class="export-section-heading">ملخص الأطباء</h3>
+    <table class="export-table">
+      <thead>
+        <tr><th>الطبيب</th><th>عدد الحالات</th><th>حضر</th><th>التحصيل</th></tr>
+      </thead>
+      <tbody>
+        ${doctorRows.map(([name, item]) => `
+          <tr>
+            <td>${esc(name)}</td>
+            <td>${item.count}</td>
+            <td>${item.attended}</td>
+            <td class="ltr">${item.revenue.toFixed(2)} ج.م</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  ` : '';
+
   const body = `
-    <div class="export-summary">
+    <div class="export-summary export-summary-v48">
       <div><span>الفترة</span><strong>${esc(reportPeriodLabel(from, to))}</strong></div>
       <div><span>الطبيب</span><strong>${esc(doctor || 'كل الأطباء')}</strong></div>
-      <div><span>عدد الزيارات</span><strong>${result.totalVisits}</strong></div>
-      <div><span>عدد المرضى</span><strong>${result.uniquePatients}</strong></div>
+      <div><span>عدد الزيارات</span><strong>${metrics.totalVisits}</strong></div>
+      <div><span>عدد المرضى</span><strong>${metrics.uniquePatients}</strong></div>
+      <div><span>إجمالي التحصيل</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+      <div><span>حضر</span><strong>${metrics.attended}</strong></div>
+      <div><span>لم يحضر</span><strong>${metrics.noShow}</strong></div>
+      <div><span>ملغي / مؤجل</span><strong>${metrics.cancelled + metrics.postponed}</strong></div>
     </div>
+    ${doctorSummary}
+    <h3 class="export-section-heading">تفاصيل الزيارات</h3>
     ${exportVisitRows(result.rows, true)}
   `;
   await captureAndSaveExport(
@@ -838,7 +914,8 @@ async function renderPatients(archived: boolean) {
 
 async function renderToday() {
   const dayKey = businessDay();
-  const result = await invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } });
+  const baseResult = await invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } });
+  const metrics = reportMetrics(baseResult.rows);
 
   ensureCaseContextMenu();
   shell(`
@@ -846,13 +923,50 @@ async function renderToday() {
       <div class="card-head">
         <div>
           <h2>حالات اليوم</h2>
-          <p>اليوم التشغيلي يبدأ 11:00 صباحًا • ${displayDate(dayKey)} • ${result.totalVisits} حالة</p>
+          <p>اليوم التشغيلي يبدأ 11:00 صباحًا • ${displayDate(dayKey)} • ${baseResult.totalVisits} حالة</p>
         </div>
         <div class="filters">
           <button class="btn ghost small" id="todayImage">تحميل صورة</button>
           <button class="btn primary small" id="todayPdf">تحميل PDF</button>
         </div>
       </div>
+
+      <div class="today-summary-grid">
+        <div><span>الحالات</span><strong>${metrics.totalVisits}</strong></div>
+        <div><span>التحصيل</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+        <div><span>حضر</span><strong>${metrics.attended}</strong></div>
+        <div><span>لم يحضر</span><strong>${metrics.noShow}</strong></div>
+        <div><span>ملغي</span><strong>${metrics.cancelled}</strong></div>
+        <div><span>مؤجل</span><strong>${metrics.postponed}</strong></div>
+      </div>
+
+      <div class="today-filter-panel">
+        <label>الطبيب
+          <select id="todayDoctorFilter">
+            <option value="">كل الأطباء</option>
+            ${doctors.filter(d => d.active).map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}
+          </select>
+        </label>
+        <label>الحالة
+          <select id="todayStatusFilter">
+            <option value="">كل الحالات</option>
+            <option>حضر</option>
+            <option>لم يحضر</option>
+            <option>ملغي</option>
+            <option>مؤجل</option>
+            <option>لم يحدد</option>
+          </select>
+        </label>
+        <label>نوع الزيارة
+          <select id="todayTypeFilter">
+            <option value="">كل الأنواع</option>
+            <option>كشف جديد</option>
+            <option>استشارة</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="todayVisitTable">${visitTable(baseResult.rows, true)}</div>
 
       <div class="today-search-panel">
         <div>
@@ -862,15 +976,40 @@ async function renderToday() {
         <input class="search-input" id="todayPatientSearch" placeholder="اسم المريض أو رقم التليفون..." />
       </div>
       <div id="todayPatientSearchResults"></div>
-
-      ${visitTable(result.rows, true)}
     </section>
-  `, 'حالات اليوم', 'بعد الساعة 11 صباحًا يبدأ يوم جديد تلقائيًا');
+  `, 'حالات اليوم', 'متابعة الحضور والتحصيل وحالات الأطباء');
 
-  document.querySelector<HTMLButtonElement>('#todayImage')!.onclick = () =>
-    exportReportFile(result, dayKey, dayKey, '', 'png');
-  document.querySelector<HTMLButtonElement>('#todayPdf')!.onclick = () =>
-    exportReportFile(result, dayKey, dayKey, '', 'pdf');
+  const doctorFilter = document.querySelector<HTMLSelectElement>('#todayDoctorFilter')!;
+  const statusFilter = document.querySelector<HTMLSelectElement>('#todayStatusFilter')!;
+  const typeFilter = document.querySelector<HTMLSelectElement>('#todayTypeFilter')!;
+  const tableHost = document.querySelector<HTMLDivElement>('#todayVisitTable')!;
+
+  const filteredRows = () => baseResult.rows.filter(v =>
+    (!doctorFilter.value || v.doctor === doctorFilter.value) &&
+    (!statusFilter.value || (v.status || 'لم يحدد') === statusFilter.value) &&
+    (!typeFilter.value || v.visitType === typeFilter.value)
+  );
+
+  const applyFilters = () => {
+    tableHost.innerHTML = visitTable(filteredRows(), true);
+    ensureCaseContextMenu();
+  };
+
+  doctorFilter.onchange = applyFilters;
+  statusFilter.onchange = applyFilters;
+  typeFilter.onchange = applyFilters;
+
+  document.querySelector<HTMLButtonElement>('#todayImage')!.onclick = () => {
+    const rows = filteredRows();
+    const ids = new Set(rows.map(v => v.patientId));
+    return exportReportFile({ totalVisits: rows.length, uniquePatients: ids.size, rows }, dayKey, dayKey, doctorFilter.value, 'png');
+  };
+
+  document.querySelector<HTMLButtonElement>('#todayPdf')!.onclick = () => {
+    const rows = filteredRows();
+    const ids = new Set(rows.map(v => v.patientId));
+    return exportReportFile({ totalVisits: rows.length, uniquePatients: ids.size, rows }, dayKey, dayKey, doctorFilter.value, 'pdf');
+  };
 
   const search = document.querySelector<HTMLInputElement>('#todayPatientSearch')!;
   const results = document.querySelector<HTMLDivElement>('#todayPatientSearchResults')!;
@@ -979,7 +1118,7 @@ async function renderReports() {
   shell(`
     <section class="card">
       <div class="card-head">
-        <div><h2>التقارير</h2><p>يومي أو شهري أو أي فترة تختارها</p></div>
+        <div><h2>التقارير</h2><p>تقارير تشغيلية ومالية مع فلاتر الحضور ونوع الزيارة</p></div>
         <button class="btn ghost small" id="openExportsFolder">فتح مجلد التحميلات</button>
       </div>
 
@@ -989,10 +1128,27 @@ async function renderReports() {
         <span>أو اختر الفترة يدويًا</span>
       </div>
 
-      <div class="report-filters">
+      <div class="report-filters report-filters-v48">
         <label>من<input id="reportFrom" type="date" value="${monthFrom}"></label>
         <label>إلى<input id="reportTo" type="date" value="${today()}"></label>
         <label>الطبيب<select id="reportDoctor"><option value="">كل الأطباء</option>${doctors.filter(d=>d.active).map(d=>`<option>${esc(d.name)}</option>`).join('')}</select></label>
+        <label>حالة الزيارة
+          <select id="reportStatus">
+            <option value="">كل الحالات</option>
+            <option>حضر</option>
+            <option>لم يحضر</option>
+            <option>ملغي</option>
+            <option>مؤجل</option>
+            <option>لم يحدد</option>
+          </select>
+        </label>
+        <label>نوع الزيارة
+          <select id="reportVisitType">
+            <option value="">كل الأنواع</option>
+            <option>كشف جديد</option>
+            <option>استشارة</option>
+          </select>
+        </label>
         <button class="btn primary" id="runReportBtn">عرض التقرير</button>
       </div>
 
@@ -1003,42 +1159,80 @@ async function renderReports() {
 
       <div id="reportResult" class="report-result"></div>
     </section>
-  `, 'التقارير', 'ملخص الحالات لأي مدة تختارها');
+  `, 'التقارير', 'متابعة الحالات والحضور والتحصيل لأي فترة');
 
+  let currentBaseResult: ReportResult | null = null;
   let currentResult: ReportResult | null = null;
 
   const queryValues = () => ({
-    from: (document.querySelector<HTMLInputElement>('#reportFrom')!).value,
-    to: (document.querySelector<HTMLInputElement>('#reportTo')!).value,
-    doctor: (document.querySelector<HTMLSelectElement>('#reportDoctor')!).value
+    from: document.querySelector<HTMLInputElement>('#reportFrom')!.value,
+    to: document.querySelector<HTMLInputElement>('#reportTo')!.value,
+    doctor: document.querySelector<HTMLSelectElement>('#reportDoctor')!.value,
+    status: document.querySelector<HTMLSelectElement>('#reportStatus')!.value,
+    visitType: document.querySelector<HTMLSelectElement>('#reportVisitType')!.value
   });
 
-  const run = async () => {
+  const renderResult = () => {
+    if (!currentBaseResult) return;
     const q = queryValues();
-    const result = await invoke<ReportResult>('run_report', { query: q });
+    const result = filteredReportResult(currentBaseResult, q.status, q.visitType);
     currentResult = result;
+    const metrics = reportMetrics(result.rows);
+    const doctorRows = doctorBreakdown(result.rows);
+
     document.querySelector<HTMLDivElement>('#reportResult')!.innerHTML = `
-      <div class="report-stats">
-        <div><span>عدد الزيارات</span><strong>${result.totalVisits}</strong></div>
-        <div><span>مرضى مختلفون</span><strong>${result.uniquePatients}</strong></div>
-        <div><span>الفترة</span><strong class="small-value">${esc(reportPeriodLabel(q.from, q.to))}</strong></div>
+      <div class="report-stats report-stats-v48">
+        <div><span>عدد الزيارات</span><strong>${metrics.totalVisits}</strong></div>
+        <div><span>مرضى مختلفون</span><strong>${metrics.uniquePatients}</strong></div>
+        <div><span>إجمالي التحصيل</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+        <div><span>حضر</span><strong>${metrics.attended}</strong></div>
+        <div><span>لم يحضر</span><strong>${metrics.noShow}</strong></div>
+        <div><span>ملغي</span><strong>${metrics.cancelled}</strong></div>
+        <div><span>مؤجل</span><strong>${metrics.postponed}</strong></div>
+        <div><span>كشف / استشارة</span><strong>${metrics.newVisits} / ${metrics.consultations}</strong></div>
       </div>
+
+      <div class="report-doctor-breakdown">
+        <h3>ملخص الأطباء</h3>
+        <div class="doctor-day-grid">
+          ${doctorRows.length ? doctorRows.map(([name, item]) => `
+            <article class="doctor-day-card">
+              <div>
+                <strong>${esc(name)}</strong>
+                <span>${item.count} حالة • حضر ${item.attended}</span>
+              </div>
+              <b class="ltr">${item.revenue.toFixed(2)} ج.م</b>
+            </article>
+          `).join('') : `<div class="empty-block">لا توجد بيانات للفلاتر الحالية</div>`}
+        </div>
+      </div>
+
       ${visitTable(result.rows, true)}
     `;
   };
 
+  const run = async () => {
+    const q = queryValues();
+    currentBaseResult = await invoke<ReportResult>('run_report', {
+      query: { from: q.from, to: q.to, doctor: q.doctor }
+    });
+    renderResult();
+  };
+
   document.querySelector<HTMLButtonElement>('#runReportBtn')!.onclick = run;
+  document.querySelector<HTMLSelectElement>('#reportStatus')!.onchange = renderResult;
+  document.querySelector<HTMLSelectElement>('#reportVisitType')!.onchange = renderResult;
 
   document.querySelector<HTMLButtonElement>('#rangeToday')!.onclick = async () => {
     const d = businessDay();
-    (document.querySelector<HTMLInputElement>('#reportFrom')!).value = d;
-    (document.querySelector<HTMLInputElement>('#reportTo')!).value = d;
+    document.querySelector<HTMLInputElement>('#reportFrom')!.value = d;
+    document.querySelector<HTMLInputElement>('#reportTo')!.value = d;
     await run();
   };
 
   document.querySelector<HTMLButtonElement>('#rangeMonth')!.onclick = async () => {
-    (document.querySelector<HTMLInputElement>('#reportFrom')!).value = monthFrom;
-    (document.querySelector<HTMLInputElement>('#reportTo')!).value = monthTo;
+    document.querySelector<HTMLInputElement>('#reportFrom')!.value = monthFrom;
+    document.querySelector<HTMLInputElement>('#reportTo')!.value = monthTo;
     await run();
   };
 
