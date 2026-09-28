@@ -41,7 +41,7 @@ struct RegisterPatientResult {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AddVisitInput {
-    patient_id: String, visit_type: String, booking_source: String, doctor: String, fee: String, status: String,
+    patient_id: String, visit_type: String, booking_source: String, doctor: String, fee: String, clinic_amount: String, doctor_amount: String, status: String,
     visit_date: String, visit_time: String,
 }
 
@@ -52,7 +52,7 @@ struct VisitStatusInput { id: String, status: String }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateVisitInput {
-    id: String, visit_type: String, booking_source: String, doctor: String, fee: String, status: String,
+    id: String, visit_type: String, booking_source: String, doctor: String, fee: String, clinic_amount: String, doctor_amount: String, status: String,
     visit_date: String, visit_time: String,
 }
 
@@ -100,6 +100,7 @@ struct Visit {
     id: String, patient_id: String, visit_date: String, visit_time: String,
     doctor: String, specialty: String, complaint: String, diagnosis: String,
     notes: String, fee: String, visit_type: String, status: String, booking_source: String,
+    clinic_amount: String, doctor_amount: String,
     patient_name: String, patient_phone: String, created_at: String,
 }
 
@@ -206,6 +207,18 @@ fn validate_patient_fields(
     Ok(())
 }
 
+fn validate_money_field(value: &str, label: &str) -> Result<(), String> {
+    if value.trim().is_empty() {
+        return Ok(());
+    }
+    let amount = value.trim().parse::<f64>()
+        .map_err(|_| format!("{} غير صالح", label))?;
+    if !amount.is_finite() || amount < 0.0 || amount > 1_000_000.0 {
+        return Err(format!("{} غير صالح", label));
+    }
+    Ok(())
+}
+
 fn validate_visit_fields(
     visit_type: &str,
     doctor: &str,
@@ -272,6 +285,8 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         specialty TEXT NOT NULL DEFAULT '', fee TEXT NOT NULL DEFAULT '',
         visit_type TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'لم يحدد',
         booking_source TEXT NOT NULL DEFAULT 'عادي',
+        clinic_amount TEXT NOT NULL DEFAULT '',
+        doctor_amount TEXT NOT NULL DEFAULT '',
         complaint TEXT NOT NULL DEFAULT '',
         diagnosis TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
@@ -372,6 +387,31 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
     if has_booking_source == 0 {
         conn.execute(
             "ALTER TABLE visits ADD COLUMN booking_source TEXT NOT NULL DEFAULT 'عادي'",
+            []
+        ).map_err(|e| e.to_string())?;
+    }
+
+
+    let has_clinic_amount: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='clinic_amount'",
+        [],
+        |row| row.get(0)
+    ).map_err(|e| e.to_string())?;
+    if has_clinic_amount == 0 {
+        conn.execute(
+            "ALTER TABLE visits ADD COLUMN clinic_amount TEXT NOT NULL DEFAULT ''",
+            []
+        ).map_err(|e| e.to_string())?;
+    }
+
+    let has_doctor_amount: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='doctor_amount'",
+        [],
+        |row| row.get(0)
+    ).map_err(|e| e.to_string())?;
+    if has_doctor_amount == 0 {
+        conn.execute(
+            "ALTER TABLE visits ADD COLUMN doctor_amount TEXT NOT NULL DEFAULT ''",
             []
         ).map_err(|e| e.to_string())?;
     }
@@ -479,6 +519,7 @@ fn map_visit(row: &rusqlite::Row<'_>) -> rusqlite::Result<Visit> {
         fee: row.get(10)?, visit_type: row.get(11)?,
         patient_name: row.get(12)?, patient_phone: row.get(13)?,
         status: row.get(14)?, booking_source: row.get(15)?,
+        clinic_amount: row.get(16)?, doctor_amount: row.get(17)?,
     })
 }
 
@@ -575,6 +616,9 @@ fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, Str
         return Err("مصدر الحجز غير صالح".into());
     }
 
+    validate_money_field(&input.clinic_amount, "مبلغ العيادات")?;
+    validate_money_field(&input.doctor_amount, "مبلغ الطبيب")?;
+
     validate_visit_fields(
         input.visit_type.trim(),
         input.doctor.trim(),
@@ -611,14 +655,15 @@ fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, Str
     let visit_id = Uuid::new_v4().to_string();
     tx.execute(
         "INSERT INTO visits(
-           id,patient_id,visit_date,visit_time,doctor,specialty,fee,visit_type,status,booking_source,
+           id,patient_id,visit_date,visit_time,doctor,specialty,fee,visit_type,status,booking_source,clinic_amount,doctor_amount,
            complaint,diagnosis,notes,created_at,updated_at
-         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'','','',?11,?11)",
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'','','',?13,?13)",
         params![
             visit_id, input.patient_id, input.visit_date, input.visit_time,
             input.doctor.trim(), specialty, input.fee.trim(), input.visit_type.trim(),
             if input.status.trim().is_empty() { "لم يحدد" } else { input.status.trim() },
             input.booking_source.trim(),
+            input.clinic_amount.trim(), input.doctor_amount.trim(),
             now
         ]
     ).map_err(|e| e.to_string())?;
@@ -640,7 +685,7 @@ fn get_visit(state: State<AppState>, id: String) -> Result<Visit, String> {
     conn.query_row(
         "SELECT v.id,v.patient_id,v.visit_date,v.visit_time,v.doctor,v.specialty,
                 v.complaint,v.diagnosis,v.notes,v.created_at,v.fee,v.visit_type,
-                p.full_name,p.phone,v.status,v.booking_source
+                p.full_name,p.phone,v.status,v.booking_source,v.clinic_amount,v.doctor_amount
          FROM visits v
          JOIN patients p ON p.id=v.patient_id
          WHERE v.id=?1",
@@ -655,6 +700,9 @@ fn update_visit(state: State<AppState>, input: UpdateVisitInput) -> Result<(), S
     if !allowed_source.contains(&input.booking_source.trim()) {
         return Err("مصدر الحجز غير صالح".into());
     }
+
+    validate_money_field(&input.clinic_amount, "مبلغ العيادات")?;
+    validate_money_field(&input.doctor_amount, "مبلغ الطبيب")?;
 
     validate_visit_fields(
         input.visit_type.trim(),
@@ -688,11 +736,12 @@ fn update_visit(state: State<AppState>, input: UpdateVisitInput) -> Result<(), S
 
     tx.execute(
         "UPDATE visits
-         SET visit_date=?1,visit_time=?2,doctor=?3,specialty=?4,fee=?5,visit_type=?6,status=?7,booking_source=?8,updated_at=?9
-         WHERE id=?10",
+         SET visit_date=?1,visit_time=?2,doctor=?3,specialty=?4,fee=?5,visit_type=?6,status=?7,booking_source=?8,clinic_amount=?9,doctor_amount=?10,updated_at=?11
+         WHERE id=?12",
         params![
             input.visit_date.trim(), input.visit_time.trim(), input.doctor.trim(), specialty,
-            input.fee.trim(), input.visit_type.trim(), input.status.trim(), input.booking_source.trim(), now, input.id
+            input.fee.trim(), input.visit_type.trim(), input.status.trim(), input.booking_source.trim(),
+            input.clinic_amount.trim(), input.doctor_amount.trim(), now, input.id
         ]
     ).map_err(|e| e.to_string())?;
 
@@ -795,7 +844,7 @@ fn get_patient_details(state: State<AppState>, id: String) -> Result<PatientDeta
     let patient = conn.query_row(&sql, params![id], map_patient).map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
         "SELECT id,patient_id,visit_date,visit_time,doctor,specialty,complaint,diagnosis,notes,created_at,fee,visit_type,
-                '' AS patient_name,'' AS patient_phone,status,booking_source
+                '' AS patient_name,'' AS patient_phone,status,booking_source,clinic_amount,doctor_amount
          FROM visits WHERE patient_id=?1 ORDER BY visit_date DESC,visit_time DESC,created_at DESC"
     ).map_err(|e| e.to_string())?;
     let rows = stmt.query_map(params![patient.id.clone()], map_visit).map_err(|e| e.to_string())?;
@@ -934,7 +983,7 @@ fn run_report(state: State<AppState>, query: ReportQuery) -> Result<ReportResult
 
     let mut stmt=conn.prepare(
         "SELECT v.id,v.patient_id,v.visit_date,v.visit_time,v.doctor,v.specialty,v.complaint,v.diagnosis,v.notes,v.created_at,v.fee,v.visit_type,
-                p.full_name,p.phone,v.status,v.booking_source
+                p.full_name,p.phone,v.status,v.booking_source,v.clinic_amount,v.doctor_amount
          FROM visits v JOIN patients p ON p.id=v.patient_id
          WHERE p.archived=0
            AND (v.visit_date > ?1 OR (v.visit_date=?1 AND COALESCE(NULLIF(v.visit_time,''),'00:00') >= ?4))

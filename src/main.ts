@@ -35,6 +35,8 @@ type Visit = {
   diagnosis: string;
   notes: string;
   fee: string;
+  clinicAmount: string;
+  doctorAmount: string;
   visitType: string;
   bookingSource: string;
   status: string;
@@ -101,7 +103,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '5.1.0'
+  version: '5.2.0'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -197,9 +199,13 @@ function reportPeriodLabel(from: string, to: string) {
 }
 
 
-function visitFeeNumber(v: Visit) {
-  const n = Number(String(v.fee || '').replace(',', '.'));
+function moneyNumber(value: string) {
+  const n = Number(String(value || '').replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
+}
+
+function visitFeeNumber(v: Visit) {
+  return moneyNumber(v.fee);
 }
 
 function reportMetrics(rows: Visit[]) {
@@ -208,6 +214,8 @@ function reportMetrics(rows: Visit[]) {
     totalVisits: rows.length,
     uniquePatients: patientIds.size,
     revenue: rows.reduce((sum, v) => sum + visitFeeNumber(v), 0),
+    clinicTotal: rows.reduce((sum, v) => sum + moneyNumber(v.clinicAmount), 0),
+    doctorTotal: rows.reduce((sum, v) => sum + moneyNumber(v.doctorAmount), 0),
     attended: rows.filter(v => v.status === 'حضر').length,
     noShow: rows.filter(v => v.status === 'لم يحضر').length,
     cancelled: rows.filter(v => v.status === 'ملغي').length,
@@ -219,12 +227,14 @@ function reportMetrics(rows: Visit[]) {
 }
 
 function doctorBreakdown(rows: Visit[]) {
-  const map = new Map<string, {count:number; revenue:number; attended:number}>();
+  const map = new Map<string, {count:number; revenue:number; clinicTotal:number; doctorTotal:number; attended:number}>();
   for (const v of rows) {
     const doctor = (v.doctor || '').trim() || 'بدون طبيب';
-    const item = map.get(doctor) || { count: 0, revenue: 0, attended: 0 };
+    const item = map.get(doctor) || { count: 0, revenue: 0, clinicTotal: 0, doctorTotal: 0, attended: 0 };
     item.count += 1;
     item.revenue += visitFeeNumber(v);
+    item.clinicTotal += moneyNumber(v.clinicAmount);
+    item.doctorTotal += moneyNumber(v.doctorAmount);
     if (v.status === 'حضر') item.attended += 1;
     map.set(doctor, item);
   }
@@ -257,6 +267,8 @@ function exportVisitRows(rows: Visit[], includePatient: boolean) {
           <th>حالة الزيارة</th>
           <th>الطبيب</th>
           <th>سعر الكشف</th>
+          <th>مبلغ العيادات</th>
+          <th>مبلغ الطبيب</th>
         </tr>
       </thead>
       <tbody>
@@ -270,8 +282,10 @@ function exportVisitRows(rows: Visit[], includePatient: boolean) {
             <td>${esc(v.status || 'لم يحدد')}</td>
             <td>${esc(v.doctor || '—')}</td>
             <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
+            <td class="ltr">${v.clinicAmount ? `${esc(v.clinicAmount)} ج.م` : '—'}</td>
+            <td class="ltr">${v.doctorAmount ? `${esc(v.doctorAmount)} ج.م` : '—'}</td>
           </tr>
-        `).join('') : `<tr><td colspan="${includePatient ? 9 : 7}">لا توجد بيانات</td></tr>`}
+        `).join('') : `<tr><td colspan="${includePatient ? 11 : 9}">لا توجد بيانات</td></tr>`}
       </tbody>
     </table>`;
 }
@@ -465,7 +479,7 @@ async function exportReportFile(result: ReportResult, from: string, to: string, 
     <h3 class="export-section-heading">ملخص الأطباء</h3>
     <table class="export-table">
       <thead>
-        <tr><th>الطبيب</th><th>عدد الحالات</th><th>حضر</th><th>التحصيل</th></tr>
+        <tr><th>الطبيب</th><th>عدد الحالات</th><th>حضر</th><th>إجمالي الكشف</th><th>مبلغ العيادات</th><th>مبلغ الطبيب</th></tr>
       </thead>
       <tbody>
         ${doctorRows.map(([name, item]) => `
@@ -474,6 +488,8 @@ async function exportReportFile(result: ReportResult, from: string, to: string, 
             <td>${item.count}</td>
             <td>${item.attended}</td>
             <td class="ltr">${item.revenue.toFixed(2)} ج.م</td>
+            <td class="ltr">${item.clinicTotal.toFixed(2)} ج.م</td>
+            <td class="ltr">${item.doctorTotal.toFixed(2)} ج.م</td>
           </tr>
         `).join('')}
       </tbody>
@@ -486,7 +502,9 @@ async function exportReportFile(result: ReportResult, from: string, to: string, 
       <div><span>الطبيب</span><strong>${esc(doctor || 'كل الأطباء')}</strong></div>
       <div><span>عدد الزيارات</span><strong>${metrics.totalVisits}</strong></div>
       <div><span>عدد المرضى</span><strong>${metrics.uniquePatients}</strong></div>
-      <div><span>إجمالي التحصيل</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+      <div><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+      <div><span>مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)} ج.م</strong></div>
+      <div><span>مبلغ الأطباء</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)} ج.م</strong></div>
       <div><span>حضر</span><strong>${metrics.attended}</strong></div>
       <div><span>لم يحضر</span><strong>${metrics.noShow}</strong></div>
       <div><span>ملغي / مؤجل</span><strong>${metrics.cancelled + metrics.postponed}</strong></div>
@@ -981,7 +999,9 @@ async function renderToday() {
 
       <div class="today-summary-grid">
         <div><span>الحالات</span><strong>${metrics.totalVisits}</strong></div>
-        <div><span>التحصيل</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+        <div><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+        <div><span>مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)} ج.م</strong></div>
+        <div><span>مبلغ الأطباء</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)} ج.م</strong></div>
         <div><span>حضر</span><strong>${metrics.attended}</strong></div>
         <div><span>لم يحضر</span><strong>${metrics.noShow}</strong></div>
         <div><span>ملغي</span><strong>${metrics.cancelled}</strong></div>
@@ -1093,7 +1113,7 @@ function visitTable(rows: Visit[], showPatient = false) {
         <thead><tr>
           <th>التاريخ</th><th>الوقت</th>
           ${showPatient ? '<th>المريض</th><th>رقم التليفون</th>' : ''}
-          <th>نوع الزيارة</th><th>مصدر الحجز</th><th>حالة الزيارة</th><th>الطبيب</th><th>سعر الكشف</th><th>إجراءات</th>
+          <th>نوع الزيارة</th><th>مصدر الحجز</th><th>حالة الزيارة</th><th>الطبيب</th><th>سعر الكشف</th><th>مبلغ العيادات</th><th>مبلغ الطبيب</th><th>إجراءات</th>
         </tr></thead>
         <tbody>${rows.length ? rows.map(v => `
           <tr class="visit-context-row" data-patient-id="${esc(v.patientId)}" data-patient-name="${esc(v.patientName || '')}" data-patient-phone="${esc(v.patientPhone || '')}">
@@ -1109,13 +1129,15 @@ function visitTable(rows: Visit[], showPatient = false) {
             </td>
             <td>${esc(v.doctor || '—')}</td>
             <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
+            <td class="ltr">${v.clinicAmount ? `${esc(v.clinicAmount)} ج.م` : '—'}</td>
+            <td class="ltr">${v.doctorAmount ? `${esc(v.doctorAmount)} ج.م` : '—'}</td>
             <td>
               <div class="visit-row-actions">
                 <button class="icon-action edit" type="button" data-edit-visit="${esc(v.id)}" title="تعديل الزيارة">✎</button>
                 <button class="icon-action danger" type="button" data-delete-visit="${esc(v.id)}" title="حذف الزيارة">🗑</button>
               </div>
             </td>
-          </tr>`).join('') : `<tr><td colspan="${showPatient ? 10 : 8}" class="empty-row">لا توجد زيارات</td></tr>`}
+          </tr>`).join('') : `<tr><td colspan="${showPatient ? 12 : 10}" class="empty-row">لا توجد زيارات</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -1239,7 +1261,9 @@ async function renderReports() {
       <div class="report-stats report-stats-v48">
         <div><span>عدد الزيارات</span><strong>${metrics.totalVisits}</strong></div>
         <div><span>مرضى مختلفون</span><strong>${metrics.uniquePatients}</strong></div>
-        <div><span>إجمالي التحصيل</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+        <div><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
+        <div><span>مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)} ج.م</strong></div>
+        <div><span>مبلغ الأطباء</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)} ج.م</strong></div>
         <div><span>حضر</span><strong>${metrics.attended}</strong></div>
         <div><span>لم يحضر</span><strong>${metrics.noShow}</strong></div>
         <div><span>ملغي</span><strong>${metrics.cancelled}</strong></div>
@@ -1631,6 +1655,12 @@ async function openVisitModal(patient: Patient) {
             <label>سعر الكشف
               <input class="ltr" name="fee" type="number" min="0" step="0.01" placeholder="يكتب يدويًا">
             </label>
+            <label>مبلغ العيادات
+              <input class="ltr" name="clinicAmount" type="number" min="0" step="0.01" placeholder="يكتب يدويًا">
+            </label>
+            <label>مبلغ الطبيب
+              <input class="ltr" name="doctorAmount" type="number" min="0" step="0.01" placeholder="يكتب يدويًا">
+            </label>
             <label>حالة الزيارة
               <select name="visitStatus">
                 <option value="لم يحدد">لم يحدد</option>
@@ -1671,6 +1701,8 @@ async function openVisitModal(patient: Patient) {
         bookingSource: String(fd.get('bookingSource')||'عادي'),
         doctor: String(fd.get('doctor')||'').trim(),
         fee: String(fd.get('fee')||'').trim(),
+        clinicAmount: String(fd.get('clinicAmount')||'').trim(),
+        doctorAmount: String(fd.get('doctorAmount')||'').trim(),
         status: String(fd.get('visitStatus')||'لم يحدد'),
         visitDate: String(fd.get('visitDate')||''),
         visitTime: String(fd.get('visitTime')||'')
@@ -1722,6 +1754,12 @@ async function openEditVisitModal(visitId: string) {
             <label>سعر الكشف
               <input class="ltr" name="fee" type="number" min="0" step="0.01" value="${esc(visit.fee || '')}">
             </label>
+            <label>مبلغ العيادات
+              <input class="ltr" name="clinicAmount" type="number" min="0" step="0.01" value="${esc(visit.clinicAmount || '')}">
+            </label>
+            <label>مبلغ الطبيب
+              <input class="ltr" name="doctorAmount" type="number" min="0" step="0.01" value="${esc(visit.doctorAmount || '')}">
+            </label>
             <label>حالة الزيارة
               <select name="status">${visitStatusOptions(visit.status)}</select>
             </label>
@@ -1756,6 +1794,8 @@ async function openEditVisitModal(visitId: string) {
         bookingSource: String(fd.get('bookingSource') || 'عادي'),
         doctor: String(fd.get('doctor') || '').trim(),
         fee: String(fd.get('fee') || '').trim(),
+        clinicAmount: String(fd.get('clinicAmount') || '').trim(),
+        doctorAmount: String(fd.get('doctorAmount') || '').trim(),
         status: String(fd.get('status') || 'لم يحدد'),
         visitDate: String(fd.get('visitDate') || ''),
         visitTime: String(fd.get('visitTime') || '')
