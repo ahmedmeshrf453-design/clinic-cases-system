@@ -1267,3 +1267,68 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
 .doctor-source-card.selected{border-color:#0a6075;box-shadow:0 0 0 2px rgba(10,96,117,.11)}
 .report-filters-v48{grid-template-columns:160px 160px minmax(190px,1fr) minmax(160px,1fr) minmax(160px,1fr) auto}
 .today-filter-panel{grid-template-columns:repeat(3,minmax(180px,1fr))}
+
+/* V5.7 patient nursing/labs icons */
+.patient-feature-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(260px,1fr));
+  gap:12px;
+  margin:14px 0 16px;
+}
+.patient-feature-card{
+  border:1px solid #dfe7ef;
+  background:#fff;
+  border-radius:14px;
+  padding:14px 15px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  text-align:right;
+  cursor:pointer;
+  transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease;
+}
+.patient-feature-card:hover{
+  transform:translateY(-2px);
+  box-shadow:0 9px 22px rgba(10,35,66,.08);
+  border-color:#bed1df;
+}
+.patient-feature-card-icon{
+  width:48px;height:48px;border-radius:13px;
+  display:grid;place-items:center;
+  font-size:24px;font-weight:800;
+  flex:0 0 auto;
+}
+.patient-feature-card.nursing .patient-feature-card-icon{background:#e8f5f2;color:#14705f}
+.patient-feature-card.labs .patient-feature-card-icon{background:#edf2fb;color:#315f9f}
+.patient-feature-card-copy{flex:1;min-width:0}
+.patient-feature-card-copy strong,.patient-feature-card-copy small{display:block}
+.patient-feature-card-copy strong{font-size:15px;color:#102b49}
+.patient-feature-card-copy small{font-size:10px;color:#7b899b;margin-top:4px}
+.patient-feature-card-arrow{font-size:26px;color:#9aabba;line-height:1}
+.patient-feature-title{display:flex;align-items:center;gap:11px}
+.patient-feature-title-icon{
+  width:45px;height:45px;border-radius:12px;
+  display:grid;place-items:center;background:#edf5f7;color:#0a6075;
+  font-size:22px;font-weight:800
+}
+.patient-feature-empty{
+  min-height:260px;
+  border:1px dashed #cfdae4;
+  border-radius:14px;
+  background:#f8fafc;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  gap:7px;
+  padding:30px;
+}
+.patient-feature-empty-icon{
+  width:70px;height:70px;border-radius:20px;
+  display:grid;place-items:center;background:#eaf3f6;color:#0a6075;
+  font-size:32px
+}
+.patient-feature-empty strong{font-size:18px;color:#173a5e}
+.patient-feature-empty span{font-size:11px;color:#7d8b9d;max-width:520px}
+@media(max-width:900px){.patient-feature-grid{grid-template-columns:1fr}}

@@ -103,7 +103,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '5.6.0'
+  version: '5.7.0'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -1825,6 +1825,59 @@ async function renderBackups() {
   });
 }
 
+
+async function openPatientFeaturePanel(
+  patientId: string,
+  kind: 'nursing' | 'labs'
+) {
+  const details = await invoke<PatientDetails>('get_patient_details', { id: patientId });
+  const p = details.patient;
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+
+  const isNursing = kind === 'nursing';
+  const title = isNursing ? 'خدمات تمريض' : 'تحاليل';
+  const icon = isNursing ? '✚' : '🧪';
+  const subtitle = isNursing
+    ? 'سجل خدمات التمريض الخاصة بالمريض'
+    : 'سجل التحاليل الخاصة بالمريض';
+
+  root.innerHTML = `
+    <div class="modal-backdrop" id="patientFeatureBackdrop">
+      <section class="modal wide patient-feature-modal">
+        <div class="modal-head">
+          <div class="patient-feature-title">
+            <div class="patient-feature-title-icon">${icon}</div>
+            <div>
+              <h2>${title}</h2>
+              <p>${esc(p.fullName || 'بدون اسم')} • <span class="ltr">${esc(p.phone || 'بدون رقم')}</span></p>
+            </div>
+          </div>
+          <button class="modal-close" id="closePatientFeature">×</button>
+        </div>
+
+        <div class="patient-feature-empty">
+          <div class="patient-feature-empty-icon">${icon}</div>
+          <strong>${subtitle}</strong>
+          <span>الأيقونة اتضافت داخل ملف المريض، وجاهزة لإضافة تفاصيل السجل في الخطوة التالية.</span>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn ghost" id="backToPatientProfile">← رجوع لملف المريض</button>
+        </div>
+      </section>
+    </div>`;
+
+  const close = () => root.innerHTML = '';
+  document.querySelector<HTMLButtonElement>('#closePatientFeature')!.onclick = close;
+  document.querySelector<HTMLDivElement>('#patientFeatureBackdrop')!.onclick = e => {
+    if (e.target === e.currentTarget) close();
+  };
+  document.querySelector<HTMLButtonElement>('#backToPatientProfile')!.onclick = async () => {
+    close();
+    await openPatient(patientId);
+  };
+}
+
 async function openPatient(id: string) {
   const details = await invoke<PatientDetails>('get_patient_details', { id });
   const p = details.patient;
@@ -1846,6 +1899,26 @@ async function openPatient(id: string) {
           <div><span>النوع</span><strong>${esc(p.gender || '—')}</strong></div>
           <div><span>العنوان</span><strong>${esc(p.address || '—')}</strong></div>
           <div><span>عدد الزيارات</span><strong>${p.visitsCount}</strong></div>
+        </div>
+
+        <div class="patient-feature-grid">
+          <button class="patient-feature-card nursing" id="patientNursingServices">
+            <span class="patient-feature-card-icon">✚</span>
+            <span class="patient-feature-card-copy">
+              <strong>خدمات تمريض</strong>
+              <small>فتح سجل خدمات التمريض للمريض</small>
+            </span>
+            <span class="patient-feature-card-arrow">‹</span>
+          </button>
+
+          <button class="patient-feature-card labs" id="patientLabTests">
+            <span class="patient-feature-card-icon">🧪</span>
+            <span class="patient-feature-card-copy">
+              <strong>تحاليل</strong>
+              <small>فتح سجل التحاليل للمريض</small>
+            </span>
+            <span class="patient-feature-card-arrow">‹</span>
+          </button>
         </div>
 
         <div class="profile-actions">
@@ -1870,6 +1943,16 @@ async function openPatient(id: string) {
   document.querySelector<HTMLButtonElement>('#closePatient')!.onclick = close;
   document.querySelector<HTMLDivElement>('#patientModalBackdrop')!.onclick = e => {
     if (e.target === e.currentTarget) close();
+  };
+
+  document.querySelector<HTMLButtonElement>('#patientNursingServices')!.onclick = () => {
+    close();
+    openPatientFeaturePanel(id, 'nursing');
+  };
+
+  document.querySelector<HTMLButtonElement>('#patientLabTests')!.onclick = () => {
+    close();
+    openPatientFeaturePanel(id, 'labs');
   };
 
   document.querySelector<HTMLButtonElement>('#patientExportImage')!.onclick = () =>
