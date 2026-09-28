@@ -103,7 +103,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '5.3.0'
+  version: '5.4.0'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -828,7 +828,8 @@ async function renderDashboard() {
   };
 
   const todayRevenue = todayReport.rows.reduce((sum, v) => sum + numberFee(v), 0);
-  const attended = todayReport.rows.filter(v => v.status === 'حضر').length;
+  const todayClinicAmount = todayReport.rows.reduce((sum, v) => sum + moneyNumber(v.clinicAmount), 0);
+  const todayDoctorAmount = todayReport.rows.reduce((sum, v) => sum + moneyNumber(v.doctorAmount), 0);
   const newVisits = todayReport.rows.filter(v => v.visitType === 'كشف جديد').length;
   const consultations = todayReport.rows.filter(v => v.visitType === 'استشارة').length;
 
@@ -846,12 +847,27 @@ async function renderDashboard() {
 
   shell(`
     <div class="stats-grid dashboard-stats-v47">
-      <article class="stat"><div class="stat-icon">👥</div><div><span>إجمالي المرضى</span><strong>${stats.totalPatients}</strong></div></article>
-      <article class="stat"><div class="stat-icon">◷</div><div><span>حالات اليوم</span><strong>${todayReport.totalVisits}</strong></div></article>
-      <article class="stat"><div class="stat-icon">ج.م</div><div><span>تحصيل اليوم</span><strong>${todayRevenue.toFixed(2)}</strong></div></article>
-      <article class="stat"><div class="stat-icon">✓</div><div><span>حضر اليوم</span><strong>${attended}</strong></div></article>
-      <article class="stat"><div class="stat-icon">＋</div><div><span>كشف جديد</span><strong>${newVisits}</strong></div></article>
-      <article class="stat"><div class="stat-icon">↻</div><div><span>استشارة</span><strong>${consultations}</strong></div></article>
+      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="patients" title="فتح ملفات المرضى">
+        <div class="stat-icon">👥</div><div><span>إجمالي المرضى</span><strong>${stats.totalPatients}</strong></div>
+      </article>
+      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
+        <div class="stat-icon">◷</div><div><span>حالات اليوم</span><strong>${todayReport.totalVisits}</strong></div>
+      </article>
+      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="reports" title="فتح التقارير">
+        <div class="stat-icon">ج.م</div><div><span>إجمالي الكشف</span><strong>${todayRevenue.toFixed(2)}</strong></div>
+      </article>
+      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="reports" title="فتح التقارير">
+        <div class="stat-icon">⌂</div><div><span>مبلغ العيادات</span><strong>${todayClinicAmount.toFixed(2)}</strong></div>
+      </article>
+      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="reports" title="فتح التقارير">
+        <div class="stat-icon">⚕</div><div><span>مبلغ الأطباء</span><strong>${todayDoctorAmount.toFixed(2)}</strong></div>
+      </article>
+      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
+        <div class="stat-icon">＋</div><div><span>كشف جديد</span><strong>${newVisits}</strong></div>
+      </article>
+      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
+        <div class="stat-icon">↻</div><div><span>استشارة</span><strong>${consultations}</strong></div>
+      </article>
     </div>
 
     <div class="dashboard-grid">
@@ -861,7 +877,7 @@ async function renderDashboard() {
         </div>
         <div class="doctor-day-grid">
           ${doctorRows.length ? doctorRows.map(([doctor, item]) => `
-            <article class="doctor-day-card">
+            <article class="doctor-day-card dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
               <div>
                 <strong>${esc(doctor)}</strong>
                 <span>${item.count} حالة</span>
@@ -875,7 +891,7 @@ async function renderDashboard() {
       <section class="quick-card">
         <h2>إجراءات سريعة</h2>
         <button class="quick" id="quickNew">＋ <span><b>تسجيل حالة جديدة</b><small>بيانات المريض ثم الزيارة مباشرة</small></span></button>
-        <button class="quick" id="quickToday">◷ <span><b>حالات اليوم</b><small>الحضور والإلغاء والتأجيل</small></span></button>
+        <button class="quick" id="quickToday">◷ <span><b>حالات اليوم</b><small>عرض الحالات المسجلة اليوم</small></span></button>
         <button class="quick" id="quickBackup">⟳ <span><b>نسخة احتياطية</b><small>حفظ نسخة من قاعدة البيانات الآن</small></span></button>
       </section>
     </div>
@@ -895,6 +911,23 @@ async function renderDashboard() {
   document.querySelector<HTMLButtonElement>('#goTodayBtn')!.onclick = () => navigate('today');
   document.querySelector<HTMLButtonElement>('#quickNew')!.onclick = () => openCaseModal();
   document.querySelector<HTMLButtonElement>('#quickToday')!.onclick = () => navigate('today');
+
+  const openDashboardTarget = (target: string) => {
+    if (target === 'patients') navigate('patients');
+    else if (target === 'today') navigate('today');
+    else if (target === 'reports') navigate('reports');
+  };
+
+  document.querySelectorAll<HTMLElement>('[data-dashboard-target]').forEach(card => {
+    const open = () => openDashboardTarget(card.dataset.dashboardTarget || '');
+    card.onclick = open;
+    card.onkeydown = event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        open();
+      }
+    };
+  });
   document.querySelector<HTMLButtonElement>('#quickBackup')!.onclick = async () => {
     const item = await invoke<BackupItem>('create_backup');
     toast(`تم إنشاء النسخة: ${item.name}`);
