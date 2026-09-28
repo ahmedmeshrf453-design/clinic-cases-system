@@ -51,6 +51,21 @@ struct VisitStatusInput { id: String, status: String }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct UpdateVisitInput {
+    id: String, visit_type: String, doctor: String, fee: String, status: String,
+    visit_date: String, visit_time: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsInput {
+    whatsapp_number: String,
+    phone_number: String,
+    operational_start_hour: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct BlacklistInput { id: String, blacklisted: bool }
 
 
@@ -116,13 +131,50 @@ struct SaveExportInput {
 #[serde(rename_all = "camelCase")]
 struct ReportResult { total_visits: i64, unique_patients: i64, rows: Vec<Visit> }
 
-fn operational_day_date() -> NaiveDate {
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsInfo {
+    whatsapp_number: String,
+    phone_number: String,
+    operational_start_hour: u32,
+    backup_path: String,
+    database_path: String,
+    version: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HealthCheck {
+    integrity_ok: bool,
+    integrity_message: String,
+    foreign_key_issues: i64,
+    database_size: u64,
+    backup_count: usize,
+    backup_writable: bool,
+}
+
+fn operational_day_date(start_hour: u32) -> NaiveDate {
     let now = Local::now();
-    if now.hour() < 11 {
+    if now.hour() < start_hour {
         now.date_naive() - Duration::days(1)
     } else {
         now.date_naive()
     }
+}
+
+fn meta_value(conn: &Connection, key: &str, fallback: &str) -> Result<String, String> {
+    conn.query_row(
+        "SELECT value FROM app_meta WHERE key=?1",
+        params![key],
+        |row| row.get::<_, String>(0)
+    ).optional()
+     .map_err(|e| e.to_string())
+     .map(|v| v.unwrap_or_else(|| fallback.to_string()))
+}
+
+fn get_operational_start_hour(conn: &Connection) -> Result<u32, String> {
+    let raw = meta_value(conn, "operational_start_hour", "11")?;
+    Ok(raw.parse::<u32>().unwrap_or(11).min(23))
 }
 
 fn open_db(state: &AppState) -> Result<Connection, String> {
@@ -246,6 +298,12 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
       CREATE TABLE IF NOT EXISTS app_meta(
         key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT ''
       );
+    "#).map_err(|e| e.to_string())?;
+
+    conn.execute_batch(r#"
+      INSERT OR IGNORE INTO app_meta(key,value) VALUES('contact_whatsapp','01102233167');
+      INSERT OR IGNORE INTO app_meta(key,value) VALUES('contact_phone','01107072134');
+      INSERT OR IGNORE INTO app_meta(key,value) VALUES('operational_start_hour','11');
     "#).map_err(|e| e.to_string())?;
 
     let doctors_seeded: Option<String> = conn.query_row(
@@ -447,6 +505,107 @@ fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, Str
 }
 
 
+
+#[tauri::command]
+fn get_visit(state: State<AppState>, id: String) -> Result<Visit, String> {
+    let conn = open_db(&state)?;
+    conn.query_row(
+        "SELECT v.id,v.patient_id,v.visit_date,v.visit_time,v.doctor,v.specialty,
+                v.complaint,v.diagnosis,v.notes,v.created_at,v.fee,v.visit_type,
+                p.full_name,p.phone,v.status
+         FROM visits v
+         JOIN patients p ON p.id=v.patient_id
+         WHERE v.id=?1",
+        params![id],
+        map_visit
+    ).map_err(|_| "الزيارة غير موجودة".to_string())
+}
+
+#[tauri::command]
+fn update_visit(state: State<AppState>, input: UpdateVisitInput) -> Result<(), String> {
+    if input.visit_date.trim().is_empty() {
+        return Err("تاريخ الزيارة مطلوب".into());
+    }
+
+    let allowed_status = ["لم يحدد", "حضر", "لم يحضر", "ملغي", "مؤجل"];
+    if !allowed_status.contains(&input.status.trim()) {
+        return Err("حالة الزيارة غير صالحة".into());
+    }
+
+    let allowed_type = ["كشف جديد", "استشارة"];
+    if !allowed_type.contains(&input.visit_type.trim()) {
+        return Err("نوع الزيارة غير صالح".into());
+    }
+
+    if input.fee.len() > 32 || input.doctor.len() > 160 || input.visit_time.len() > 8 {
+        return Err("بيانات الزيارة أطول من المسموح".into());
+    }
+
+    let mut conn = open_db(&state)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let patient_id: String = tx.query_row(
+        "SELECT patient_id FROM visits WHERE id=?1",
+        params![input.id],
+        |row| row.get(0)
+    ).optional().map_err(|e| e.to_string())?
+     .ok_or_else(|| "الزيارة غير موجودة".to_string())?;
+
+    let specialty: String = if input.doctor.trim().is_empty() {
+        String::new()
+    } else {
+        tx.query_row(
+            "SELECT specialty FROM doctors WHERE name=?1 LIMIT 1",
+            params![input.doctor.trim()],
+            |row| row.get(0)
+        ).optional().map_err(|e| e.to_string())?.unwrap_or_default()
+    };
+
+    tx.execute(
+        "UPDATE visits
+         SET visit_date=?1,visit_time=?2,doctor=?3,specialty=?4,fee=?5,visit_type=?6,status=?7,updated_at=?8
+         WHERE id=?9",
+        params![
+            input.visit_date.trim(), input.visit_time.trim(), input.doctor.trim(), specialty,
+            input.fee.trim(), input.visit_type.trim(), input.status.trim(), now, input.id
+        ]
+    ).map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "UPDATE patients SET updated_at=?1 WHERE id=?2",
+        params![now, patient_id]
+    ).map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_visit(state: State<AppState>, id: String) -> Result<(), String> {
+    let mut conn = open_db(&state)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let patient_id: String = tx.query_row(
+        "SELECT patient_id FROM visits WHERE id=?1",
+        params![id],
+        |row| row.get(0)
+    ).optional().map_err(|e| e.to_string())?
+     .ok_or_else(|| "الزيارة غير موجودة".to_string())?;
+
+    tx.execute("DELETE FROM visits WHERE id=?1", params![id])
+        .map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "UPDATE patients SET updated_at=?1 WHERE id=?2",
+        params![now, patient_id]
+    ).map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 fn set_visit_status(state: State<AppState>, input: VisitStatusInput) -> Result<(), String> {
     let allowed = ["لم يحدد", "حضر", "لم يحضر", "ملغي", "مؤجل"];
@@ -542,12 +701,14 @@ fn set_patient_archived(state: State<AppState>, input: ArchiveInput) -> Result<(
 fn get_stats(state: State<AppState>) -> Result<Stats, String> {
     let conn = open_db(&state)?;
 
-    let day = operational_day_date();
+    let start_hour = get_operational_start_hour(&conn)?;
+    let day = operational_day_date(start_hour);
     let next_day = day + Duration::days(1);
     let day_s = day.format("%Y-%m-%d").to_string();
     let next_day_s = next_day.format("%Y-%m-%d").to_string();
-    let start_ts = format!("{} 11:00:00", day_s);
-    let end_ts = format!("{} 11:00:00", next_day_s);
+    let boundary = format!("{:02}:00", start_hour);
+    let start_ts = format!("{} {:02}:00:00", day_s, start_hour);
+    let end_ts = format!("{} {:02}:00:00", next_day_s, start_hour);
 
     let total_patients: i64 = conn.query_row(
         "SELECT COUNT(*) FROM patients WHERE archived=0",
@@ -560,9 +721,9 @@ fn get_stats(state: State<AppState>) -> Result<Stats, String> {
          FROM visits v
          JOIN patients p ON p.id=v.patient_id
          WHERE p.archived=0
-           AND (v.visit_date > ?1 OR (v.visit_date=?1 AND COALESCE(NULLIF(v.visit_time,''),'00:00') >= '11:00'))
-           AND (v.visit_date < ?2 OR (v.visit_date=?2 AND COALESCE(NULLIF(v.visit_time,''),'00:00') < '11:00'))",
-        params![day_s, next_day_s],
+           AND (v.visit_date > ?1 OR (v.visit_date=?1 AND COALESCE(NULLIF(v.visit_time,''),'00:00') >= ?3))
+           AND (v.visit_date < ?2 OR (v.visit_date=?2 AND COALESCE(NULLIF(v.visit_time,''),'00:00') < ?3))",
+        params![day_s, next_day_s, boundary],
         |r| r.get(0)
     ).map_err(|e|e.to_string())?;
 
@@ -635,19 +796,21 @@ fn run_report(state: State<AppState>, query: ReportQuery) -> Result<ReportResult
     let end_s = end_date.format("%Y-%m-%d").to_string();
 
     let doctor_like=if query.doctor.trim().is_empty(){"%".to_string()}else{query.doctor.trim().to_string()};
+    let start_hour = get_operational_start_hour(&conn)?;
+    let boundary = format!("{:02}:00", start_hour);
 
     let mut stmt=conn.prepare(
         "SELECT v.id,v.patient_id,v.visit_date,v.visit_time,v.doctor,v.specialty,v.complaint,v.diagnosis,v.notes,v.created_at,v.fee,v.visit_type,
                 p.full_name,p.phone,v.status
          FROM visits v JOIN patients p ON p.id=v.patient_id
          WHERE p.archived=0
-           AND (v.visit_date > ?1 OR (v.visit_date=?1 AND COALESCE(NULLIF(v.visit_time,''),'00:00') >= '11:00'))
-           AND (v.visit_date < ?2 OR (v.visit_date=?2 AND COALESCE(NULLIF(v.visit_time,''),'00:00') < '11:00'))
+           AND (v.visit_date > ?1 OR (v.visit_date=?1 AND COALESCE(NULLIF(v.visit_time,''),'00:00') >= ?4))
+           AND (v.visit_date < ?2 OR (v.visit_date=?2 AND COALESCE(NULLIF(v.visit_time,''),'00:00') < ?4))
            AND (?3='%' OR v.doctor=?3)
          ORDER BY v.visit_date DESC,v.visit_time DESC"
     ).map_err(|e|e.to_string())?;
 
-    let rows_iter=stmt.query_map(params![from_s,end_s,doctor_like],map_visit).map_err(|e|e.to_string())?;
+    let rows_iter=stmt.query_map(params![from_s,end_s,doctor_like,boundary],map_visit).map_err(|e|e.to_string())?;
     let rows=rows_iter.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
     let total_visits=rows.len() as i64;
 
@@ -674,6 +837,102 @@ fn checkpoint_and_copy(state:&AppState,target:&PathBuf)->Result<(),String>{
     drop(conn);
     fs::copy(&state.db_path,target).map_err(|e|e.to_string())?;
     Ok(())
+}
+
+
+#[tauri::command]
+fn get_settings(state: State<AppState>) -> Result<SettingsInfo, String> {
+    let conn = open_db(&state)?;
+
+    Ok(SettingsInfo {
+        whatsapp_number: meta_value(&conn, "contact_whatsapp", "01102233167")?,
+        phone_number: meta_value(&conn, "contact_phone", "01107072134")?,
+        operational_start_hour: get_operational_start_hour(&conn)?,
+        backup_path: state.backup_dir.to_string_lossy().to_string(),
+        database_path: state.db_path.to_string_lossy().to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+    })
+}
+
+#[tauri::command]
+fn save_settings(state: State<AppState>, input: SettingsInput) -> Result<SettingsInfo, String> {
+    if input.operational_start_hour > 23 {
+        return Err("ساعة بداية اليوم غير صالحة".into());
+    }
+
+    fn valid_contact(value: &str) -> bool {
+        let v = value.trim();
+        !v.is_empty()
+            && v.len() <= 32
+            && v.chars().all(|c| c.is_ascii_digit() || matches!(c, '+' | '-' | ' ' | '(' | ')'))
+    }
+
+    if !valid_contact(&input.whatsapp_number) || !valid_contact(&input.phone_number) {
+        return Err("رقم التواصل غير صالح".into());
+    }
+
+    let mut conn = open_db(&state)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    for (key, value) in [
+        ("contact_whatsapp", input.whatsapp_number.trim().to_string()),
+        ("contact_phone", input.phone_number.trim().to_string()),
+        ("operational_start_hour", input.operational_start_hour.to_string()),
+    ] {
+        tx.execute(
+            "INSERT INTO app_meta(key,value) VALUES(?1,?2)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![key, value]
+        ).map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    drop(conn);
+
+    get_settings(state)
+}
+
+#[tauri::command]
+fn health_check(state: State<AppState>) -> Result<HealthCheck, String> {
+    let conn = open_db(&state)?;
+
+    let integrity_message: String = conn.query_row(
+        "PRAGMA integrity_check",
+        [],
+        |row| row.get(0)
+    ).map_err(|e| e.to_string())?;
+
+    let integrity_ok = integrity_message.eq_ignore_ascii_case("ok");
+
+    let mut fk_stmt = conn.prepare("PRAGMA foreign_key_check").map_err(|e| e.to_string())?;
+    let fk_rows = fk_stmt.query_map([], |_| Ok(())).map_err(|e| e.to_string())?;
+    let mut foreign_key_issues = 0i64;
+    for row in fk_rows {
+        row.map_err(|e| e.to_string())?;
+        foreign_key_issues += 1;
+    }
+
+    let database_size = fs::metadata(&state.db_path).map(|m| m.len()).unwrap_or(0);
+
+    fs::create_dir_all(&state.backup_dir).map_err(|e| e.to_string())?;
+    let backup_count = fs::read_dir(&state.backup_dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().extension().and_then(|x| x.to_str()) == Some("db"))
+        .count();
+
+    let probe = state.backup_dir.join(".clinic-write-test.tmp");
+    let backup_writable = fs::write(&probe, b"ok").is_ok();
+    let _ = fs::remove_file(&probe);
+
+    Ok(HealthCheck {
+        integrity_ok,
+        integrity_message,
+        foreign_key_issues,
+        database_size,
+        backup_count,
+        backup_writable,
+    })
 }
 
 #[tauri::command]
@@ -950,10 +1209,11 @@ pub fn run(){
         Ok(())
       })
       .invoke_handler(tauri::generate_handler![
-        save_case,register_patient,add_visit,list_patients,get_patient_details,update_patient,
+        save_case,register_patient,add_visit,get_visit,update_visit,delete_visit,
+        list_patients,get_patient_details,update_patient,
         set_patient_archived,set_patient_blacklisted,set_visit_status,delete_patient,get_stats,
-        list_doctors,save_doctor,delete_doctor,run_report,create_backup,list_backups,
-        restore_backup,open_backup_folder,save_export,open_export_folder
+        list_doctors,save_doctor,delete_doctor,run_report,get_settings,save_settings,health_check,
+        create_backup,list_backups,restore_backup,open_backup_folder,save_export,open_export_folder
       ])
       .run(tauri::generate_context!())
       .expect("error while running Clinic Cases System");

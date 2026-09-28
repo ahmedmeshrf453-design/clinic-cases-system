@@ -71,11 +71,37 @@ type ReportResult = {
   rows: Visit[];
 };
 
-type Screen = 'dashboard' | 'patients' | 'today' | 'doctors' | 'reports' | 'archive' | 'backups';
+type AppSettings = {
+  whatsappNumber: string;
+  phoneNumber: string;
+  operationalStartHour: number;
+  backupPath: string;
+  databasePath: string;
+  version: string;
+};
+
+type HealthCheck = {
+  integrityOk: boolean;
+  integrityMessage: string;
+  foreignKeyIssues: number;
+  databaseSize: number;
+  backupCount: number;
+  backupWritable: boolean;
+};
+
+type Screen = 'dashboard' | 'patients' | 'today' | 'doctors' | 'reports' | 'archive' | 'backups' | 'settings';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 let screen: Screen = 'dashboard';
 let doctors: Doctor[] = [];
+let appSettings: AppSettings = {
+  whatsappNumber: '01102233167',
+  phoneNumber: '01107072134',
+  operationalStartHour: 11,
+  backupPath: '',
+  databasePath: '',
+  version: '4.9.0'
+};
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
 
@@ -95,11 +121,18 @@ function today() {
 
 function businessDay() {
   const d = new Date();
-  if (d.getHours() < 11) d.setDate(d.getDate() - 1);
+  const startHour = Number.isFinite(appSettings.operationalStartHour)
+    ? Math.max(0, Math.min(23, appSettings.operationalStartHour))
+    : 11;
+  if (d.getHours() < startHour) d.setDate(d.getDate() - 1);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+function operationalStartLabel() {
+  return `${String(appSettings.operationalStartHour).padStart(2, '0')}:00`;
 }
 
 function timeNow() {
@@ -275,11 +308,11 @@ function patientExportSheet(title: string, subtitle: string, body: string) {
       <div class="patient-print-footer">
         <div class="patient-print-footer-item">
           <span class="patient-print-footer-badge wa">WA</span>
-          <strong class="ltr">01102233167</strong>
+          <strong class="ltr">${esc(appSettings.whatsappNumber)}</strong>
         </div>
         <div class="patient-print-footer-item">
           <span class="patient-print-footer-badge phone">☎</span>
-          <strong class="ltr">01107072134</strong>
+          <strong class="ltr">${esc(appSettings.phoneNumber)}</strong>
         </div>
       </div>
     </div>`;
@@ -555,6 +588,10 @@ async function loadDoctors() {
   doctors = await invoke<Doctor[]>('list_doctors', { query: { activeOnly: false } });
 }
 
+async function loadSettings() {
+  appSettings = await invoke<AppSettings>('get_settings');
+}
+
 function shell(content: string, title: string, subtitle: string) {
   app.innerHTML = `
     <div class="app-shell">
@@ -575,6 +612,7 @@ function shell(content: string, title: string, subtitle: string) {
           ${navButton('reports','▤','التقارير')}
           ${navButton('archive','▣','الأرشيف')}
           ${navButton('backups','⟳','النسخ الاحتياطية')}
+          ${navButton('settings','⚙','الإعدادات')}
         </nav>
 
         <div class="sidebar-footer">
@@ -738,7 +776,7 @@ async function navigate(next: Screen) {
 }
 
 async function renderScreen() {
-  await loadDoctors();
+  await Promise.all([loadDoctors(), loadSettings()]);
   if (screen === 'dashboard') return renderDashboard();
   if (screen === 'patients') return renderPatients(false);
   if (screen === 'archive') return renderPatients(true);
@@ -746,6 +784,7 @@ async function renderScreen() {
   if (screen === 'doctors') return renderDoctors();
   if (screen === 'reports') return renderReports();
   if (screen === 'backups') return renderBackups();
+  if (screen === 'settings') return renderSettings();
 }
 
 function patientTable(rows: Patient[], archived: boolean) {
@@ -923,7 +962,7 @@ async function renderToday() {
       <div class="card-head">
         <div>
           <h2>حالات اليوم</h2>
-          <p>اليوم التشغيلي يبدأ 11:00 صباحًا • ${displayDate(dayKey)} • ${baseResult.totalVisits} حالة</p>
+          <p>اليوم التشغيلي يبدأ ${operationalStartLabel()} • ${displayDate(dayKey)} • ${baseResult.totalVisits} حالة</p>
         </div>
         <div class="filters">
           <button class="btn ghost small" id="todayImage">تحميل صورة</button>
@@ -1045,7 +1084,7 @@ function visitTable(rows: Visit[], showPatient = false) {
         <thead><tr>
           <th>التاريخ</th><th>الوقت</th>
           ${showPatient ? '<th>المريض</th><th>رقم التليفون</th>' : ''}
-          <th>نوع الزيارة</th><th>حالة الزيارة</th><th>الطبيب</th><th>سعر الكشف</th>
+          <th>نوع الزيارة</th><th>حالة الزيارة</th><th>الطبيب</th><th>سعر الكشف</th><th>إجراءات</th>
         </tr></thead>
         <tbody>${rows.length ? rows.map(v => `
           <tr class="visit-context-row" data-patient-id="${esc(v.patientId)}" data-patient-name="${esc(v.patientName || '')}" data-patient-phone="${esc(v.patientPhone || '')}">
@@ -1060,7 +1099,13 @@ function visitTable(rows: Visit[], showPatient = false) {
             </td>
             <td>${esc(v.doctor || '—')}</td>
             <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
-          </tr>`).join('') : `<tr><td colspan="${showPatient ? 8 : 6}" class="empty-row">لا توجد زيارات</td></tr>`}
+            <td>
+              <div class="visit-row-actions">
+                <button class="icon-action edit" type="button" data-edit-visit="${esc(v.id)}" title="تعديل الزيارة">✎</button>
+                <button class="icon-action danger" type="button" data-delete-visit="${esc(v.id)}" title="حذف الزيارة">🗑</button>
+              </div>
+            </td>
+          </tr>`).join('') : `<tr><td colspan="${showPatient ? 9 : 7}" class="empty-row">لا توجد زيارات</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -1255,6 +1300,108 @@ async function renderReports() {
   await run();
 }
 
+
+async function renderSettings() {
+  const hourOptions = Array.from({ length: 24 }, (_, hour) =>
+    `<option value="${hour}" ${hour === appSettings.operationalStartHour ? 'selected' : ''}>${String(hour).padStart(2, '0')}:00</option>`
+  ).join('');
+
+  shell(`
+    <section class="card settings-card">
+      <div class="card-head">
+        <div>
+          <h2>إعدادات النظام</h2>
+          <p>الإعدادات العامة المحفوظة داخل قاعدة بيانات البرنامج</p>
+        </div>
+        <span class="version-badge">V${esc(appSettings.version)}</span>
+      </div>
+
+      <form id="settingsForm">
+        <div class="settings-grid">
+          <label>رقم واتساب في الطباعة
+            <input class="ltr" name="whatsappNumber" value="${esc(appSettings.whatsappNumber)}" maxlength="32">
+          </label>
+
+          <label>رقم الهاتف في الطباعة
+            <input class="ltr" name="phoneNumber" value="${esc(appSettings.phoneNumber)}" maxlength="32">
+          </label>
+
+          <label>بداية اليوم التشغيلي
+            <select name="operationalStartHour">${hourOptions}</select>
+          </label>
+
+          <label class="span2">مجلد النسخ الاحتياطية
+            <input class="ltr" value="${esc(appSettings.backupPath)}" readonly>
+          </label>
+
+          <label class="span2">قاعدة البيانات المحلية
+            <input class="ltr" value="${esc(appSettings.databasePath)}" readonly>
+          </label>
+        </div>
+
+        <div class="settings-note">
+          مكان النسخ الاحتياطية ثابت ومؤمّن حاليًا حتى لا يتم استرجاع ملفات من مسارات غير موثوقة.
+        </div>
+
+        <div class="form-actions settings-actions">
+          <button type="button" class="btn ghost" id="openSettingsBackupFolder">فتح مجلد النسخ</button>
+          <button type="button" class="btn ghost" id="healthCheckBtn">فحص النظام</button>
+          <button type="submit" class="btn primary">حفظ الإعدادات</button>
+        </div>
+      </form>
+
+      <div id="healthResult" class="health-result"></div>
+    </section>
+  `, 'الإعدادات', 'أرقام التواصل وبداية اليوم وفحص سلامة النظام');
+
+  document.querySelector<HTMLButtonElement>('#openSettingsBackupFolder')!.onclick = async () => {
+    await invoke('open_backup_folder');
+  };
+
+  document.querySelector<HTMLButtonElement>('#healthCheckBtn')!.onclick = async () => {
+    const box = document.querySelector<HTMLDivElement>('#healthResult')!;
+    box.innerHTML = '<div class="health-running">جاري فحص قاعدة البيانات والنسخ الاحتياطية...</div>';
+
+    try {
+      const health = await invoke<HealthCheck>('health_check');
+      const ok = health.integrityOk && health.foreignKeyIssues === 0 && health.backupWritable;
+      box.innerHTML = `
+        <div class="health-card ${ok ? 'ok' : 'warn'}">
+          <strong>${ok ? '✓ النظام سليم' : '⚠ يحتاج مراجعة'}</strong>
+          <div class="health-grid">
+            <span>سلامة قاعدة البيانات: <b>${health.integrityOk ? 'سليم' : esc(health.integrityMessage)}</b></span>
+            <span>مشاكل العلاقات: <b>${health.foreignKeyIssues}</b></span>
+            <span>حجم قاعدة البيانات: <b>${(health.databaseSize / 1024 / 1024).toFixed(2)} MB</b></span>
+            <span>عدد النسخ الاحتياطية: <b>${health.backupCount}</b></span>
+            <span>النسخ قابل للكتابة: <b>${health.backupWritable ? 'نعم' : 'لا'}</b></span>
+          </div>
+        </div>`;
+    } catch (err) {
+      box.innerHTML = `<div class="health-card warn"><strong>تعذر الفحص</strong><span>${esc(String(err))}</span></div>`;
+    }
+  };
+
+  document.querySelector<HTMLFormElement>('#settingsForm')!.onsubmit = async e => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+
+    try {
+      const saved = await invoke<AppSettings>('save_settings', { input: {
+        whatsappNumber: String(fd.get('whatsappNumber') || '').trim(),
+        phoneNumber: String(fd.get('phoneNumber') || '').trim(),
+        operationalStartHour: Number(fd.get('operationalStartHour') || 11)
+      }});
+
+      appSettings = saved;
+      activeBusinessDay = businessDay();
+      toast('تم حفظ الإعدادات');
+      await renderScreen();
+    } catch (err) {
+      toast(`تعذر حفظ الإعدادات: ${String(err)}`, 'error');
+    }
+  };
+}
+
 async function renderBackups() {
   const backups = await invoke<BackupItem[]>('list_backups');
   shell(`
@@ -1301,7 +1448,7 @@ async function openPatient(id: string) {
   const p = details.patient;
   const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
   root.innerHTML = `
-    <div class="modal-backdrop" id="patientModalBackdrop">
+    <div class="modal-backdrop" id="patientModalBackdrop" data-patient-id="${esc(p.id)}">
       <section class="modal wide">
         <div class="modal-head">
           <div>
@@ -1524,6 +1671,124 @@ async function openVisitModal(patient: Patient) {
     }
   };
 }
+
+
+async function openEditVisitModal(visitId: string) {
+  const visit = await invoke<Visit>('get_visit', { id: visitId });
+  const reopenPatientId = document.querySelector<HTMLElement>('#patientModalBackdrop')?.dataset.patientId || '';
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+
+  const visitDoctors = doctors.filter(d => d.active || d.name === visit.doctor);
+  const doctorSelect = `<option value="">— اختر الطبيب —</option>` + visitDoctors.map(d =>
+    `<option value="${esc(d.name)}" ${d.name === visit.doctor ? 'selected' : ''}>${esc(d.name)}</option>`
+  ).join('');
+
+  root.innerHTML = `
+    <div class="modal-backdrop">
+      <section class="modal form-modal">
+        <div class="modal-head">
+          <div><h2>تعديل الزيارة</h2><p>تعديل الزيارة فقط بدون تغيير ملف المريض</p></div>
+          <button class="modal-close" id="closeEditVisit">×</button>
+        </div>
+
+        <form id="editVisitForm">
+          <div class="form-grid">
+            <label class="span2">نوع الزيارة
+              <select name="visitType">
+                <option value="كشف جديد" ${visit.visitType === 'كشف جديد' ? 'selected' : ''}>كشف جديد</option>
+                <option value="استشارة" ${visit.visitType === 'استشارة' ? 'selected' : ''}>استشارة</option>
+              </select>
+            </label>
+            <label class="span2">الطبيب
+              <select name="doctor">${doctorSelect}</select>
+            </label>
+            <label>سعر الكشف
+              <input class="ltr" name="fee" type="number" min="0" step="0.01" value="${esc(visit.fee || '')}">
+            </label>
+            <label>حالة الزيارة
+              <select name="status">${visitStatusOptions(visit.status)}</select>
+            </label>
+            <label>التاريخ
+              <input name="visitDate" type="date" value="${esc(visit.visitDate)}">
+            </label>
+            <label>الوقت
+              <input name="visitTime" type="time" value="${esc(visit.visitTime)}">
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn ghost" id="cancelEditVisit">إلغاء</button>
+            <button class="btn primary">حفظ التعديل</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+
+  const close = () => root.innerHTML = '';
+  document.querySelector<HTMLButtonElement>('#closeEditVisit')!.onclick = close;
+  document.querySelector<HTMLButtonElement>('#cancelEditVisit')!.onclick = close;
+
+  document.querySelector<HTMLFormElement>('#editVisitForm')!.onsubmit = async e => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+
+    try {
+      await invoke('update_visit', { input: {
+        id: visit.id,
+        visitType: String(fd.get('visitType') || ''),
+        doctor: String(fd.get('doctor') || '').trim(),
+        fee: String(fd.get('fee') || '').trim(),
+        status: String(fd.get('status') || 'لم يحدد'),
+        visitDate: String(fd.get('visitDate') || ''),
+        visitTime: String(fd.get('visitTime') || '')
+      }});
+
+      close();
+      toast('تم تعديل الزيارة');
+      await renderScreen();
+      if (reopenPatientId) await openPatient(reopenPatientId);
+    } catch (err) {
+      toast(`تعذر تعديل الزيارة: ${String(err)}`, 'error');
+    }
+  };
+}
+
+document.addEventListener('click', async event => {
+  const target = event.target as HTMLElement;
+
+  const editBtn = target.closest<HTMLButtonElement>('[data-edit-visit]');
+  if (editBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = editBtn.dataset.editVisit || '';
+    if (id) await openEditVisitModal(id);
+    return;
+  }
+
+  const deleteBtn = target.closest<HTMLButtonElement>('[data-delete-visit]');
+  if (!deleteBtn) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const id = deleteBtn.dataset.deleteVisit || '';
+  if (!id) return;
+
+  try {
+    const visit = await invoke<Visit>('get_visit', { id });
+    const reopenPatientId = document.querySelector<HTMLElement>('#patientModalBackdrop')?.dataset.patientId || '';
+
+    if (!confirm(`حذف زيارة ${displayDate(visit.visitDate)} فقط؟ ملف المريض لن يتم حذفه.`)) return;
+
+    await invoke('delete_visit', { id });
+    toast('تم حذف الزيارة');
+    await renderScreen();
+
+    if (reopenPatientId) await openPatient(reopenPatientId);
+  } catch (err) {
+    toast(`تعذر حذف الزيارة: ${String(err)}`, 'error');
+  }
+});
 
 async function openEditPatient(id: string) {
   const d = await invoke<PatientDetails>('get_patient_details', { id });

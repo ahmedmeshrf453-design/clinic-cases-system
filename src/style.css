@@ -1081,3 +1081,131 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
     grid-template-columns:1fr !important;
   }
 }
+
+
+/* ===== V4.9 visit management + settings ===== */
+.visit-row-actions{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+}
+
+.settings-card{
+  max-width:1100px;
+}
+
+.settings-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+
+.settings-grid label{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  color:#65778d;
+  font-size:12px;
+  font-weight:700;
+}
+
+.settings-grid input,
+.settings-grid select{
+  min-height:42px;
+}
+
+.settings-grid .span2{
+  grid-column:span 2;
+}
+
+.settings-note{
+  margin-top:14px;
+  padding:12px 14px;
+  border:1px solid #dce6ec;
+  border-radius:10px;
+  background:#f8fbfd;
+  color:#65778d;
+  font-size:12px;
+}
+
+.settings-actions{
+  justify-content:flex-start;
+  flex-wrap:wrap;
+}
+
+.version-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:66px;
+  height:30px;
+  border-radius:999px;
+  background:#0a2342;
+  color:white;
+  font-weight:800;
+  font-size:12px;
+}
+
+.health-result{
+  margin-top:16px;
+}
+
+.health-running{
+  padding:14px;
+  border:1px solid #dfe8ee;
+  border-radius:12px;
+  color:#65778d;
+}
+
+.health-card{
+  padding:16px;
+  border-radius:12px;
+  border:1px solid #dfe8ee;
+}
+
+.health-card.ok{
+  background:#f1faf6;
+  border-color:#c8ead9;
+}
+
+.health-card.warn{
+  background:#fff8f3;
+  border-color:#f0d4bf;
+}
+
+.health-card>strong{
+  display:block;
+  margin-bottom:12px;
+  color:#0a2342;
+}
+
+.health-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+}
+
+.health-grid span{
+  display:block;
+  padding:9px 10px;
+  background:rgba(255,255,255,.7);
+  border-radius:8px;
+  color:#65778d;
+  font-size:12px;
+}
+
+.health-grid b{
+  color:#0a2342;
+}
+
+@media(max-width:800px){
+  .settings-grid,
+  .health-grid{
+    grid-template-columns:1fr;
+  }
+
+  .settings-grid .span2{
+    grid-column:span 1;
+  }
+}
