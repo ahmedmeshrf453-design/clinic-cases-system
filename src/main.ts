@@ -36,6 +36,7 @@ type Visit = {
   notes: string;
   fee: string;
   visitType: string;
+  status: string;
   patientName: string;
   patientPhone: string;
   createdAt: string;
@@ -113,6 +114,38 @@ function displayDate(v: string) {
 }
 
 
+function visitStatusOptions(current = '') {
+  const value = current || 'لم يحدد';
+  const options = ['لم يحدد', 'حضر', 'لم يحضر', 'ملغي', 'مؤجل'];
+  return options.map(x => `<option value="${esc(x)}" ${x === value ? 'selected' : ''}>${esc(x)}</option>`).join('');
+}
+
+document.addEventListener('change', async event => {
+  const target = event.target as HTMLElement;
+  const select = target.closest<HTMLSelectElement>('select[data-visit-status-id]');
+  if (!select) return;
+
+  const visitId = select.dataset.visitStatusId || '';
+  if (!visitId) return;
+
+  const previous = select.dataset.previousStatus || 'لم يحدد';
+  select.disabled = true;
+
+  try {
+    await invoke('set_visit_status', {
+      input: { id: visitId, status: select.value }
+    });
+    select.dataset.previousStatus = select.value;
+    toast(`تم تحديث حالة الزيارة إلى: ${select.value}`);
+  } catch (err) {
+    select.value = previous;
+    toast(`تعذر تحديث حالة الزيارة: ${String(err)}`, 'error');
+  } finally {
+    select.disabled = false;
+  }
+});
+
+
 type ExportFormat = 'pdf' | 'png';
 
 function safeExportName(v: string) {
@@ -132,6 +165,7 @@ function exportVisitRows(rows: Visit[], includePatient: boolean) {
           <th>الوقت</th>
           ${includePatient ? '<th>المريض</th><th>رقم التليفون</th>' : ''}
           <th>نوع الزيارة</th>
+          <th>حالة الزيارة</th>
           <th>الطبيب</th>
           <th>سعر الكشف</th>
         </tr>
@@ -143,10 +177,11 @@ function exportVisitRows(rows: Visit[], includePatient: boolean) {
             <td class="ltr">${esc(v.visitTime || '—')}</td>
             ${includePatient ? `<td>${esc(v.patientName || '—')}</td><td class="ltr">${esc(v.patientPhone || '—')}</td>` : ''}
             <td>${esc(v.visitType || 'زيارة')}</td>
+            <td>${esc(v.status || 'لم يحدد')}</td>
             <td>${esc(v.doctor || '—')}</td>
             <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
           </tr>
-        `).join('') : `<tr><td colspan="${includePatient ? 7 : 5}">لا توجد بيانات</td></tr>`}
+        `).join('') : `<tr><td colspan="${includePatient ? 8 : 6}">لا توجد بيانات</td></tr>`}
       </tbody>
     </table>`;
 }
@@ -680,35 +715,85 @@ function bindPatientActions() {
 }
 
 async function renderDashboard() {
-  const [stats, recent] = await Promise.all([
+  const dayKey = businessDay();
+
+  const [stats, recent, todayReport] = await Promise.all([
     invoke<Stats>('get_stats'),
-    invoke<Patient[]>('list_patients', { query: { search: '', archivedOnly: false, limit: 8 } })
+    invoke<Patient[]>('list_patients', { query: { search: '', archivedOnly: false, limit: 8 } }),
+    invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } })
   ]);
+
+  const numberFee = (v: Visit) => {
+    const n = Number(String(v.fee || '').replace(',', '.'));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const todayRevenue = todayReport.rows.reduce((sum, v) => sum + numberFee(v), 0);
+  const attended = todayReport.rows.filter(v => v.status === 'حضر').length;
+  const newVisits = todayReport.rows.filter(v => v.visitType === 'كشف جديد').length;
+  const consultations = todayReport.rows.filter(v => v.visitType === 'استشارة').length;
+
+  const doctorMap = new Map<string, {count:number; revenue:number}>();
+  for (const visit of todayReport.rows) {
+    const doctor = (visit.doctor || '').trim() || 'بدون طبيب';
+    const item = doctorMap.get(doctor) || { count: 0, revenue: 0 };
+    item.count += 1;
+    item.revenue += numberFee(visit);
+    doctorMap.set(doctor, item);
+  }
+
+  const doctorRows = [...doctorMap.entries()]
+    .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0], 'ar'));
+
   shell(`
-    <div class="stats-grid">
+    <div class="stats-grid dashboard-stats-v47">
       <article class="stat"><div class="stat-icon">👥</div><div><span>إجمالي المرضى</span><strong>${stats.totalPatients}</strong></div></article>
-      <article class="stat"><div class="stat-icon">◷</div><div><span>حالات اليوم</span><strong>${stats.todayVisits}</strong></div></article>
-      <article class="stat"><div class="stat-icon">＋</div><div><span>مرضى جدد اليوم</span><strong>${stats.newToday}</strong></div></article>
-      <article class="stat"><div class="stat-icon">▤</div><div><span>إجمالي الزيارات</span><strong>${stats.totalVisits}</strong></div></article>
+      <article class="stat"><div class="stat-icon">◷</div><div><span>حالات اليوم</span><strong>${todayReport.totalVisits}</strong></div></article>
+      <article class="stat"><div class="stat-icon">ج.م</div><div><span>تحصيل اليوم</span><strong>${todayRevenue.toFixed(2)}</strong></div></article>
+      <article class="stat"><div class="stat-icon">✓</div><div><span>حضر اليوم</span><strong>${attended}</strong></div></article>
+      <article class="stat"><div class="stat-icon">＋</div><div><span>كشف جديد</span><strong>${newVisits}</strong></div></article>
+      <article class="stat"><div class="stat-icon">↻</div><div><span>استشارة</span><strong>${consultations}</strong></div></article>
     </div>
+
     <div class="dashboard-grid">
       <section class="card">
-        <div class="card-head"><div><h2>آخر الحالات</h2><p>أحدث الملفات التي تم التعامل معها</p></div>
-          <button class="btn ghost" id="allPatientsBtn">عرض الكل</button>
+        <div class="card-head"><div><h2>حالات الأطباء اليوم</h2><p>${displayDate(dayKey)} • عدد الحالات والتحصيل لكل طبيب</p></div>
+          <button class="btn ghost" id="goTodayBtn">فتح حالات اليوم</button>
         </div>
-        ${patientTable(recent, false)}
+        <div class="doctor-day-grid">
+          ${doctorRows.length ? doctorRows.map(([doctor, item]) => `
+            <article class="doctor-day-card">
+              <div>
+                <strong>${esc(doctor)}</strong>
+                <span>${item.count} حالة</span>
+              </div>
+              <b class="ltr">${item.revenue.toFixed(2)} ج.م</b>
+            </article>
+          `).join('') : `<div class="empty-block">لا توجد حالات مسجلة في اليوم التشغيلي الحالي</div>`}
+        </div>
       </section>
+
       <section class="quick-card">
         <h2>إجراءات سريعة</h2>
-        <button class="quick" id="quickNew">＋ <span><b>تسجيل مريض جديد</b><small>إنشاء ملف بيانات للمريض</small></span></button>
-        <button class="quick" id="quickToday">◷ <span><b>حالات اليوم</b><small>عرض الحالات المسجلة اليوم</small></span></button>
+        <button class="quick" id="quickNew">＋ <span><b>تسجيل حالة جديدة</b><small>بيانات المريض ثم الزيارة مباشرة</small></span></button>
+        <button class="quick" id="quickToday">◷ <span><b>حالات اليوم</b><small>الحضور والإلغاء والتأجيل</small></span></button>
         <button class="quick" id="quickBackup">⟳ <span><b>نسخة احتياطية</b><small>حفظ نسخة من قاعدة البيانات الآن</small></span></button>
       </section>
     </div>
-  `, 'لوحة التحكم', 'نظرة سريعة على حركة العيادة اليوم');
+
+    <section class="card dashboard-recent-card">
+      <div class="card-head"><div><h2>آخر ملفات المرضى</h2><p>أحدث الملفات التي تم التعامل معها</p></div>
+        <button class="btn ghost" id="allPatientsBtn">عرض الكل</button>
+      </div>
+      ${patientTable(recent, false)}
+    </section>
+  `, 'لوحة التحكم', 'حركة العيادة اليوم بشكل مباشر');
+
   bindPatientActions();
-      ensureCaseContextMenu();
+  ensureCaseContextMenu();
+
   document.querySelector<HTMLButtonElement>('#allPatientsBtn')!.onclick = () => navigate('patients');
+  document.querySelector<HTMLButtonElement>('#goTodayBtn')!.onclick = () => navigate('today');
   document.querySelector<HTMLButtonElement>('#quickNew')!.onclick = () => openCaseModal();
   document.querySelector<HTMLButtonElement>('#quickToday')!.onclick = () => navigate('today');
   document.querySelector<HTMLButtonElement>('#quickBackup')!.onclick = async () => {
@@ -821,7 +906,7 @@ function visitTable(rows: Visit[], showPatient = false) {
         <thead><tr>
           <th>التاريخ</th><th>الوقت</th>
           ${showPatient ? '<th>المريض</th><th>رقم التليفون</th>' : ''}
-          <th>نوع الزيارة</th><th>الطبيب</th><th>سعر الكشف</th>
+          <th>نوع الزيارة</th><th>حالة الزيارة</th><th>الطبيب</th><th>سعر الكشف</th>
         </tr></thead>
         <tbody>${rows.length ? rows.map(v => `
           <tr class="visit-context-row" data-patient-id="${esc(v.patientId)}" data-patient-name="${esc(v.patientName || '')}" data-patient-phone="${esc(v.patientPhone || '')}">
@@ -829,9 +914,14 @@ function visitTable(rows: Visit[], showPatient = false) {
             <td class="ltr">${esc(v.visitTime)}</td>
             ${showPatient ? `<td>${esc(v.patientName || '—')}</td><td class="ltr">${esc(v.patientPhone || '—')}</td>` : ''}
             <td><span class="visit-type-badge">${esc(v.visitType || 'زيارة')}</span></td>
+            <td>
+              <select class="visit-status-select" data-visit-status-id="${esc(v.id)}" data-previous-status="${esc(v.status || 'لم يحدد')}">
+                ${visitStatusOptions(v.status)}
+              </select>
+            </td>
             <td>${esc(v.doctor || '—')}</td>
             <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
-          </tr>`).join('') : `<tr><td colspan="${showPatient ? 7 : 5}" class="empty-row">لا توجد زيارات</td></tr>`}
+          </tr>`).join('') : `<tr><td colspan="${showPatient ? 8 : 6}" class="empty-row">لا توجد زيارات</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -953,13 +1043,13 @@ async function renderReports() {
   };
 
   document.querySelector<HTMLButtonElement>('#reportImage')!.onclick = async () => {
-    if (!currentResult) await run();
+    await run();
     const q = queryValues();
     if (currentResult) await exportReportFile(currentResult, q.from, q.to, q.doctor, 'png');
   };
 
   document.querySelector<HTMLButtonElement>('#reportPdf')!.onclick = async () => {
-    if (!currentResult) await run();
+    await run();
     const q = queryValues();
     if (currentResult) await exportReportFile(currentResult, q.from, q.to, q.doctor, 'pdf');
   };
@@ -1187,6 +1277,15 @@ async function openVisitModal(patient: Patient) {
             <label>سعر الكشف
               <input class="ltr" name="fee" type="number" min="0" step="0.01" placeholder="يكتب يدويًا">
             </label>
+            <label>حالة الزيارة
+              <select name="visitStatus">
+                <option value="لم يحدد">لم يحدد</option>
+                <option value="حضر">حضر</option>
+                <option value="لم يحضر">لم يحضر</option>
+                <option value="ملغي">ملغي</option>
+                <option value="مؤجل">مؤجل</option>
+              </select>
+            </label>
             <label>التاريخ
               <input name="visitDate" type="date" value="${today()}">
             </label>
@@ -1217,6 +1316,7 @@ async function openVisitModal(patient: Patient) {
         visitType: String(fd.get('visitType')||''),
         doctor: String(fd.get('doctor')||'').trim(),
         fee: String(fd.get('fee')||'').trim(),
+        status: String(fd.get('visitStatus')||'لم يحدد'),
         visitDate: String(fd.get('visitDate')||''),
         visitTime: String(fd.get('visitTime')||'')
       }});

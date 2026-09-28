@@ -890,3 +890,94 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
     margin:0 auto;
   }
 }
+
+
+/* ===== V4.7 dashboard + visit status ===== */
+.dashboard-stats-v47{
+  grid-template-columns:repeat(6,minmax(0,1fr));
+}
+
+.dashboard-stats-v47 .stat-icon{
+  min-width:46px;
+  height:46px;
+  font-size:14px;
+  font-weight:900;
+}
+
+.doctor-day-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+}
+
+.doctor-day-card{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px 16px;
+  border:1px solid #dfe8ee;
+  border-radius:12px;
+  background:#f8fbfd;
+}
+
+.doctor-day-card div{
+  min-width:0;
+}
+
+.doctor-day-card strong,
+.doctor-day-card span{
+  display:block;
+}
+
+.doctor-day-card strong{
+  color:#0a2342;
+  font-size:14px;
+}
+
+.doctor-day-card span{
+  margin-top:4px;
+  color:#74859a;
+  font-size:12px;
+}
+
+.doctor-day-card b{
+  white-space:nowrap;
+  color:#087f8a;
+  font-size:14px;
+}
+
+.dashboard-recent-card{
+  margin-top:16px;
+}
+
+.visit-status-select{
+  min-width:105px;
+  height:34px;
+  padding:4px 8px;
+  border:1px solid #cfdce5;
+  border-radius:9px;
+  background:#fff;
+  color:#0a2342;
+  font:inherit;
+  font-size:12px;
+  font-weight:700;
+}
+
+.visit-status-select:focus{
+  outline:2px solid rgba(24,164,174,.22);
+  border-color:#18a4ae;
+}
+
+@media(max-width:1350px){
+  .dashboard-stats-v47{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+}
+
+@media(max-width:900px){
+  .dashboard-stats-v47,
+  .doctor-day-grid{
+    grid-template-columns:1fr;
+  }
+}

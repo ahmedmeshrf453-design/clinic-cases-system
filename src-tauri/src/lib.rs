@@ -41,9 +41,13 @@ struct RegisterPatientResult {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AddVisitInput {
-    patient_id: String, visit_type: String, doctor: String, fee: String,
+    patient_id: String, visit_type: String, doctor: String, fee: String, status: String,
     visit_date: String, visit_time: String,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VisitStatusInput { id: String, status: String }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -80,7 +84,7 @@ struct Patient {
 struct Visit {
     id: String, patient_id: String, visit_date: String, visit_time: String,
     doctor: String, specialty: String, complaint: String, diagnosis: String,
-    notes: String, fee: String, visit_type: String,
+    notes: String, fee: String, visit_type: String, status: String,
     patient_name: String, patient_phone: String, created_at: String,
 }
 
@@ -144,7 +148,8 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         id TEXT PRIMARY KEY, patient_id TEXT NOT NULL, visit_date TEXT NOT NULL DEFAULT '',
         visit_time TEXT NOT NULL DEFAULT '', doctor TEXT NOT NULL DEFAULT '',
         specialty TEXT NOT NULL DEFAULT '', fee TEXT NOT NULL DEFAULT '',
-        visit_type TEXT NOT NULL DEFAULT '', complaint TEXT NOT NULL DEFAULT '',
+        visit_type TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'لم يحدد',
+        complaint TEXT NOT NULL DEFAULT '',
         diagnosis TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
         FOREIGN KEY(patient_id) REFERENCES patients(id)
@@ -220,6 +225,18 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
     if has_visit_type == 0 {
         conn.execute(
             "ALTER TABLE visits ADD COLUMN visit_type TEXT NOT NULL DEFAULT ''",
+            []
+        ).map_err(|e| e.to_string())?;
+    }
+
+    let has_visit_status: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='status'",
+        [],
+        |row| row.get(0)
+    ).map_err(|e| e.to_string())?;
+    if has_visit_status == 0 {
+        conn.execute(
+            "ALTER TABLE visits ADD COLUMN status TEXT NOT NULL DEFAULT 'لم يحدد'",
             []
         ).map_err(|e| e.to_string())?;
     }
@@ -303,6 +320,7 @@ fn map_visit(row: &rusqlite::Row<'_>) -> rusqlite::Result<Visit> {
         diagnosis: row.get(7)?, notes: row.get(8)?, created_at: row.get(9)?,
         fee: row.get(10)?, visit_type: row.get(11)?,
         patient_name: row.get(12)?, patient_phone: row.get(13)?,
+        status: row.get(14)?,
     })
 }
 
@@ -408,12 +426,14 @@ fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, Str
     let visit_id = Uuid::new_v4().to_string();
     tx.execute(
         "INSERT INTO visits(
-           id,patient_id,visit_date,visit_time,doctor,specialty,fee,visit_type,
+           id,patient_id,visit_date,visit_time,doctor,specialty,fee,visit_type,status,
            complaint,diagnosis,notes,created_at,updated_at
-         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'','','',?9,?9)",
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'','','',?10,?10)",
         params![
             visit_id, input.patient_id, input.visit_date, input.visit_time,
-            input.doctor.trim(), specialty, input.fee.trim(), input.visit_type.trim(), now
+            input.doctor.trim(), specialty, input.fee.trim(), input.visit_type.trim(),
+            if input.status.trim().is_empty() { "لم يحدد" } else { input.status.trim() },
+            now
         ]
     ).map_err(|e| e.to_string())?;
 
@@ -424,6 +444,28 @@ fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, Str
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(visit_id)
+}
+
+
+#[tauri::command]
+fn set_visit_status(state: State<AppState>, input: VisitStatusInput) -> Result<(), String> {
+    let allowed = ["لم يحدد", "حضر", "لم يحضر", "ملغي", "مؤجل"];
+    if !allowed.contains(&input.status.trim()) {
+        return Err("حالة الزيارة غير صالحة".into());
+    }
+
+    let conn = open_db(&state)?;
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let changed = conn.execute(
+        "UPDATE visits SET status=?1,updated_at=?2 WHERE id=?3",
+        params![input.status.trim(), now, input.id]
+    ).map_err(|e| e.to_string())?;
+
+    if changed == 0 {
+        return Err("الزيارة غير موجودة".into());
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -468,7 +510,7 @@ fn get_patient_details(state: State<AppState>, id: String) -> Result<PatientDeta
     let patient = conn.query_row(&sql, params![id], map_patient).map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
         "SELECT id,patient_id,visit_date,visit_time,doctor,specialty,complaint,diagnosis,notes,created_at,fee,visit_type,
-                '' AS patient_name,'' AS patient_phone
+                '' AS patient_name,'' AS patient_phone,status
          FROM visits WHERE patient_id=?1 ORDER BY visit_date DESC,visit_time DESC,created_at DESC"
     ).map_err(|e| e.to_string())?;
     let rows = stmt.query_map(params![patient.id.clone()], map_visit).map_err(|e| e.to_string())?;
@@ -596,7 +638,7 @@ fn run_report(state: State<AppState>, query: ReportQuery) -> Result<ReportResult
 
     let mut stmt=conn.prepare(
         "SELECT v.id,v.patient_id,v.visit_date,v.visit_time,v.doctor,v.specialty,v.complaint,v.diagnosis,v.notes,v.created_at,v.fee,v.visit_type,
-                p.full_name,p.phone
+                p.full_name,p.phone,v.status
          FROM visits v JOIN patients p ON p.id=v.patient_id
          WHERE p.archived=0
            AND (v.visit_date > ?1 OR (v.visit_date=?1 AND COALESCE(NULLIF(v.visit_time,''),'00:00') >= '11:00'))
@@ -909,7 +951,7 @@ pub fn run(){
       })
       .invoke_handler(tauri::generate_handler![
         save_case,register_patient,add_visit,list_patients,get_patient_details,update_patient,
-        set_patient_archived,set_patient_blacklisted,delete_patient,get_stats,
+        set_patient_archived,set_patient_blacklisted,set_visit_status,delete_patient,get_stats,
         list_doctors,save_doctor,delete_doctor,run_report,create_backup,list_backups,
         restore_backup,open_backup_folder,save_export,open_export_folder
       ])
