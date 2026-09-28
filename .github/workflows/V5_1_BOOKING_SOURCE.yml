@@ -1,0 +1,325 @@
+name: Clinic Cases V5.1 Booking Source
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply V5.1 booking source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+
+          main_path = Path("src/main.ts")
+          s = main_path.read_text(encoding="utf-8")
+
+          def one(pattern, repl, label, flags=0):
+              global s
+              s2, n = re.subn(pattern, repl, s, count=1, flags=flags)
+              if n != 1:
+                  raise SystemExit(f"MAIN patch failed: {label} ({n})")
+              s = s2
+
+          # Visit type
+          one(r"(fee:\s*string;\s*\n\s*visitType:\s*string;\s*\n)", r"\1  bookingSource: string;\n", "Visit.bookingSource")
+
+          # Helper options
+          marker = "function visitStatusOptions(current = '') {"
+          pos = s.find(marker)
+          if pos < 0:
+              raise SystemExit("MAIN patch failed: visitStatusOptions")
+          end = s.find("\n}\n", pos)
+          if end < 0:
+              raise SystemExit("MAIN patch failed: visitStatusOptions end")
+          end += 3
+          helper = "\nfunction bookingSourceOptions(current = '') {\n  const value = current || 'عادي';\n  const options = ['فيزيتا', 'اكشف', 'كلينيدو', 'عادي'];\n  return options.map(x => `<option value=\"${esc(x)}\" ${x === value ? 'selected' : ''}>${esc(x)}</option>`).join('');\n}\n"
+          s = s[:end] + helper + s[end:]
+
+          # Add visit form + payload
+          one(
+              r"(<label class=\"span2\">الطبيب\s*<select name=\"doctor\">\$\{doctorOptions\(patient\.doctor \|\| ''\)\}</select>\s*</label>)",
+              r"\1\n            <label>مصدر الحجز\n              <select name=\"bookingSource\">${bookingSourceOptions('عادي')}</select>\n            </label>",
+              "add visit source",
+              re.S
+          )
+          one(
+              r"(visitType:\s*String\(fd\.get\('visitType'\)\|\|''\),\s*\n)",
+              r"\1        bookingSource: String(fd.get('bookingSource')||'عادي'),\n",
+              "add visit payload"
+          )
+
+          # Edit visit form + payload
+          one(
+              r"(<label class=\"span2\">الطبيب\s*<select name=\"doctor\">\$\{doctorSelect\}</select>\s*</label>)",
+              r"\1\n            <label>مصدر الحجز\n              <select name=\"bookingSource\">${bookingSourceOptions(visit.bookingSource)}</select>\n            </label>",
+              "edit visit source",
+              re.S
+          )
+          one(
+              r"(visitType:\s*String\(fd\.get\('visitType'\) \|\| ''\),\s*\n)",
+              r"\1        bookingSource: String(fd.get('bookingSource') || 'عادي'),\n",
+              "edit visit payload"
+          )
+
+          # Table
+          old = "<th>نوع الزيارة</th><th>حالة الزيارة</th><th>الطبيب</th><th>سعر الكشف</th><th>إجراءات</th>"
+          new = "<th>نوع الزيارة</th><th>مصدر الحجز</th><th>حالة الزيارة</th><th>الطبيب</th><th>سعر الكشف</th><th>إجراءات</th>"
+          if old not in s:
+              raise SystemExit("MAIN patch failed: table header")
+          s = s.replace(old, new, 1)
+
+          old = "<td><span class=\"visit-type-badge\">${esc(v.visitType || 'زيارة')}</span></td>\n            <td>"
+          new = "<td><span class=\"visit-type-badge\">${esc(v.visitType || 'زيارة')}</span></td>\n            <td><span class=\"booking-source-badge\">${esc(v.bookingSource || 'عادي')}</span></td>\n            <td>"
+          if old not in s:
+              raise SystemExit("MAIN patch failed: table body")
+          s = s.replace(old, new, 1)
+          s = s.replace('${showPatient ? 9 : 7}', '${showPatient ? 10 : 8}', 1)
+
+          # Export
+          old = "<th>نوع الزيارة</th>\n          <th>حالة الزيارة</th>"
+          new = "<th>نوع الزيارة</th>\n          <th>مصدر الحجز</th>\n          <th>حالة الزيارة</th>"
+          if old not in s:
+              raise SystemExit("MAIN patch failed: export header")
+          s = s.replace(old, new, 1)
+
+          old = "<td>${esc(v.visitType || 'زيارة')}</td>\n            <td>${esc(v.status || 'لم يحدد')}</td>"
+          new = "<td>${esc(v.visitType || 'زيارة')}</td>\n            <td>${esc(v.bookingSource || 'عادي')}</td>\n            <td>${esc(v.status || 'لم يحدد')}</td>"
+          if old not in s:
+              raise SystemExit("MAIN patch failed: export row")
+          s = s.replace(old, new, 1)
+          s = s.replace('${includePatient ? 8 : 6}', '${includePatient ? 9 : 7}', 1)
+
+          s = s.replace("version: '5.0.0'", "version: '5.1.0'", 1)
+          main_path.write_text(s, encoding="utf-8")
+
+          # ---------------- Rust ----------------
+          lib_path = Path("src-tauri/src/lib.rs")
+          r = lib_path.read_text(encoding="utf-8")
+
+          def rone(pattern, repl, label, flags=0):
+              global r
+              r2, n = re.subn(pattern, repl, r, count=1, flags=flags)
+              if n != 1:
+                  raise SystemExit(f"RUST patch failed: {label} ({n})")
+              r = r2
+
+          # Input structs
+          rone(
+              r"struct AddVisitInput \{\s*patient_id: String, visit_type: String, doctor: String, fee: String, status: String,\s*visit_date: String, visit_time: String,\s*\}",
+              "struct AddVisitInput {\n    patient_id: String, visit_type: String, booking_source: String, doctor: String, fee: String, status: String,\n    visit_date: String, visit_time: String,\n}",
+              "AddVisitInput",
+              re.S
+          )
+          rone(
+              r"struct UpdateVisitInput \{\s*id: String, visit_type: String, doctor: String, fee: String, status: String,\s*visit_date: String, visit_time: String,\s*\}",
+              "struct UpdateVisitInput {\n    id: String, visit_type: String, booking_source: String, doctor: String, fee: String, status: String,\n    visit_date: String, visit_time: String,\n}",
+              "UpdateVisitInput",
+              re.S
+          )
+
+          rone(
+              r"(notes: String, fee: String, visit_type: String, status: String,)\s*\n(\s*patient_name: String, patient_phone: String, created_at: String,)",
+              r"\1 booking_source: String,\n\2",
+              "Visit struct"
+          )
+
+          # New schema
+          old = "visit_type TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'لم يحدد',\n        complaint TEXT NOT NULL DEFAULT '',"
+          new = "visit_type TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'لم يحدد',\n        booking_source TEXT NOT NULL DEFAULT 'عادي',\n        complaint TEXT NOT NULL DEFAULT '',"
+          if old not in r:
+              raise SystemExit("RUST patch failed: new schema")
+          r = r.replace(old, new, 1)
+
+          # Existing DB migration
+          anchor = "    if has_visit_status == 0 {\n        conn.execute(\n            \"ALTER TABLE visits ADD COLUMN status TEXT NOT NULL DEFAULT 'لم يحدد'\",\n            []\n        ).map_err(|e| e.to_string())?;\n    }\n"
+          if anchor not in r:
+              raise SystemExit("RUST patch failed: migration anchor")
+          migration = anchor + "\n    let has_booking_source: i64 = conn.query_row(\n        \"SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='booking_source'\",\n        [],\n        |row| row.get(0)\n    ).map_err(|e| e.to_string())?;\n    if has_booking_source == 0 {\n        conn.execute(\n            \"ALTER TABLE visits ADD COLUMN booking_source TEXT NOT NULL DEFAULT 'عادي'\",\n            []\n        ).map_err(|e| e.to_string())?;\n    }\n"
+          r = r.replace(anchor, migration, 1)
+
+          old = "CREATE INDEX IF NOT EXISTS idx_visits_status\n        ON visits(status);"
+          new = "CREATE INDEX IF NOT EXISTS idx_visits_status\n        ON visits(status);\n      CREATE INDEX IF NOT EXISTS idx_visits_booking_source\n        ON visits(booking_source);"
+          if old not in r:
+              raise SystemExit("RUST patch failed: index")
+          r = r.replace(old, new, 1)
+
+          # map_visit gets col 15
+          old = "patient_name: row.get(12)?, patient_phone: row.get(13)?,\n        status: row.get(14)?,"
+          new = "patient_name: row.get(12)?, patient_phone: row.get(13)?,\n        status: row.get(14)?, booking_source: row.get(15)?,"
+          if old not in r:
+              raise SystemExit("RUST patch failed: map_visit")
+          r = r.replace(old, new, 1)
+
+          # SELECTs
+          replacements = [
+              ("'' AS patient_name,'' AS patient_phone,status\n         FROM visits WHERE patient_id=?1",
+               "'' AS patient_name,'' AS patient_phone,status,booking_source\n         FROM visits WHERE patient_id=?1"),
+              ("p.full_name,p.phone,v.status\n         FROM visits v\n         JOIN patients p ON p.id=v.patient_id",
+               "p.full_name,p.phone,v.status,v.booking_source\n         FROM visits v\n         JOIN patients p ON p.id=v.patient_id"),
+              ("p.full_name,p.phone,v.status\n         FROM visits v JOIN patients p ON p.id=v.patient_id",
+               "p.full_name,p.phone,v.status,v.booking_source\n         FROM visits v JOIN patients p ON p.id=v.patient_id"),
+          ]
+          for old, new in replacements:
+              if old not in r:
+                  raise SystemExit("RUST patch failed: select booking_source")
+              r = r.replace(old, new, 1)
+
+          # add_visit source validation
+          marker = "fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, String> {\n"
+          if marker not in r:
+              raise SystemExit("RUST patch failed: add_visit marker")
+          r = r.replace(marker, marker + "    let allowed_source = [\"فيزيتا\", \"اكشف\", \"كلينيدو\", \"عادي\"];\n    if !allowed_source.contains(&input.booking_source.trim()) {\n        return Err(\"مصدر الحجز غير صالح\".into());\n    }\n\n", 1)
+
+          old = "id,patient_id,visit_date,visit_time,doctor,specialty,fee,visit_type,status,\n           complaint,diagnosis,notes,created_at,updated_at\n         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'','','',?10,?10)"
+          new = "id,patient_id,visit_date,visit_time,doctor,specialty,fee,visit_type,status,booking_source,\n           complaint,diagnosis,notes,created_at,updated_at\n         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'','','',?11,?11)"
+          if old not in r:
+              raise SystemExit("RUST patch failed: add insert SQL")
+          r = r.replace(old, new, 1)
+
+          old = "if input.status.trim().is_empty() { \"لم يحدد\" } else { input.status.trim() },\n            now"
+          new = "if input.status.trim().is_empty() { \"لم يحدد\" } else { input.status.trim() },\n            input.booking_source.trim(),\n            now"
+          if old not in r:
+              raise SystemExit("RUST patch failed: add params")
+          r = r.replace(old, new, 1)
+
+          # update_visit source validation
+          marker = "fn update_visit(state: State<AppState>, input: UpdateVisitInput) -> Result<(), String> {\n"
+          if marker not in r:
+              raise SystemExit("RUST patch failed: update_visit marker")
+          r = r.replace(marker, marker + "    let allowed_source = [\"فيزيتا\", \"اكشف\", \"كلينيدو\", \"عادي\"];\n    if !allowed_source.contains(&input.booking_source.trim()) {\n        return Err(\"مصدر الحجز غير صالح\".into());\n    }\n\n", 1)
+
+          old = "SET visit_date=?1,visit_time=?2,doctor=?3,specialty=?4,fee=?5,visit_type=?6,status=?7,updated_at=?8\n         WHERE id=?9"
+          new = "SET visit_date=?1,visit_time=?2,doctor=?3,specialty=?4,fee=?5,visit_type=?6,status=?7,booking_source=?8,updated_at=?9\n         WHERE id=?10"
+          if old not in r:
+              raise SystemExit("RUST patch failed: update SQL")
+          r = r.replace(old, new, 1)
+
+          old = "input.fee.trim(), input.visit_type.trim(), input.status.trim(), now, input.id"
+          new = "input.fee.trim(), input.visit_type.trim(), input.status.trim(), input.booking_source.trim(), now, input.id"
+          if old not in r:
+              raise SystemExit("RUST patch failed: update params")
+          r = r.replace(old, new, 1)
+
+          lib_path.write_text(r, encoding="utf-8")
+
+          # CSS
+          style_path = Path("src/style.css")
+          css = style_path.read_text(encoding="utf-8")
+          if "/* V5.1 booking source */" not in css:
+              css += "\n/* V5.1 booking source */\n.booking-source-badge{display:inline-flex;align-items:center;justify-content:center;min-width:64px;padding:5px 9px;border-radius:999px;background:#eef4f7;border:1px solid #d9e5eb;color:#0a2342;font-size:11px;font-weight:800;}\n"
+          style_path.write_text(css, encoding="utf-8")
+
+          # Versions
+          pkg_path = Path("package.json")
+          pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+          pkg["version"] = "5.1.0"
+          pkg_path.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          conf_path = Path("src-tauri/tauri.conf.json")
+          conf = json.loads(conf_path.read_text(encoding="utf-8"))
+          conf["version"] = "5.1.0"
+          conf_path.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          cargo_path = Path("src-tauri/Cargo.toml")
+          lines = cargo_path.read_text(encoding="utf-8").splitlines()
+          for i, line in enumerate(lines):
+              if line.startswith('version = "'):
+                  lines[i] = 'version = "5.1.0"'
+                  break
+          cargo_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+          print("V5.1 booking source applied")
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust compile check
+        shell: bash
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture
+
+      - name: V5.1 gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          main = Path("src/main.ts").read_text(encoding="utf-8")
+          lib = Path("src-tauri/src/lib.rs").read_text(encoding="utf-8")
+          conf = json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+
+          for item in ["bookingSource", "مصدر الحجز", "فيزيتا", "اكشف", "كلينيدو", "عادي"]:
+              assert item in main, item
+          for item in ["booking_source", "ALTER TABLE visits ADD COLUMN booking_source", "idx_visits_booking_source"]:
+              assert item in lib, item
+          assert conf["version"] == "5.1.0"
+          print("V5.1 gate passed")
+          PY
+
+      - name: Build V5.1 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          if ($installer.Length -lt 1000000) { throw "Setup EXE is unexpectedly small" }
+          Write-Host "Installer:" $installer.FullName
+          Write-Host "Size:" $installer.Length
+
+      - name: Commit validated V5.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src/style.css src-tauri/src/lib.rs src-tauri/tauri.conf.json package.json src-tauri/Cargo.toml
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V5.1: add booking source"
+            git push
+          fi
+
+      - name: Upload V5.1 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V5.1-Booking-Source-Installer
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
