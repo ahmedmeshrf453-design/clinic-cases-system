@@ -103,7 +103,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '5.2.0'
+  version: '5.3.0'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -150,42 +150,12 @@ function displayDate(v: string) {
 }
 
 
-function visitStatusOptions(current = '') {
-  const value = current || 'لم يحدد';
-  const options = ['لم يحدد', 'حضر', 'لم يحضر', 'ملغي', 'مؤجل'];
-  return options.map(x => `<option value="${esc(x)}" ${x === value ? 'selected' : ''}>${esc(x)}</option>`).join('');
-}
 
 function bookingSourceOptions(current = '') {
   const value = current || 'عادي';
   const options = ['فيزيتا', 'اكشف', 'كلينيدو', 'عادي'];
   return options.map(x => `<option value="${esc(x)}" ${x === value ? 'selected' : ''}>${esc(x)}</option>`).join('');
 }
-
-document.addEventListener('change', async event => {
-  const target = event.target as HTMLElement;
-  const select = target.closest<HTMLSelectElement>('select[data-visit-status-id]');
-  if (!select) return;
-
-  const visitId = select.dataset.visitStatusId || '';
-  if (!visitId) return;
-
-  const previous = select.dataset.previousStatus || 'لم يحدد';
-  select.disabled = true;
-
-  try {
-    await invoke('set_visit_status', {
-      input: { id: visitId, status: select.value }
-    });
-    select.dataset.previousStatus = select.value;
-    toast(`تم تحديث حالة الزيارة إلى: ${select.value}`);
-  } catch (err) {
-    select.value = previous;
-    toast(`تعذر تحديث حالة الزيارة: ${String(err)}`, 'error');
-  } finally {
-    select.disabled = false;
-  }
-});
 
 
 type ExportFormat = 'pdf' | 'png';
@@ -216,34 +186,27 @@ function reportMetrics(rows: Visit[]) {
     revenue: rows.reduce((sum, v) => sum + visitFeeNumber(v), 0),
     clinicTotal: rows.reduce((sum, v) => sum + moneyNumber(v.clinicAmount), 0),
     doctorTotal: rows.reduce((sum, v) => sum + moneyNumber(v.doctorAmount), 0),
-    attended: rows.filter(v => v.status === 'حضر').length,
-    noShow: rows.filter(v => v.status === 'لم يحضر').length,
-    cancelled: rows.filter(v => v.status === 'ملغي').length,
-    postponed: rows.filter(v => v.status === 'مؤجل').length,
-    unspecified: rows.filter(v => !v.status || v.status === 'لم يحدد').length,
     newVisits: rows.filter(v => v.visitType === 'كشف جديد').length,
     consultations: rows.filter(v => v.visitType === 'استشارة').length
   };
 }
 
 function doctorBreakdown(rows: Visit[]) {
-  const map = new Map<string, {count:number; revenue:number; clinicTotal:number; doctorTotal:number; attended:number}>();
+  const map = new Map<string, {count:number; revenue:number; clinicTotal:number; doctorTotal:number}>();
   for (const v of rows) {
     const doctor = (v.doctor || '').trim() || 'بدون طبيب';
-    const item = map.get(doctor) || { count: 0, revenue: 0, clinicTotal: 0, doctorTotal: 0, attended: 0 };
+    const item = map.get(doctor) || { count: 0, revenue: 0, clinicTotal: 0, doctorTotal: 0 };
     item.count += 1;
     item.revenue += visitFeeNumber(v);
     item.clinicTotal += moneyNumber(v.clinicAmount);
     item.doctorTotal += moneyNumber(v.doctorAmount);
-    if (v.status === 'حضر') item.attended += 1;
     map.set(doctor, item);
   }
   return [...map.entries()].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0], 'ar'));
 }
 
-function filteredReportResult(base: ReportResult, status: string, visitType: string): ReportResult {
+function filteredReportResult(base: ReportResult, visitType: string): ReportResult {
   const rows = base.rows.filter(v =>
-    (!status || (v.status || 'لم يحدد') === status) &&
     (!visitType || v.visitType === visitType)
   );
   const ids = new Set(rows.map(v => v.patientId));
@@ -264,7 +227,6 @@ function exportVisitRows(rows: Visit[], includePatient: boolean) {
           ${includePatient ? '<th>المريض</th><th>رقم التليفون</th>' : ''}
           <th>نوع الزيارة</th>
           <th>مصدر الحجز</th>
-          <th>حالة الزيارة</th>
           <th>الطبيب</th>
           <th>سعر الكشف</th>
           <th>مبلغ العيادات</th>
@@ -279,13 +241,12 @@ function exportVisitRows(rows: Visit[], includePatient: boolean) {
             ${includePatient ? `<td>${esc(v.patientName || '—')}</td><td class="ltr">${esc(v.patientPhone || '—')}</td>` : ''}
             <td>${esc(v.visitType || 'زيارة')}</td>
             <td>${esc(v.bookingSource || 'عادي')}</td>
-            <td>${esc(v.status || 'لم يحدد')}</td>
             <td>${esc(v.doctor || '—')}</td>
             <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
             <td class="ltr">${v.clinicAmount ? `${esc(v.clinicAmount)} ج.م` : '—'}</td>
             <td class="ltr">${v.doctorAmount ? `${esc(v.doctorAmount)} ج.م` : '—'}</td>
           </tr>
-        `).join('') : `<tr><td colspan="${includePatient ? 11 : 9}">لا توجد بيانات</td></tr>`}
+        `).join('') : `<tr><td colspan="${includePatient ? 10 : 8}">لا توجد بيانات</td></tr>`}
       </tbody>
     </table>`;
 }
@@ -479,14 +440,13 @@ async function exportReportFile(result: ReportResult, from: string, to: string, 
     <h3 class="export-section-heading">ملخص الأطباء</h3>
     <table class="export-table">
       <thead>
-        <tr><th>الطبيب</th><th>عدد الحالات</th><th>حضر</th><th>إجمالي الكشف</th><th>مبلغ العيادات</th><th>مبلغ الطبيب</th></tr>
+        <tr><th>الطبيب</th><th>عدد الحالات</th><th>إجمالي الكشف</th><th>مبلغ العيادات</th><th>مبلغ الطبيب</th></tr>
       </thead>
       <tbody>
         ${doctorRows.map(([name, item]) => `
           <tr>
             <td>${esc(name)}</td>
             <td>${item.count}</td>
-            <td>${item.attended}</td>
             <td class="ltr">${item.revenue.toFixed(2)} ج.م</td>
             <td class="ltr">${item.clinicTotal.toFixed(2)} ج.م</td>
             <td class="ltr">${item.doctorTotal.toFixed(2)} ج.م</td>
@@ -505,9 +465,6 @@ async function exportReportFile(result: ReportResult, from: string, to: string, 
       <div><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
       <div><span>مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)} ج.م</strong></div>
       <div><span>مبلغ الأطباء</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)} ج.م</strong></div>
-      <div><span>حضر</span><strong>${metrics.attended}</strong></div>
-      <div><span>لم يحضر</span><strong>${metrics.noShow}</strong></div>
-      <div><span>ملغي / مؤجل</span><strong>${metrics.cancelled + metrics.postponed}</strong></div>
     </div>
     ${doctorSummary}
     <h3 class="export-section-heading">تفاصيل الزيارات</h3>
@@ -1002,10 +959,6 @@ async function renderToday() {
         <div><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
         <div><span>مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)} ج.م</strong></div>
         <div><span>مبلغ الأطباء</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)} ج.م</strong></div>
-        <div><span>حضر</span><strong>${metrics.attended}</strong></div>
-        <div><span>لم يحضر</span><strong>${metrics.noShow}</strong></div>
-        <div><span>ملغي</span><strong>${metrics.cancelled}</strong></div>
-        <div><span>مؤجل</span><strong>${metrics.postponed}</strong></div>
       </div>
 
       <div class="today-filter-panel">
@@ -1013,16 +966,6 @@ async function renderToday() {
           <select id="todayDoctorFilter">
             <option value="">كل الأطباء</option>
             ${doctors.filter(d => d.active).map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}
-          </select>
-        </label>
-        <label>الحالة
-          <select id="todayStatusFilter">
-            <option value="">كل الحالات</option>
-            <option>حضر</option>
-            <option>لم يحضر</option>
-            <option>ملغي</option>
-            <option>مؤجل</option>
-            <option>لم يحدد</option>
           </select>
         </label>
         <label>نوع الزيارة
@@ -1045,16 +988,14 @@ async function renderToday() {
       </div>
       <div id="todayPatientSearchResults"></div>
     </section>
-  `, 'حالات اليوم', 'متابعة الحضور والتحصيل وحالات الأطباء');
+  `, 'حالات اليوم', 'متابعة الحالات والتحصيل وحالات الأطباء');
 
   const doctorFilter = document.querySelector<HTMLSelectElement>('#todayDoctorFilter')!;
-  const statusFilter = document.querySelector<HTMLSelectElement>('#todayStatusFilter')!;
   const typeFilter = document.querySelector<HTMLSelectElement>('#todayTypeFilter')!;
   const tableHost = document.querySelector<HTMLDivElement>('#todayVisitTable')!;
 
   const filteredRows = () => baseResult.rows.filter(v =>
     (!doctorFilter.value || v.doctor === doctorFilter.value) &&
-    (!statusFilter.value || (v.status || 'لم يحدد') === statusFilter.value) &&
     (!typeFilter.value || v.visitType === typeFilter.value)
   );
 
@@ -1064,7 +1005,6 @@ async function renderToday() {
   };
 
   doctorFilter.onchange = applyFilters;
-  statusFilter.onchange = applyFilters;
   typeFilter.onchange = applyFilters;
 
   document.querySelector<HTMLButtonElement>('#todayImage')!.onclick = () => {
@@ -1113,7 +1053,7 @@ function visitTable(rows: Visit[], showPatient = false) {
         <thead><tr>
           <th>التاريخ</th><th>الوقت</th>
           ${showPatient ? '<th>المريض</th><th>رقم التليفون</th>' : ''}
-          <th>نوع الزيارة</th><th>مصدر الحجز</th><th>حالة الزيارة</th><th>الطبيب</th><th>سعر الكشف</th><th>مبلغ العيادات</th><th>مبلغ الطبيب</th><th>إجراءات</th>
+          <th>نوع الزيارة</th><th>مصدر الحجز</th><th>الطبيب</th><th>سعر الكشف</th><th>مبلغ العيادات</th><th>مبلغ الطبيب</th><th>إجراءات</th>
         </tr></thead>
         <tbody>${rows.length ? rows.map(v => `
           <tr class="visit-context-row" data-patient-id="${esc(v.patientId)}" data-patient-name="${esc(v.patientName || '')}" data-patient-phone="${esc(v.patientPhone || '')}">
@@ -1122,11 +1062,6 @@ function visitTable(rows: Visit[], showPatient = false) {
             ${showPatient ? `<td>${esc(v.patientName || '—')}</td><td class="ltr">${esc(v.patientPhone || '—')}</td>` : ''}
             <td><span class="visit-type-badge">${esc(v.visitType || 'زيارة')}</span></td>
             <td><span class="booking-source-badge">${esc(v.bookingSource || 'عادي')}</span></td>
-            <td>
-              <select class="visit-status-select" data-visit-status-id="${esc(v.id)}" data-previous-status="${esc(v.status || 'لم يحدد')}">
-                ${visitStatusOptions(v.status)}
-              </select>
-            </td>
             <td>${esc(v.doctor || '—')}</td>
             <td class="ltr">${v.fee ? `${esc(v.fee)} ج.م` : '—'}</td>
             <td class="ltr">${v.clinicAmount ? `${esc(v.clinicAmount)} ج.م` : '—'}</td>
@@ -1137,7 +1072,7 @@ function visitTable(rows: Visit[], showPatient = false) {
                 <button class="icon-action danger" type="button" data-delete-visit="${esc(v.id)}" title="حذف الزيارة">🗑</button>
               </div>
             </td>
-          </tr>`).join('') : `<tr><td colspan="${showPatient ? 12 : 10}" class="empty-row">لا توجد زيارات</td></tr>`}
+          </tr>`).join('') : `<tr><td colspan="${showPatient ? 11 : 9}" class="empty-row">لا توجد زيارات</td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -1195,7 +1130,7 @@ async function renderReports() {
   shell(`
     <section class="card">
       <div class="card-head">
-        <div><h2>التقارير</h2><p>تقارير تشغيلية ومالية مع فلاتر الحضور ونوع الزيارة</p></div>
+        <div><h2>التقارير</h2><p>تقارير تشغيلية ومالية مع فلتر نوع الزيارة</p></div>
         <button class="btn ghost small" id="openExportsFolder">فتح مجلد التحميلات</button>
       </div>
 
@@ -1209,16 +1144,6 @@ async function renderReports() {
         <label>من<input id="reportFrom" type="date" value="${monthFrom}"></label>
         <label>إلى<input id="reportTo" type="date" value="${today()}"></label>
         <label>الطبيب<select id="reportDoctor"><option value="">كل الأطباء</option>${doctors.filter(d=>d.active).map(d=>`<option>${esc(d.name)}</option>`).join('')}</select></label>
-        <label>حالة الزيارة
-          <select id="reportStatus">
-            <option value="">كل الحالات</option>
-            <option>حضر</option>
-            <option>لم يحضر</option>
-            <option>ملغي</option>
-            <option>مؤجل</option>
-            <option>لم يحدد</option>
-          </select>
-        </label>
         <label>نوع الزيارة
           <select id="reportVisitType">
             <option value="">كل الأنواع</option>
@@ -1236,7 +1161,7 @@ async function renderReports() {
 
       <div id="reportResult" class="report-result"></div>
     </section>
-  `, 'التقارير', 'متابعة الحالات والحضور والتحصيل لأي فترة');
+  `, 'التقارير', 'متابعة الحالات والتحصيل لأي فترة');
 
   let currentBaseResult: ReportResult | null = null;
   let currentResult: ReportResult | null = null;
@@ -1245,14 +1170,13 @@ async function renderReports() {
     from: document.querySelector<HTMLInputElement>('#reportFrom')!.value,
     to: document.querySelector<HTMLInputElement>('#reportTo')!.value,
     doctor: document.querySelector<HTMLSelectElement>('#reportDoctor')!.value,
-    status: document.querySelector<HTMLSelectElement>('#reportStatus')!.value,
     visitType: document.querySelector<HTMLSelectElement>('#reportVisitType')!.value
   });
 
   const renderResult = () => {
     if (!currentBaseResult) return;
     const q = queryValues();
-    const result = filteredReportResult(currentBaseResult, q.status, q.visitType);
+    const result = filteredReportResult(currentBaseResult, q.visitType);
     currentResult = result;
     const metrics = reportMetrics(result.rows);
     const doctorRows = doctorBreakdown(result.rows);
@@ -1264,10 +1188,6 @@ async function renderReports() {
         <div><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
         <div><span>مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)} ج.م</strong></div>
         <div><span>مبلغ الأطباء</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)} ج.م</strong></div>
-        <div><span>حضر</span><strong>${metrics.attended}</strong></div>
-        <div><span>لم يحضر</span><strong>${metrics.noShow}</strong></div>
-        <div><span>ملغي</span><strong>${metrics.cancelled}</strong></div>
-        <div><span>مؤجل</span><strong>${metrics.postponed}</strong></div>
         <div><span>كشف / استشارة</span><strong>${metrics.newVisits} / ${metrics.consultations}</strong></div>
       </div>
 
@@ -1278,7 +1198,7 @@ async function renderReports() {
             <article class="doctor-day-card">
               <div>
                 <strong>${esc(name)}</strong>
-                <span>${item.count} حالة • حضر ${item.attended}</span>
+                <span>${item.count} حالة</span>
               </div>
               <b class="ltr">${item.revenue.toFixed(2)} ج.م</b>
             </article>
@@ -1299,7 +1219,6 @@ async function renderReports() {
   };
 
   document.querySelector<HTMLButtonElement>('#runReportBtn')!.onclick = run;
-  document.querySelector<HTMLSelectElement>('#reportStatus')!.onchange = renderResult;
   document.querySelector<HTMLSelectElement>('#reportVisitType')!.onchange = renderResult;
 
   document.querySelector<HTMLButtonElement>('#rangeToday')!.onclick = async () => {
@@ -1661,15 +1580,6 @@ async function openVisitModal(patient: Patient) {
             <label>مبلغ الطبيب
               <input class="ltr" name="doctorAmount" type="number" min="0" step="0.01" placeholder="يكتب يدويًا">
             </label>
-            <label>حالة الزيارة
-              <select name="visitStatus">
-                <option value="لم يحدد">لم يحدد</option>
-                <option value="حضر">حضر</option>
-                <option value="لم يحضر">لم يحضر</option>
-                <option value="ملغي">ملغي</option>
-                <option value="مؤجل">مؤجل</option>
-              </select>
-            </label>
             <label>التاريخ
               <input name="visitDate" type="date" value="${today()}">
             </label>
@@ -1703,7 +1613,7 @@ async function openVisitModal(patient: Patient) {
         fee: String(fd.get('fee')||'').trim(),
         clinicAmount: String(fd.get('clinicAmount')||'').trim(),
         doctorAmount: String(fd.get('doctorAmount')||'').trim(),
-        status: String(fd.get('visitStatus')||'لم يحدد'),
+        status: 'حضر',
         visitDate: String(fd.get('visitDate')||''),
         visitTime: String(fd.get('visitTime')||'')
       }});
@@ -1760,9 +1670,6 @@ async function openEditVisitModal(visitId: string) {
             <label>مبلغ الطبيب
               <input class="ltr" name="doctorAmount" type="number" min="0" step="0.01" value="${esc(visit.doctorAmount || '')}">
             </label>
-            <label>حالة الزيارة
-              <select name="status">${visitStatusOptions(visit.status)}</select>
-            </label>
             <label>التاريخ
               <input name="visitDate" type="date" value="${esc(visit.visitDate)}">
             </label>
@@ -1796,7 +1703,7 @@ async function openEditVisitModal(visitId: string) {
         fee: String(fd.get('fee') || '').trim(),
         clinicAmount: String(fd.get('clinicAmount') || '').trim(),
         doctorAmount: String(fd.get('doctorAmount') || '').trim(),
-        status: String(fd.get('status') || 'لم يحدد'),
+        status: visit.status || 'حضر',
         visitDate: String(fd.get('visitDate') || ''),
         visitTime: String(fd.get('visitTime') || '')
       }});
