@@ -115,7 +115,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.1.3'
+  version: '6.1.4'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -1435,6 +1435,84 @@ async function openDoctorProfile(doctor: Doctor) {
   await render();
 }
 
+async function openLabPatientRegistrationModal() {
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+
+  root.innerHTML = `
+    <div class="modal-backdrop" id="labPatientRegisterBackdrop">
+      <section class="modal form-modal lab-patient-register-modal">
+        <div class="modal-head">
+          <div class="patient-feature-title">
+            <div class="patient-feature-title-icon labs">🧪</div>
+            <div>
+              <h2>تسجيل مريض تحاليل</h2>
+              <p>تسجيل بيانات المريض فقط بدون كشف أو زيارة طبيب</p>
+            </div>
+          </div>
+          <button class="modal-close" id="closeLabPatientRegister">×</button>
+        </div>
+
+        <form id="labPatientRegisterForm">
+          <div class="section-title">بيانات المريض</div>
+
+          <div class="patient-register-grid">
+            <label class="field-name">الاسم بالكامل<input name="fullName" autocomplete="off"></label>
+            <label class="field-phone">رقم التليفون<input class="ltr" name="phone" inputmode="tel" autocomplete="off"></label>
+            <label class="field-age">السن<input name="age" type="number" min="0" max="130"></label>
+            <label class="field-gender">النوع<select name="gender"><option value="">—</option><option>ذكر</option><option>أنثى</option></select></label>
+            <label class="field-address">العنوان (اختياري)<input name="address" autocomplete="off"></label>
+          </div>
+
+          <div class="lab-patient-register-note">
+            لن يتم إنشاء كشف أو زيارة للطبيب. بعد الحفظ سيفتح سجل التحاليل للمريض مباشرة.
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn ghost" id="cancelLabPatientRegister">إلغاء</button>
+            <button type="submit" class="btn primary">حفظ وفتح التحاليل</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+
+  const close = () => root.innerHTML = '';
+
+  document.querySelector<HTMLButtonElement>('#closeLabPatientRegister')!.onclick = close;
+  document.querySelector<HTMLButtonElement>('#cancelLabPatientRegister')!.onclick = close;
+  document.querySelector<HTMLDivElement>('#labPatientRegisterBackdrop')!.onclick = e => {
+    if (e.target === e.currentTarget) close();
+  };
+
+  document.querySelector<HTMLFormElement>('#labPatientRegisterForm')!.onsubmit = async e => {
+    e.preventDefault();
+
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    const rawAge = String(fd.get('age') || '').trim();
+
+    try {
+      const result = await invoke<{id:string, existed:boolean}>('register_patient', {
+        input: {
+          fullName: String(fd.get('fullName') || '').trim(),
+          phone: String(fd.get('phone') || '').trim(),
+          age: rawAge ? Number(rawAge) : null,
+          gender: String(fd.get('gender') || ''),
+          address: String(fd.get('address') || '').trim()
+        }
+      });
+
+      close();
+      toast(result.existed
+        ? 'المريض مسجل بالفعل — تم فتح سجل التحاليل'
+        : 'تم تسجيل بيانات مريض التحاليل بدون كشف');
+
+      await renderScreen();
+      await openPatientFeaturePanel(result.id, 'labs');
+    } catch (err) {
+      toast(`تعذر تسجيل المريض: ${String(err)}`, 'error');
+    }
+  };
+}
+
 function renderLabPrices() {
   const priceRowsHtml = (rows: LabTestItem[]) => {
     if (!rows.length) {
@@ -1461,7 +1539,14 @@ function renderLabPrices() {
           <h2>أسعار التحاليل</h2>
           <p>قائمة أسعار التحاليل فقط</p>
         </div>
-        <div class="lab-prices-count">${LAB_TESTS.length} تحليل</div>
+
+        <div class="lab-prices-head-actions">
+          <button class="lab-patient-register-btn" id="registerLabPatient">
+            <span class="lab-patient-register-icon">👤＋</span>
+            <span>تسجيل مريض تحاليل</span>
+          </button>
+          <div class="lab-prices-count">${LAB_TESTS.length} تحليل</div>
+        </div>
       </div>
 
       <div class="lab-prices-search">
@@ -1495,6 +1580,11 @@ function renderLabPrices() {
   };
 
   input.oninput = renderRows;
+
+  document.querySelector<HTMLButtonElement>('#registerLabPatient')!.onclick = () => {
+    openLabPatientRegistrationModal();
+  };
+
   document.querySelector<HTMLButtonElement>('#clearMainLabPriceSearch')!.onclick = () => {
     input.value = '';
     renderRows();
