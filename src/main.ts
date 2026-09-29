@@ -4,6 +4,7 @@ import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import './style.css';
+import { LAB_TESTS, type LabTestItem } from './labCatalog';
 
 type Patient = {
   id: string;
@@ -103,7 +104,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '5.7.0'
+  version: '5.8.0'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -1826,6 +1827,87 @@ async function renderBackups() {
 }
 
 
+
+function normalizeLabSearch(value: string) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f\u064b-\u065f\u0670]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[^a-z0-9\u0600-\u06ff]+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function labSearchScore(item: LabTestItem, rawQuery: string) {
+  const query = normalizeLabSearch(rawQuery);
+  if (!query) return 0;
+
+  const fields = [item.name, item.arabic, item.market]
+    .map(value => normalizeLabSearch(value))
+    .filter(Boolean);
+
+  if (fields.some(field => field === query)) return 0;
+  if (fields.some(field => field.startsWith(query))) return 1;
+  if (fields.some(field => field.includes(query))) return 2;
+
+  const compactQuery = query.replace(/\s+/g, '');
+  if (compactQuery && fields.some(field => field.replace(/\s+/g, '').includes(compactQuery))) return 2;
+
+  const tokens = query.split(' ').filter(Boolean);
+  const combined = fields.join(' ');
+  if (tokens.length && tokens.every(token => combined.includes(token))) return 3;
+
+  return Number.POSITIVE_INFINITY;
+}
+
+function labPriceLabel(item: LabTestItem) {
+  return item.price ? `${esc(item.price)} ج.م` : 'غير محدد';
+}
+
+function searchLabTests(rawQuery: string) {
+  const query = normalizeLabSearch(rawQuery);
+  if (!query) return LAB_TESTS;
+
+  return LAB_TESTS
+    .map(item => ({ item, score: labSearchScore(item, query) }))
+    .filter(row => Number.isFinite(row.score))
+    .sort((a, b) =>
+      a.score - b.score ||
+      a.item.name.localeCompare(b.item.name, 'en', { sensitivity: 'base' })
+    )
+    .map(row => row.item);
+}
+
+function labResultsHtml(rows: LabTestItem[]) {
+  if (!rows.length) {
+    return `
+      <div class="lab-search-empty">
+        <span>⌕</span>
+        <strong>مفيش تحليل مطابق للبحث</strong>
+        <small>جرّب الاسم بالإنجليزي أو العربي أو الاسم الدارج.</small>
+      </div>`;
+  }
+
+  return rows.map(item => `
+    <article class="lab-result-card">
+      <div class="lab-result-copy">
+        <strong class="ltr lab-result-en">${esc(item.name)}</strong>
+        <span>${esc(item.arabic)}</span>
+        <small>${esc(item.market)}</small>
+      </div>
+      <div class="lab-result-price ${item.price ? '' : 'missing'}">
+        <span>السعر</span>
+        <strong class="ltr">${labPriceLabel(item)}</strong>
+      </div>
+    </article>
+  `).join('');
+}
+
 async function openPatientFeaturePanel(
   patientId: string,
   kind: 'nursing' | 'labs'
@@ -1837,18 +1919,94 @@ async function openPatientFeaturePanel(
   const isNursing = kind === 'nursing';
   const title = isNursing ? 'خدمات تمريض' : 'تحاليل';
   const icon = isNursing ? '✚' : '🧪';
-  const subtitle = isNursing
-    ? 'سجل خدمات التمريض الخاصة بالمريض'
-    : 'سجل التحاليل الخاصة بالمريض';
+
+  if (!isNursing) {
+    root.innerHTML = `
+      <div class="modal-backdrop" id="patientFeatureBackdrop">
+        <section class="modal wide patient-feature-modal lab-catalog-modal">
+          <div class="modal-head">
+            <div class="patient-feature-title">
+              <div class="patient-feature-title-icon labs">🧪</div>
+              <div>
+                <h2>تحاليل</h2>
+                <p>${esc(p.fullName || 'بدون اسم')} • <span class="ltr">${esc(p.phone || 'بدون رقم')}</span></p>
+              </div>
+            </div>
+            <button class="modal-close" id="closePatientFeature">×</button>
+          </div>
+
+          <div class="lab-search-shell">
+            <div class="lab-search-row">
+              <label class="lab-search-box">
+                <span>⌕</span>
+                <input
+                  id="labSearchInput"
+                  type="search"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="ابحث: CBC / صورة دم / HbA1c / السكر التراكمي / TSH ..."
+                >
+              </label>
+              <button class="btn ghost small" id="clearLabSearch">مسح البحث</button>
+            </div>
+
+            <div class="lab-search-hint">
+              البحث شغال بالاسم الإنجليزي أو العربي أو الاسم الدارج في السوق، وبيتجاهل اختلاف المسافات والشرطات وحروف الإنجليزي الكبيرة والصغيرة.
+            </div>
+
+            <div class="lab-search-summary">
+              <strong id="labResultCount">${LAB_TESTS.length} تحليل</strong>
+              <span>السعر من عمود Price في شيت الأسعار</span>
+            </div>
+
+            <div class="lab-results" id="labResults">
+              ${labResultsHtml(LAB_TESTS)}
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn ghost" id="backToPatientProfile">← رجوع لملف المريض</button>
+          </div>
+        </section>
+      </div>`;
+
+    const close = () => root.innerHTML = '';
+    const input = document.querySelector<HTMLInputElement>('#labSearchInput')!;
+    const resultHost = document.querySelector<HTMLDivElement>('#labResults')!;
+    const countHost = document.querySelector<HTMLElement>('#labResultCount')!;
+
+    const applySearch = () => {
+      const rows = searchLabTests(input.value);
+      countHost.textContent = `${rows.length} تحليل`;
+      resultHost.innerHTML = labResultsHtml(rows);
+    };
+
+    document.querySelector<HTMLButtonElement>('#closePatientFeature')!.onclick = close;
+    document.querySelector<HTMLDivElement>('#patientFeatureBackdrop')!.onclick = e => {
+      if (e.target === e.currentTarget) close();
+    };
+    document.querySelector<HTMLButtonElement>('#clearLabSearch')!.onclick = () => {
+      input.value = '';
+      applySearch();
+      input.focus();
+    };
+    document.querySelector<HTMLButtonElement>('#backToPatientProfile')!.onclick = async () => {
+      close();
+      await openPatient(patientId);
+    };
+    input.oninput = applySearch;
+    setTimeout(() => input.focus(), 0);
+    return;
+  }
 
   root.innerHTML = `
     <div class="modal-backdrop" id="patientFeatureBackdrop">
       <section class="modal wide patient-feature-modal">
         <div class="modal-head">
           <div class="patient-feature-title">
-            <div class="patient-feature-title-icon">${icon}</div>
+            <div class="patient-feature-title-icon">✚</div>
             <div>
-              <h2>${title}</h2>
+              <h2>خدمات تمريض</h2>
               <p>${esc(p.fullName || 'بدون اسم')} • <span class="ltr">${esc(p.phone || 'بدون رقم')}</span></p>
             </div>
           </div>
@@ -1856,9 +2014,9 @@ async function openPatientFeaturePanel(
         </div>
 
         <div class="patient-feature-empty">
-          <div class="patient-feature-empty-icon">${icon}</div>
-          <strong>${subtitle}</strong>
-          <span>الأيقونة اتضافت داخل ملف المريض، وجاهزة لإضافة تفاصيل السجل في الخطوة التالية.</span>
+          <div class="patient-feature-empty-icon">✚</div>
+          <strong>سجل خدمات التمريض الخاصة بالمريض</strong>
+          <span>جاهز لإضافة تفاصيل خدمات التمريض في المرحلة التالية.</span>
         </div>
 
         <div class="form-actions">

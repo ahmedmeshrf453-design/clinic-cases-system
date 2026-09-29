@@ -1332,3 +1332,102 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
 .patient-feature-empty strong{font-size:18px;color:#173a5e}
 .patient-feature-empty span{font-size:11px;color:#7d8b9d;max-width:520px}
 @media(max-width:900px){.patient-feature-grid{grid-template-columns:1fr}}
+
+/* V5.8 lab price catalog */
+.patient-feature-title-icon.labs{background:#edf2fb;color:#315f9f}
+.lab-catalog-modal{max-width:980px}
+.lab-search-shell{display:flex;flex-direction:column;gap:10px}
+.lab-search-row{display:flex;align-items:center;gap:9px}
+.lab-search-box{
+  flex:1;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  border:1px solid #cedae5;
+  background:#fff;
+  border-radius:13px;
+  padding:0 13px;
+  min-height:48px;
+}
+.lab-search-box>span{font-size:22px;color:#75879b}
+.lab-search-box input{
+  flex:1;
+  border:0!important;
+  outline:0;
+  background:transparent;
+  padding:11px 0;
+  font-size:14px;
+  min-width:0;
+}
+.lab-search-hint{
+  background:#f5f8fb;
+  color:#697b90;
+  border-radius:10px;
+  padding:9px 12px;
+  font-size:10px;
+  line-height:1.7;
+}
+.lab-search-summary{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  color:#687a8e;
+  font-size:10px;
+}
+.lab-search-summary strong{color:#173a5e;font-size:12px}
+.lab-results{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  max-height:470px;
+  overflow:auto;
+  padding:2px 2px 5px 4px;
+}
+.lab-result-card{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  justify-content:space-between;
+  border:1px solid #e0e7ef;
+  background:#fff;
+  border-radius:12px;
+  padding:11px 13px;
+}
+.lab-result-card:hover{border-color:#b7ccdc;background:#fbfdff}
+.lab-result-copy{display:flex;flex-direction:column;gap:3px;min-width:0}
+.lab-result-copy strong{font-size:13px;color:#102d4d}
+.lab-result-copy span{font-size:11px;color:#394e65}
+.lab-result-copy small{font-size:9px;color:#8695a6}
+.lab-result-en{text-align:right;direction:ltr}
+.lab-result-price{
+  min-width:120px;
+  flex:0 0 auto;
+  text-align:center;
+  background:#edf8f4;
+  border:1px solid #d3ebe2;
+  border-radius:10px;
+  padding:8px 10px;
+}
+.lab-result-price span{display:block;font-size:9px;color:#6d887d;margin-bottom:3px}
+.lab-result-price strong{font-size:14px;color:#166b54;white-space:nowrap}
+.lab-result-price.missing{background:#f7f7f8;border-color:#e3e4e8}
+.lab-result-price.missing strong{color:#818895;font-size:10px}
+.lab-search-empty{
+  min-height:180px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  text-align:center;
+  gap:5px;
+  color:#718196;
+}
+.lab-search-empty>span{font-size:30px}
+.lab-search-empty strong{color:#274764}
+.lab-search-empty small{font-size:10px}
+@media(max-width:760px){
+  .lab-search-row{align-items:stretch;flex-direction:column}
+  .lab-result-card{align-items:flex-start}
+  .lab-result-price{min-width:105px}
+}
