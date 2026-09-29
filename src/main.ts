@@ -104,7 +104,7 @@ type HealthCheck = {
   backupWritable: boolean;
 };
 
-type Screen = 'dashboard' | 'patients' | 'today' | 'doctors' | 'reports' | 'archive' | 'backups' | 'settings';
+type Screen = 'dashboard' | 'patients' | 'today' | 'doctors' | 'labs' | 'reports' | 'archive' | 'backups' | 'settings';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 let screen: Screen = 'dashboard';
@@ -115,7 +115,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.1.2'
+  version: '6.1.3'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -606,6 +606,7 @@ function shell(content: string, title: string, subtitle: string) {
           ${navButton('patients','◉','المرضى')}
           ${navButton('today','◷','حالات اليوم')}
           ${navButton('doctors','⚕','الأطباء')}
+          ${navButton('labs','🧪','التحاليل')}
           ${navButton('reports','▤','التقارير')}
           ${navButton('archive','▣','الأرشيف')}
           ${navButton('backups','⟳','النسخ الاحتياطية')}
@@ -779,6 +780,7 @@ async function renderScreen() {
   if (screen === 'archive') return renderPatients(true);
   if (screen === 'today') return renderToday();
   if (screen === 'doctors') return renderDoctors();
+  if (screen === 'labs') return renderLabPrices();
   if (screen === 'reports') return renderReports();
   if (screen === 'backups') return renderBackups();
   if (screen === 'settings') return renderSettings();
@@ -1431,6 +1433,73 @@ async function openDoctorProfile(doctor: Doctor) {
   };
 
   await render();
+}
+
+function renderLabPrices() {
+  const priceRowsHtml = (rows: LabTestItem[]) => {
+    if (!rows.length) {
+      return `<div class="lab-prices-empty">لا يوجد تحليل مطابق للبحث</div>`;
+    }
+
+    return rows.map(item => `
+      <div class="lab-price-row">
+        <div class="lab-price-name">
+          <strong class="ltr">${esc(item.name)}</strong>
+          ${item.arabic ? `<small>${esc(item.arabic)}</small>` : ''}
+        </div>
+        <div class="lab-price-value ${item.price ? '' : 'missing'}">
+          ${item.price ? `${esc(item.price)} ج.م` : 'غير محدد'}
+        </div>
+      </div>
+    `).join('');
+  };
+
+  shell(`
+    <section class="card lab-prices-card">
+      <div class="card-head lab-prices-head">
+        <div>
+          <h2>أسعار التحاليل</h2>
+          <p>قائمة أسعار التحاليل فقط</p>
+        </div>
+        <div class="lab-prices-count">${LAB_TESTS.length} تحليل</div>
+      </div>
+
+      <div class="lab-prices-search">
+        <span class="lab-prices-search-icon">⌕</span>
+        <input
+          id="mainLabPriceSearch"
+          type="search"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="ابحث باسم التحليل بالعربي أو الإنجليزي..."
+        >
+        <button class="btn ghost small" id="clearMainLabPriceSearch">مسح</button>
+      </div>
+
+      <div class="lab-price-table-head">
+        <span>اسم التحليل</span>
+        <span>السعر</span>
+      </div>
+
+      <div class="lab-price-list" id="mainLabPriceList">
+        ${priceRowsHtml(LAB_TESTS)}
+      </div>
+    </section>
+  `, 'التحاليل', 'أسعار التحاليل');
+
+  const input = document.querySelector<HTMLInputElement>('#mainLabPriceSearch')!;
+  const list = document.querySelector<HTMLDivElement>('#mainLabPriceList')!;
+
+  const renderRows = () => {
+    list.innerHTML = priceRowsHtml(searchLabTests(input.value));
+  };
+
+  input.oninput = renderRows;
+  document.querySelector<HTMLButtonElement>('#clearMainLabPriceSearch')!.onclick = () => {
+    input.value = '';
+    renderRows();
+    input.focus();
+  };
 }
 
 async function renderDoctors() {

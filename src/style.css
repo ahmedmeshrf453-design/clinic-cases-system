@@ -2023,3 +2023,157 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
     grid-template-columns:repeat(2,max-content);
   }
 }
+
+/* V6.1.3 main lab prices */
+.nav[data-screen="labs"] .nav-icon{
+  width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  border-radius:8px;
+  background:linear-gradient(145deg,#f5fbff,#cfe8f5);
+  border:1px solid rgba(255,255,255,.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.75),
+    0 4px 10px rgba(0,0,0,.18);
+  font-size:15px;
+}
+
+.lab-prices-card{
+  max-width:980px;
+  margin:0 auto;
+}
+
+.lab-prices-head{
+  margin-bottom:12px;
+}
+
+.lab-prices-count{
+  padding:6px 10px;
+  border-radius:999px;
+  background:#eef4f7;
+  color:#31506d;
+  font-size:10px;
+  font-weight:800;
+}
+
+.lab-prices-search{
+  display:grid;
+  grid-template-columns:28px 1fr max-content;
+  align-items:center;
+  gap:8px;
+  padding:7px 9px;
+  margin-bottom:10px;
+  border:1px solid #dfe7ee;
+  border-radius:10px;
+  background:#f9fbfc;
+}
+
+.lab-prices-search-icon{
+  display:grid;
+  place-items:center;
+  font-size:18px;
+  color:#73859a;
+}
+
+.lab-prices-search input{
+  border:0;
+  box-shadow:none!important;
+  background:transparent;
+  padding:6px 4px;
+  font-size:12px;
+}
+
+.lab-prices-search .btn{
+  padding:6px 10px;
+  min-height:30px;
+  font-size:9px;
+}
+
+.lab-price-table-head{
+  display:grid;
+  grid-template-columns:1fr 120px;
+  gap:10px;
+  padding:7px 12px;
+  background:#f1f5f8;
+  border:1px solid #e1e8ee;
+  border-radius:9px 9px 0 0;
+  color:#738397;
+  font-size:9px;
+  font-weight:700;
+}
+
+.lab-price-table-head span:last-child{
+  text-align:center;
+}
+
+.lab-price-list{
+  max-height:610px;
+  overflow:auto;
+  border:1px solid #e1e8ee;
+  border-top:0;
+  border-radius:0 0 9px 9px;
+  background:#fff;
+}
+
+.lab-price-row{
+  display:grid;
+  grid-template-columns:1fr 120px;
+  gap:10px;
+  align-items:center;
+  min-height:46px;
+  padding:7px 12px;
+  border-bottom:1px solid #edf1f4;
+}
+
+.lab-price-row:last-child{
+  border-bottom:0;
+}
+
+.lab-price-row:hover{
+  background:#fbfdfe;
+}
+
+.lab-price-name{
+  min-width:0;
+}
+
+.lab-price-name strong,
+.lab-price-name small{
+  display:block;
+}
+
+.lab-price-name strong{
+  font-size:11px;
+  color:#173650;
+}
+
+.lab-price-name small{
+  margin-top:2px;
+  font-size:8.5px;
+  color:#8492a2;
+}
+
+.lab-price-value{
+  justify-self:stretch;
+  text-align:center;
+  padding:6px 8px;
+  border-radius:8px;
+  background:#edf8f4;
+  color:#176b54;
+  font-size:11px;
+  font-weight:800;
+}
+
+.lab-price-value.missing{
+  background:#f4f5f6;
+  color:#89929d;
+  font-size:9px;
+}
+
+.lab-prices-empty{
+  padding:40px 15px;
+  text-align:center;
+  color:#8290a1;
+  font-size:11px;
+}
