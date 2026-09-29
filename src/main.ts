@@ -48,6 +48,17 @@ type Visit = {
 
 type PatientDetails = { patient: Patient; visits: Visit[] };
 
+type PatientLab = {
+  id: string;
+  patientId: string;
+  catalogId: number;
+  testName: string;
+  price: string;
+  createdAt: string;
+};
+
+
+
 type Doctor = {
   id: string;
   name: string;
@@ -104,7 +115,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '5.8.0'
+  version: '5.9.0'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -1883,7 +1894,7 @@ function searchLabTests(rawQuery: string) {
     .map(row => row.item);
 }
 
-function labResultsHtml(rows: LabTestItem[]) {
+function labResultsHtml(rows: LabTestItem[], selectedCatalogIds = new Set<number>()) {
   if (!rows.length) {
     return `
       <div class="lab-search-empty">
@@ -1893,19 +1904,63 @@ function labResultsHtml(rows: LabTestItem[]) {
       </div>`;
   }
 
-  return rows.map(item => `
-    <article class="lab-result-card">
-      <div class="lab-result-copy">
-        <strong class="ltr lab-result-en">${esc(item.name)}</strong>
-        <span>${esc(item.arabic)}</span>
-        <small>${esc(item.market)}</small>
+  return rows.map(item => {
+    const selected = selectedCatalogIds.has(item.id);
+    return `
+      <article class="lab-result-card ${selected ? 'is-selected' : ''}">
+        <div class="lab-result-copy">
+          <strong class="ltr lab-result-en">${esc(item.name)}</strong>
+          <span>${esc(item.arabic)}</span>
+          <small>${esc(item.market)}</small>
+        </div>
+        <div class="lab-result-actions">
+          <div class="lab-result-price ${item.price ? '' : 'missing'}">
+            <span>السعر</span>
+            <strong class="ltr">${labPriceLabel(item)}</strong>
+          </div>
+          <button
+            class="btn ${selected ? 'ghost' : 'primary'} small lab-add-btn"
+            data-add-lab="${item.id}"
+            ${selected ? 'disabled' : ''}
+          >${selected ? '✓ مضاف' : '＋ إضافة'}</button>
+        </div>
+      </article>`;
+  }).join('');
+}
+
+function selectedPatientLabsHtml(rows: PatientLab[]) {
+  const total = rows.reduce((sum, item) => sum + moneyNumber(item.price), 0);
+
+  return `
+    <div class="patient-labs-selected-head">
+      <div>
+        <strong>تحاليل العميل</strong>
+        <span>${rows.length} تحليل</span>
       </div>
-      <div class="lab-result-price ${item.price ? '' : 'missing'}">
-        <span>السعر</span>
-        <strong class="ltr">${labPriceLabel(item)}</strong>
+      <div class="patient-labs-total">
+        <span>الإجمالي</span>
+        <strong class="ltr">${total.toFixed(2)} ج.م</strong>
       </div>
-    </article>
-  `).join('');
+    </div>
+
+    <div class="patient-labs-selected-list">
+      ${rows.length ? rows.map(item => `
+        <article class="patient-lab-selected-row">
+          <div>
+            <strong class="ltr">${esc(item.testName)}</strong>
+            <small>محفوظ داخل ملف العميل</small>
+          </div>
+          <div class="patient-lab-selected-side">
+            <b class="ltr">${item.price ? `${esc(item.price)} ج.م` : 'السعر غير محدد'}</b>
+            <button class="icon-action danger" data-delete-patient-lab="${esc(item.id)}" title="حذف التحليل">🗑</button>
+          </div>
+        </article>
+      `).join('') : `
+        <div class="patient-labs-empty">
+          لم تتم إضافة تحاليل لهذا العميل بعد.
+        </div>
+      `}
+    </div>`;
 }
 
 async function openPatientFeaturePanel(
@@ -1917,10 +1972,10 @@ async function openPatientFeaturePanel(
   const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
 
   const isNursing = kind === 'nursing';
-  const title = isNursing ? 'خدمات تمريض' : 'تحاليل';
-  const icon = isNursing ? '✚' : '🧪';
 
   if (!isNursing) {
+    let selectedLabs = await invoke<PatientLab[]>('list_patient_labs', { patientId });
+
     root.innerHTML = `
       <div class="modal-backdrop" id="patientFeatureBackdrop">
         <section class="modal wide patient-feature-modal lab-catalog-modal">
@@ -1935,6 +1990,12 @@ async function openPatientFeaturePanel(
             <button class="modal-close" id="closePatientFeature">×</button>
           </div>
 
+          <section class="patient-labs-selected-panel">
+            <div id="patientLabsSelected">
+              ${selectedPatientLabsHtml(selectedLabs)}
+            </div>
+          </section>
+
           <div class="lab-search-shell">
             <div class="lab-search-row">
               <label class="lab-search-box">
@@ -1944,24 +2005,22 @@ async function openPatientFeaturePanel(
                   type="search"
                   autocomplete="off"
                   spellcheck="false"
-                  placeholder="ابحث: CBC / صورة دم / HbA1c / السكر التراكمي / TSH ..."
+                  placeholder="ابحث عن التحليل ثم اضغط إضافة..."
                 >
               </label>
               <button class="btn ghost small" id="clearLabSearch">مسح البحث</button>
             </div>
 
             <div class="lab-search-hint">
-              البحث شغال بالاسم الإنجليزي أو العربي أو الاسم الدارج في السوق، وبيتجاهل اختلاف المسافات والشرطات وحروف الإنجليزي الكبيرة والصغيرة.
+              بعد إضافة أي تحليل، مربع البحث يفضى تلقائيًا وتقدر تبحث فورًا عن تحليل تاني وتضيفه، وهكذا.
             </div>
 
             <div class="lab-search-summary">
               <strong id="labResultCount">${LAB_TESTS.length} تحليل</strong>
-              <span>السعر من عمود Price في شيت الأسعار</span>
+              <span>بحث بالإنجليزي أو العربي أو الاسم الدارج • السعر من Price</span>
             </div>
 
-            <div class="lab-results" id="labResults">
-              ${labResultsHtml(LAB_TESTS)}
-            </div>
+            <div class="lab-results" id="labResults"></div>
           </div>
 
           <div class="form-actions">
@@ -1974,11 +2033,72 @@ async function openPatientFeaturePanel(
     const input = document.querySelector<HTMLInputElement>('#labSearchInput')!;
     const resultHost = document.querySelector<HTMLDivElement>('#labResults')!;
     const countHost = document.querySelector<HTMLElement>('#labResultCount')!;
+    const selectedHost = document.querySelector<HTMLDivElement>('#patientLabsSelected')!;
+
+    const selectedCatalogIds = () => new Set(selectedLabs.map(item => item.catalogId));
+
+    const bindDeleteButtons = () => {
+      selectedHost.querySelectorAll<HTMLButtonElement>('[data-delete-patient-lab]').forEach(button => {
+        button.onclick = async () => {
+          const id = button.dataset.deletePatientLab;
+          if (!id) return;
+          try {
+            await invoke('delete_patient_lab', { id });
+            selectedLabs = selectedLabs.filter(item => item.id !== id);
+            renderSelected();
+            applySearch();
+            toast('تم حذف التحليل');
+            input.focus();
+          } catch (err) {
+            toast(`تعذر حذف التحليل: ${String(err)}`, 'error');
+          }
+        };
+      });
+    };
+
+    const renderSelected = () => {
+      selectedHost.innerHTML = selectedPatientLabsHtml(selectedLabs);
+      bindDeleteButtons();
+    };
+
+    const bindAddButtons = () => {
+      resultHost.querySelectorAll<HTMLButtonElement>('[data-add-lab]').forEach(button => {
+        button.onclick = async () => {
+          const catalogId = Number(button.dataset.addLab || '0');
+          const item = LAB_TESTS.find(test => test.id === catalogId);
+          if (!item) return;
+
+          try {
+            const added = await invoke<PatientLab>('add_patient_lab', {
+              input: {
+                patientId,
+                catalogId: item.id,
+                testName: item.name,
+                price: item.price || ''
+              }
+            });
+
+            selectedLabs = [added, ...selectedLabs.filter(row => row.catalogId !== added.catalogId)];
+            renderSelected();
+
+            input.value = '';
+            applySearch();
+            input.focus();
+            toast(`تمت إضافة ${item.name}`);
+          } catch (err) {
+            const message = String(err);
+            toast(message.includes('مضاف بالفعل') ? 'التحليل مضاف بالفعل للعميل' : `تعذر إضافة التحليل: ${message}`, 'error');
+            input.focus();
+          }
+        };
+      });
+    };
 
     const applySearch = () => {
       const rows = searchLabTests(input.value);
       countHost.textContent = `${rows.length} تحليل`;
-      resultHost.innerHTML = labResultsHtml(rows);
+      resultHost.innerHTML = labResultsHtml(rows, selectedCatalogIds());
+      bindAddButtons();
     };
 
     document.querySelector<HTMLButtonElement>('#closePatientFeature')!.onclick = close;
@@ -1994,7 +2114,10 @@ async function openPatientFeaturePanel(
       close();
       await openPatient(patientId);
     };
+
     input.oninput = applySearch;
+    renderSelected();
+    applySearch();
     setTimeout(() => input.focus(), 0);
     return;
   }

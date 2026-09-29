@@ -1431,3 +1431,50 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
   .lab-result-card{align-items:flex-start}
   .lab-result-price{min-width:105px}
 }
+
+/* V5.9 patient lab selection */
+.patient-labs-selected-panel{
+  border:1px solid #dbe5ee;
+  border-radius:14px;
+  background:#f8fbfd;
+  padding:12px;
+  margin-bottom:13px;
+}
+.patient-labs-selected-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  margin-bottom:9px;
+}
+.patient-labs-selected-head>div:first-child{display:flex;align-items:center;gap:7px}
+.patient-labs-selected-head>div:first-child strong{font-size:14px;color:#143856}
+.patient-labs-selected-head>div:first-child span{
+  font-size:9px;color:#667b91;background:#e8eff5;border-radius:999px;padding:4px 8px
+}
+.patient-labs-total{text-align:center;background:#eaf6f2;border-radius:10px;padding:6px 12px;min-width:125px}
+.patient-labs-total span{display:block;color:#6b877d;font-size:9px}
+.patient-labs-total strong{display:block;color:#12684f;font-size:14px;margin-top:2px}
+.patient-labs-selected-list{display:flex;flex-direction:column;gap:6px;max-height:205px;overflow:auto}
+.patient-lab-selected-row{
+  display:flex;justify-content:space-between;align-items:center;gap:12px;
+  background:#fff;border:1px solid #e0e7ed;border-radius:10px;padding:9px 11px
+}
+.patient-lab-selected-row>div:first-child{display:flex;flex-direction:column;gap:2px;min-width:0}
+.patient-lab-selected-row>div:first-child strong{font-size:12px;color:#173651}
+.patient-lab-selected-row>div:first-child small{font-size:9px;color:#8a98a8}
+.patient-lab-selected-side{display:flex;align-items:center;gap:9px;flex:0 0 auto}
+.patient-lab-selected-side b{font-size:11px;color:#17674f;white-space:nowrap}
+.patient-labs-empty{
+  text-align:center;padding:16px;color:#7a899a;background:#fff;border:1px dashed #d8e1e9;border-radius:10px;font-size:10px
+}
+.lab-result-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.lab-add-btn{min-width:78px}
+.lab-add-btn:disabled{opacity:.62;cursor:default}
+.lab-result-card.is-selected{background:#f7fbfa;border-color:#c8ded6}
+@media(max-width:760px){
+  .patient-labs-selected-head{align-items:stretch;flex-direction:column}
+  .patient-labs-total{width:100%}
+  .patient-lab-selected-row{align-items:flex-start}
+  .lab-result-actions{flex-direction:column;align-items:stretch}
+}

@@ -6,54 +6,101 @@ use std::{fs, path::PathBuf, process::Command};
 use tauri::{Manager, State};
 use uuid::Uuid;
 
-struct AppState { db_path: PathBuf, backup_dir: PathBuf, export_dir: PathBuf }
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AddCaseInput {
-    full_name: String, phone: String, age: Option<i64>, gender: String, address: String,
-    doctor: String, specialty: String, fee: String, visit_date: String, visit_time: String,
-    complaint: String, diagnosis: String, notes: String,
+struct AppState {
+    db_path: PathBuf,
+    backup_dir: PathBuf,
+    export_dir: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct PatientQuery { search: String, archived_only: bool, limit: i64 }
+struct AddCaseInput {
+    full_name: String,
+    phone: String,
+    age: Option<i64>,
+    gender: String,
+    address: String,
+    doctor: String,
+    specialty: String,
+    fee: String,
+    visit_date: String,
+    visit_time: String,
+    complaint: String,
+    diagnosis: String,
+    notes: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PatientQuery {
+    search: String,
+    archived_only: bool,
+    limit: i64,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdatePatientInput {
-    id: String, full_name: String, phone: String, age: Option<i64>, gender: String, address: String,
+    id: String,
+    full_name: String,
+    phone: String,
+    age: Option<i64>,
+    gender: String,
+    address: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RegisterPatientInput {
-    full_name: String, phone: String, age: Option<i64>, gender: String, address: String,
+    full_name: String,
+    phone: String,
+    age: Option<i64>,
+    gender: String,
+    address: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RegisterPatientResult {
-    id: String, existed: bool,
+    id: String,
+    existed: bool,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AddVisitInput {
-    patient_id: String, visit_type: String, booking_source: String, doctor: String, fee: String, clinic_amount: String, doctor_amount: String, status: String,
-    visit_date: String, visit_time: String,
+    patient_id: String,
+    visit_type: String,
+    booking_source: String,
+    doctor: String,
+    fee: String,
+    clinic_amount: String,
+    doctor_amount: String,
+    status: String,
+    visit_date: String,
+    visit_time: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct VisitStatusInput { id: String, status: String }
+struct VisitStatusInput {
+    id: String,
+    status: String,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateVisitInput {
-    id: String, visit_type: String, booking_source: String, doctor: String, fee: String, clinic_amount: String, doctor_amount: String, status: String,
-    visit_date: String, visit_time: String,
+    id: String,
+    visit_type: String,
+    booking_source: String,
+    doctor: String,
+    fee: String,
+    clinic_amount: String,
+    doctor_amount: String,
+    status: String,
+    visit_date: String,
+    visit_time: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,59 +113,138 @@ struct SettingsInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct BlacklistInput { id: String, blacklisted: bool }
-
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ArchiveInput { id: String, archived: bool }
+struct BlacklistInput {
+    id: String,
+    blacklisted: bool,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DoctorQuery { active_only: bool }
+struct ArchiveInput {
+    id: String,
+    archived: bool,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DoctorInput { id: String, name: String, specialty: String, active: bool }
+struct DoctorQuery {
+    active_only: bool,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReportQuery { from: String, to: String, doctor: String }
+struct DoctorInput {
+    id: String,
+    name: String,
+    specialty: String,
+    active: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReportQuery {
+    from: String,
+    to: String,
+    doctor: String,
+}
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct Patient {
-    id: String, full_name: String, phone: String, age: Option<i64>, gender: String,
-    address: String, archived: bool, blacklisted: bool, created_at: String, updated_at: String,
-    doctor: String, specialty: String, last_visit_date: String, last_visit_time: String,
-    complaint: String, visits_count: i64,
+    id: String,
+    full_name: String,
+    phone: String,
+    age: Option<i64>,
+    gender: String,
+    address: String,
+    archived: bool,
+    blacklisted: bool,
+    created_at: String,
+    updated_at: String,
+    doctor: String,
+    specialty: String,
+    last_visit_date: String,
+    last_visit_time: String,
+    complaint: String,
+    visits_count: i64,
 }
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct Visit {
-    id: String, patient_id: String, visit_date: String, visit_time: String,
-    doctor: String, specialty: String, complaint: String, diagnosis: String,
-    notes: String, fee: String, visit_type: String, status: String, booking_source: String,
-    clinic_amount: String, doctor_amount: String,
-    patient_name: String, patient_phone: String, created_at: String,
+    id: String,
+    patient_id: String,
+    visit_date: String,
+    visit_time: String,
+    doctor: String,
+    specialty: String,
+    complaint: String,
+    diagnosis: String,
+    notes: String,
+    fee: String,
+    visit_type: String,
+    status: String,
+    booking_source: String,
+    clinic_amount: String,
+    doctor_amount: String,
+    patient_name: String,
+    patient_phone: String,
+    created_at: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct PatientDetails { patient: Patient, visits: Vec<Visit> }
+struct PatientDetails {
+    patient: Patient,
+    visits: Vec<Visit>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AddPatientLabInput {
+    patient_id: String,
+    catalog_id: i64,
+    test_name: String,
+    price: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PatientLab {
+    id: String,
+    patient_id: String,
+    catalog_id: i64,
+    test_name: String,
+    price: String,
+    created_at: String,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Doctor { id: String, name: String, specialty: String, active: bool }
+struct Doctor {
+    id: String,
+    name: String,
+    specialty: String,
+    active: bool,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Stats { total_patients: i64, today_visits: i64, new_today: i64, total_visits: i64 }
+struct Stats {
+    total_patients: i64,
+    today_visits: i64,
+    new_today: i64,
+    total_visits: i64,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct BackupItem { name: String, path: String, modified: String, size: u64 }
+struct BackupItem {
+    name: String,
+    path: String,
+    modified: String,
+    size: u64,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -130,7 +256,11 @@ struct SaveExportInput {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ReportResult { total_visits: i64, unique_patients: i64, rows: Vec<Visit> }
+struct ReportResult {
+    total_visits: i64,
+    unique_patients: i64,
+    rows: Vec<Visit>,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -167,10 +297,11 @@ fn meta_value(conn: &Connection, key: &str, fallback: &str) -> Result<String, St
     conn.query_row(
         "SELECT value FROM app_meta WHERE key=?1",
         params![key],
-        |row| row.get::<_, String>(0)
-    ).optional()
-     .map_err(|e| e.to_string())
-     .map(|v| v.unwrap_or_else(|| fallback.to_string()))
+        |row| row.get::<_, String>(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+    .map(|v| v.unwrap_or_else(|| fallback.to_string()))
 }
 
 fn get_operational_start_hour(conn: &Connection) -> Result<u32, String> {
@@ -211,7 +342,9 @@ fn validate_money_field(value: &str, label: &str) -> Result<(), String> {
     if value.trim().is_empty() {
         return Ok(());
     }
-    let amount = value.trim().parse::<f64>()
+    let amount = value
+        .trim()
+        .parse::<f64>()
         .map_err(|_| format!("{} غير صالح", label))?;
     if !amount.is_finite() || amount < 0.0 || amount > 1_000_000.0 {
         return Err(format!("{} غير صالح", label));
@@ -250,7 +383,9 @@ fn validate_visit_fields(
     }
 
     if !fee.trim().is_empty() {
-        let amount = fee.trim().parse::<f64>()
+        let amount = fee
+            .trim()
+            .parse::<f64>()
             .map_err(|_| "سعر الكشف غير صالح".to_string())?;
         if !amount.is_finite() || amount < 0.0 || amount > 1_000_000.0 {
             return Err("سعر الكشف غير صالح".into());
@@ -272,7 +407,8 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
     conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; PRAGMA wal_autocheckpoint=1000;")
         .map_err(|e| e.to_string())?;
 
-    conn.execute_batch(r#"
+    conn.execute_batch(
+        r#"
       CREATE TABLE IF NOT EXISTS patients(
         id TEXT PRIMARY KEY, full_name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
         age INTEGER, gender TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '',
@@ -296,14 +432,28 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, specialty TEXT NOT NULL DEFAULT '',
         active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
-    "#).map_err(|e| e.to_string())?;
+      CREATE TABLE IF NOT EXISTS patient_labs(
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL,
+        catalog_id INTEGER NOT NULL,
+        test_name TEXT NOT NULL DEFAULT '',
+        price TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        UNIQUE(patient_id,catalog_id),
+        FOREIGN KEY(patient_id) REFERENCES patients(id)
+      );
+    "#,
+    )
+    .map_err(|e| e.to_string())?;
 
     // Upgrade old V3 databases: remove UNIQUE(phone) while preserving all IDs and visits.
-    let schema: String = conn.query_row(
-        "SELECT COALESCE(sql,'') FROM sqlite_master WHERE type='table' AND name='patients'",
-        [],
-        |row| row.get(0)
-    ).map_err(|e| e.to_string())?;
+    let schema: String = conn
+        .query_row(
+            "SELECT COALESCE(sql,'') FROM sqlite_master WHERE type='table' AND name='patients'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
 
     if schema.to_uppercase().contains("UNIQUE") {
         conn.execute_batch("PRAGMA wal_checkpoint(FULL); PRAGMA foreign_keys=OFF;")
@@ -330,93 +480,114 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
     }
 
     // V3.4: add manual visit fee without losing existing visits.
-    let has_fee: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='fee'",
-        [],
-        |row| row.get(0)
-    ).map_err(|e| e.to_string())?;
+    let has_fee: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='fee'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
 
     if has_fee == 0 {
         conn.execute(
             "ALTER TABLE visits ADD COLUMN fee TEXT NOT NULL DEFAULT ''",
-            []
-        ).map_err(|e| e.to_string())?;
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
-    let has_blacklisted: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM pragma_table_info('patients') WHERE name='blacklisted'",
-        [],
-        |row| row.get(0)
-    ).map_err(|e| e.to_string())?;
+    let has_blacklisted: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('patients') WHERE name='blacklisted'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
     if has_blacklisted == 0 {
         conn.execute(
             "ALTER TABLE patients ADD COLUMN blacklisted INTEGER NOT NULL DEFAULT 0",
-            []
-        ).map_err(|e| e.to_string())?;
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
-    let has_visit_type: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='visit_type'",
-        [],
-        |row| row.get(0)
-    ).map_err(|e| e.to_string())?;
+    let has_visit_type: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='visit_type'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
     if has_visit_type == 0 {
         conn.execute(
             "ALTER TABLE visits ADD COLUMN visit_type TEXT NOT NULL DEFAULT ''",
-            []
-        ).map_err(|e| e.to_string())?;
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
-    let has_visit_status: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='status'",
-        [],
-        |row| row.get(0)
-    ).map_err(|e| e.to_string())?;
+    let has_visit_status: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='status'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
     if has_visit_status == 0 {
         conn.execute(
             "ALTER TABLE visits ADD COLUMN status TEXT NOT NULL DEFAULT 'لم يحدد'",
-            []
-        ).map_err(|e| e.to_string())?;
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
-    let has_booking_source: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='booking_source'",
-        [],
-        |row| row.get(0)
-    ).map_err(|e| e.to_string())?;
+    let has_booking_source: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='booking_source'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
     if has_booking_source == 0 {
         conn.execute(
             "ALTER TABLE visits ADD COLUMN booking_source TEXT NOT NULL DEFAULT 'عادي'",
-            []
-        ).map_err(|e| e.to_string())?;
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
-
-    let has_clinic_amount: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='clinic_amount'",
-        [],
-        |row| row.get(0)
-    ).map_err(|e| e.to_string())?;
+    let has_clinic_amount: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='clinic_amount'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
     if has_clinic_amount == 0 {
         conn.execute(
             "ALTER TABLE visits ADD COLUMN clinic_amount TEXT NOT NULL DEFAULT ''",
-            []
-        ).map_err(|e| e.to_string())?;
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
-    let has_doctor_amount: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='doctor_amount'",
-        [],
-        |row| row.get(0)
-    ).map_err(|e| e.to_string())?;
+    let has_doctor_amount: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='doctor_amount'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
     if has_doctor_amount == 0 {
         conn.execute(
             "ALTER TABLE visits ADD COLUMN doctor_amount TEXT NOT NULL DEFAULT ''",
-            []
-        ).map_err(|e| e.to_string())?;
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
-    conn.execute_batch(r#"
+    conn.execute_batch(
+        r#"
       CREATE INDEX IF NOT EXISTS idx_patients_phone
         ON patients(phone);
       CREATE INDEX IF NOT EXISTS idx_patients_archived_updated
@@ -431,26 +602,39 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         ON visits(status);
       CREATE INDEX IF NOT EXISTS idx_visits_booking_source
         ON visits(booking_source);
-    "#).map_err(|e| e.to_string())?;
+      CREATE INDEX IF NOT EXISTS idx_patient_labs_patient
+        ON patient_labs(patient_id);
+    "#,
+    )
+    .map_err(|e| e.to_string())?;
 
     // Seed the requested doctors once. Later edits/deletes remain untouched.
-    conn.execute_batch(r#"
+    conn.execute_batch(
+        r#"
       CREATE TABLE IF NOT EXISTS app_meta(
         key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT ''
       );
-    "#).map_err(|e| e.to_string())?;
+    "#,
+    )
+    .map_err(|e| e.to_string())?;
 
-    conn.execute_batch(r#"
+    conn.execute_batch(
+        r#"
       INSERT OR IGNORE INTO app_meta(key,value) VALUES('contact_whatsapp','01102233167');
       INSERT OR IGNORE INTO app_meta(key,value) VALUES('contact_phone','01107072134');
       INSERT OR IGNORE INTO app_meta(key,value) VALUES('operational_start_hour','11');
-    "#).map_err(|e| e.to_string())?;
+    "#,
+    )
+    .map_err(|e| e.to_string())?;
 
-    let doctors_seeded: Option<String> = conn.query_row(
-        "SELECT value FROM app_meta WHERE key='doctors_seed_v1'",
-        [],
-        |row| row.get(0)
-    ).optional().map_err(|e| e.to_string())?;
+    let doctors_seeded: Option<String> = conn
+        .query_row(
+            "SELECT value FROM app_meta WHERE key='doctors_seed_v1'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
 
     if doctors_seeded.is_none() {
         conn.execute_batch(r#"
@@ -474,14 +658,17 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         "#).map_err(|e| e.to_string())?;
     }
 
-    conn.execute_batch(r#"
+    conn.execute_batch(
+        r#"
       CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone);
       CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(full_name);
       CREATE INDEX IF NOT EXISTS idx_patients_archived ON patients(archived);
       CREATE INDEX IF NOT EXISTS idx_visits_patient ON visits(patient_id);
       CREATE INDEX IF NOT EXISTS idx_visits_date ON visits(visit_date);
       CREATE INDEX IF NOT EXISTS idx_visits_doctor ON visits(doctor);
-    "#).map_err(|e| e.to_string())?;
+    "#,
+    )
+    .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -502,24 +689,45 @@ fn patient_select_sql() -> &'static str {
 
 fn map_patient(row: &rusqlite::Row<'_>) -> rusqlite::Result<Patient> {
     Ok(Patient {
-        id: row.get(0)?, full_name: row.get(1)?, phone: row.get(2)?, age: row.get(3)?,
-        gender: row.get(4)?, address: row.get(5)?, archived: row.get::<_,i64>(6)? != 0,
-        created_at: row.get(7)?, updated_at: row.get(8)?, doctor: row.get(9)?,
-        specialty: row.get(10)?, last_visit_date: row.get(11)?, last_visit_time: row.get(12)?,
-        complaint: row.get(13)?, visits_count: row.get(14)?,
-        blacklisted: row.get::<_,i64>(15)? != 0,
+        id: row.get(0)?,
+        full_name: row.get(1)?,
+        phone: row.get(2)?,
+        age: row.get(3)?,
+        gender: row.get(4)?,
+        address: row.get(5)?,
+        archived: row.get::<_, i64>(6)? != 0,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
+        doctor: row.get(9)?,
+        specialty: row.get(10)?,
+        last_visit_date: row.get(11)?,
+        last_visit_time: row.get(12)?,
+        complaint: row.get(13)?,
+        visits_count: row.get(14)?,
+        blacklisted: row.get::<_, i64>(15)? != 0,
     })
 }
 
 fn map_visit(row: &rusqlite::Row<'_>) -> rusqlite::Result<Visit> {
     Ok(Visit {
-        id: row.get(0)?, patient_id: row.get(1)?, visit_date: row.get(2)?, visit_time: row.get(3)?,
-        doctor: row.get(4)?, specialty: row.get(5)?, complaint: row.get(6)?,
-        diagnosis: row.get(7)?, notes: row.get(8)?, created_at: row.get(9)?,
-        fee: row.get(10)?, visit_type: row.get(11)?,
-        patient_name: row.get(12)?, patient_phone: row.get(13)?,
-        status: row.get(14)?, booking_source: row.get(15)?,
-        clinic_amount: row.get(16)?, doctor_amount: row.get(17)?,
+        id: row.get(0)?,
+        patient_id: row.get(1)?,
+        visit_date: row.get(2)?,
+        visit_time: row.get(3)?,
+        doctor: row.get(4)?,
+        specialty: row.get(5)?,
+        complaint: row.get(6)?,
+        diagnosis: row.get(7)?,
+        notes: row.get(8)?,
+        created_at: row.get(9)?,
+        fee: row.get(10)?,
+        visit_type: row.get(11)?,
+        patient_name: row.get(12)?,
+        patient_phone: row.get(13)?,
+        status: row.get(14)?,
+        booking_source: row.get(15)?,
+        clinic_amount: row.get(16)?,
+        doctor_amount: row.get(17)?,
     })
 }
 
@@ -536,8 +744,10 @@ fn save_case(state: State<AppState>, input: AddCaseInput) -> Result<String, Stri
         tx.query_row(
             "SELECT id FROM patients WHERE phone=?1 AND archived=0 LIMIT 1",
             params![phone],
-            |row| row.get(0)
-        ).optional().map_err(|e| e.to_string())?
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
     };
 
     let patient_id = if let Some(id) = existing {
@@ -566,7 +776,10 @@ fn save_case(state: State<AppState>, input: AddCaseInput) -> Result<String, Stri
 }
 
 #[tauri::command]
-fn register_patient(state: State<AppState>, input: RegisterPatientInput) -> Result<RegisterPatientResult, String> {
+fn register_patient(
+    state: State<AppState>,
+    input: RegisterPatientInput,
+) -> Result<RegisterPatientResult, String> {
     let conn = open_db(&state)?;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let phone = input.phone.trim().to_string();
@@ -579,18 +792,22 @@ fn register_patient(state: State<AppState>, input: RegisterPatientInput) -> Resu
     )?;
 
     if !phone.is_empty() {
-        let existing: Option<(String, i64)> = conn.query_row(
-            "SELECT id,archived FROM patients WHERE phone=?1 ORDER BY updated_at DESC LIMIT 1",
-            params![phone],
-            |row| Ok((row.get(0)?, row.get(1)?))
-        ).optional().map_err(|e| e.to_string())?;
+        let existing: Option<(String, i64)> = conn
+            .query_row(
+                "SELECT id,archived FROM patients WHERE phone=?1 ORDER BY updated_at DESC LIMIT 1",
+                params![phone],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
 
         if let Some((id, archived)) = existing {
             if archived != 0 {
                 conn.execute(
                     "UPDATE patients SET archived=0,updated_at=?1 WHERE id=?2",
-                    params![now, id]
-                ).map_err(|e| e.to_string())?;
+                    params![now, id],
+                )
+                .map_err(|e| e.to_string())?;
             }
             return Ok(RegisterPatientResult { id, existed: true });
         }
@@ -632,11 +849,14 @@ fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, Str
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-    let exists: Option<String> = tx.query_row(
-        "SELECT id FROM patients WHERE id=?1",
-        params![input.patient_id],
-        |row| row.get(0)
-    ).optional().map_err(|e| e.to_string())?;
+    let exists: Option<String> = tx
+        .query_row(
+            "SELECT id FROM patients WHERE id=?1",
+            params![input.patient_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
 
     if exists.is_none() {
         return Err("ملف المريض غير موجود".into());
@@ -648,8 +868,11 @@ fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, Str
         tx.query_row(
             "SELECT specialty FROM doctors WHERE name=?1 LIMIT 1",
             params![input.doctor.trim()],
-            |row| row.get(0)
-        ).optional().map_err(|e| e.to_string())?.unwrap_or_default()
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default()
     };
 
     let visit_id = Uuid::new_v4().to_string();
@@ -670,14 +893,13 @@ fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, Str
 
     tx.execute(
         "UPDATE patients SET updated_at=?1 WHERE id=?2",
-        params![now, input.patient_id]
-    ).map_err(|e| e.to_string())?;
+        params![now, input.patient_id],
+    )
+    .map_err(|e| e.to_string())?;
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(visit_id)
 }
-
-
 
 #[tauri::command]
 fn get_visit(state: State<AppState>, id: String) -> Result<Visit, String> {
@@ -690,8 +912,9 @@ fn get_visit(state: State<AppState>, id: String) -> Result<Visit, String> {
          JOIN patients p ON p.id=v.patient_id
          WHERE v.id=?1",
         params![id],
-        map_visit
-    ).map_err(|_| "الزيارة غير موجودة".to_string())
+        map_visit,
+    )
+    .map_err(|_| "الزيارة غير موجودة".to_string())
 }
 
 #[tauri::command]
@@ -717,12 +940,15 @@ fn update_visit(state: State<AppState>, input: UpdateVisitInput) -> Result<(), S
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-    let patient_id: String = tx.query_row(
-        "SELECT patient_id FROM visits WHERE id=?1",
-        params![input.id],
-        |row| row.get(0)
-    ).optional().map_err(|e| e.to_string())?
-     .ok_or_else(|| "الزيارة غير موجودة".to_string())?;
+    let patient_id: String = tx
+        .query_row(
+            "SELECT patient_id FROM visits WHERE id=?1",
+            params![input.id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "الزيارة غير موجودة".to_string())?;
 
     let specialty: String = if input.doctor.trim().is_empty() {
         String::new()
@@ -730,8 +956,11 @@ fn update_visit(state: State<AppState>, input: UpdateVisitInput) -> Result<(), S
         tx.query_row(
             "SELECT specialty FROM doctors WHERE name=?1 LIMIT 1",
             params![input.doctor.trim()],
-            |row| row.get(0)
-        ).optional().map_err(|e| e.to_string())?.unwrap_or_default()
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default()
     };
 
     tx.execute(
@@ -747,8 +976,9 @@ fn update_visit(state: State<AppState>, input: UpdateVisitInput) -> Result<(), S
 
     tx.execute(
         "UPDATE patients SET updated_at=?1 WHERE id=?2",
-        params![now, patient_id]
-    ).map_err(|e| e.to_string())?;
+        params![now, patient_id],
+    )
+    .map_err(|e| e.to_string())?;
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
@@ -761,20 +991,24 @@ fn delete_visit(state: State<AppState>, id: String) -> Result<(), String> {
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-    let patient_id: String = tx.query_row(
-        "SELECT patient_id FROM visits WHERE id=?1",
-        params![id],
-        |row| row.get(0)
-    ).optional().map_err(|e| e.to_string())?
-     .ok_or_else(|| "الزيارة غير موجودة".to_string())?;
+    let patient_id: String = tx
+        .query_row(
+            "SELECT patient_id FROM visits WHERE id=?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "الزيارة غير موجودة".to_string())?;
 
     tx.execute("DELETE FROM visits WHERE id=?1", params![id])
         .map_err(|e| e.to_string())?;
 
     tx.execute(
         "UPDATE patients SET updated_at=?1 WHERE id=?2",
-        params![now, patient_id]
-    ).map_err(|e| e.to_string())?;
+        params![now, patient_id],
+    )
+    .map_err(|e| e.to_string())?;
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
@@ -789,10 +1023,12 @@ fn set_visit_status(state: State<AppState>, input: VisitStatusInput) -> Result<(
 
     let conn = open_db(&state)?;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let changed = conn.execute(
-        "UPDATE visits SET status=?1,updated_at=?2 WHERE id=?3",
-        params![input.status.trim(), now, input.id]
-    ).map_err(|e| e.to_string())?;
+    let changed = conn
+        .execute(
+            "UPDATE visits SET status=?1,updated_at=?2 WHERE id=?3",
+            params![input.status.trim(), now, input.id],
+        )
+        .map_err(|e| e.to_string())?;
 
     if changed == 0 {
         return Err("الزيارة غير موجودة".into());
@@ -807,8 +1043,111 @@ fn set_patient_blacklisted(state: State<AppState>, input: BlacklistInput) -> Res
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     conn.execute(
         "UPDATE patients SET blacklisted=?1,updated_at=?2 WHERE id=?3",
-        params![if input.blacklisted {1} else {0}, now, input.id]
-    ).map_err(|e| e.to_string())?;
+        params![if input.blacklisted { 1 } else { 0 }, now, input.id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn list_patient_labs(
+    state: State<AppState>,
+    patient_id: String,
+) -> Result<Vec<PatientLab>, String> {
+    let conn = open_db(&state)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id,patient_id,catalog_id,test_name,price,created_at
+         FROM patient_labs
+         WHERE patient_id=?1
+         ORDER BY created_at DESC, rowid DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(params![patient_id], |row| {
+            Ok(PatientLab {
+                id: row.get(0)?,
+                patient_id: row.get(1)?,
+                catalog_id: row.get(2)?,
+                test_name: row.get(3)?,
+                price: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn add_patient_lab(
+    state: State<AppState>,
+    input: AddPatientLabInput,
+) -> Result<PatientLab, String> {
+    if input.catalog_id <= 0 || input.catalog_id > 334 {
+        return Err("رقم التحليل غير صالح".into());
+    }
+
+    let test_name = input.test_name.trim();
+    if test_name.is_empty() || test_name.len() > 300 {
+        return Err("اسم التحليل غير صالح".into());
+    }
+
+    validate_money_field(input.price.trim(), "سعر التحليل")?;
+
+    let conn = open_db(&state)?;
+    let patient_exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM patients WHERE id=?1",
+            params![input.patient_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    if patient_exists == 0 {
+        return Err("ملف العميل غير موجود".into());
+    }
+
+    let id = Uuid::new_v4().to_string();
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    conn.execute(
+        "INSERT INTO patient_labs(id,patient_id,catalog_id,test_name,price,created_at)
+         VALUES(?1,?2,?3,?4,?5,?6)",
+        params![
+            id,
+            input.patient_id,
+            input.catalog_id,
+            test_name,
+            input.price.trim(),
+            now
+        ],
+    )
+    .map_err(|e| {
+        if e.to_string().contains("UNIQUE") {
+            "التحليل مضاف بالفعل للعميل".to_string()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    Ok(PatientLab {
+        id,
+        patient_id: input.patient_id,
+        catalog_id: input.catalog_id,
+        test_name: test_name.to_string(),
+        price: input.price.trim().to_string(),
+        created_at: now,
+    })
+}
+
+#[tauri::command]
+fn delete_patient_lab(state: State<AppState>, id: String) -> Result<(), String> {
+    let conn = open_db(&state)?;
+    conn.execute("DELETE FROM patient_labs WHERE id=?1", params![id])
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -817,6 +1156,11 @@ fn delete_patient(state: State<AppState>, id: String) -> Result<(), String> {
     create_safety_backup(&state, "before-delete-patient")?;
     let mut conn = open_db(&state)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM patient_labs WHERE patient_id=?1",
+        params![id.clone()],
+    )
+    .map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM visits WHERE patient_id=?1", params![id])
         .map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM patients WHERE id=?1", params![id])
@@ -833,22 +1177,31 @@ fn list_patients(state: State<AppState>, query: PatientQuery) -> Result<Vec<Pati
     let limit = query.limit.clamp(1, 5000);
     let sql = format!("{} WHERE p.archived=?1 AND (?2='%%' OR p.full_name LIKE ?2 OR p.phone LIKE ?2) ORDER BY p.updated_at DESC LIMIT ?3", patient_select_sql());
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let rows = stmt.query_map(params![archived, like, limit], map_patient).map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())
+    let rows = stmt
+        .query_map(params![archived, like, limit], map_patient)
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn get_patient_details(state: State<AppState>, id: String) -> Result<PatientDetails, String> {
     let conn = open_db(&state)?;
     let sql = format!("{} WHERE p.id=?1", patient_select_sql());
-    let patient = conn.query_row(&sql, params![id], map_patient).map_err(|e| e.to_string())?;
+    let patient = conn
+        .query_row(&sql, params![id], map_patient)
+        .map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
         "SELECT id,patient_id,visit_date,visit_time,doctor,specialty,complaint,diagnosis,notes,created_at,fee,visit_type,
                 '' AS patient_name,'' AS patient_phone,status,booking_source,clinic_amount,doctor_amount
          FROM visits WHERE patient_id=?1 ORDER BY visit_date DESC,visit_time DESC,created_at DESC"
     ).map_err(|e| e.to_string())?;
-    let rows = stmt.query_map(params![patient.id.clone()], map_visit).map_err(|e| e.to_string())?;
-    let visits = rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![patient.id.clone()], map_visit)
+        .map_err(|e| e.to_string())?;
+    let visits = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
     Ok(PatientDetails { patient, visits })
 }
 
@@ -874,8 +1227,11 @@ fn update_patient(state: State<AppState>, input: UpdatePatientInput) -> Result<(
 fn set_patient_archived(state: State<AppState>, input: ArchiveInput) -> Result<(), String> {
     let conn = open_db(&state)?;
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    conn.execute("UPDATE patients SET archived=?1,updated_at=?2 WHERE id=?3",
-        params![if input.archived {1}else{0},now,input.id]).map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE patients SET archived=?1,updated_at=?2 WHERE id=?3",
+        params![if input.archived { 1 } else { 0 }, now, input.id],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -892,11 +1248,11 @@ fn get_stats(state: State<AppState>) -> Result<Stats, String> {
     let start_ts = format!("{} {:02}:00:00", day_s, start_hour);
     let end_ts = format!("{} {:02}:00:00", next_day_s, start_hour);
 
-    let total_patients: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM patients WHERE archived=0",
-        [],
-        |r| r.get(0)
-    ).map_err(|e|e.to_string())?;
+    let total_patients: i64 = conn
+        .query_row("SELECT COUNT(*) FROM patients WHERE archived=0", [], |r| {
+            r.get(0)
+        })
+        .map_err(|e| e.to_string())?;
 
     let today_visits: i64 = conn.query_row(
         "SELECT COUNT(*)
@@ -909,20 +1265,25 @@ fn get_stats(state: State<AppState>) -> Result<Stats, String> {
         |r| r.get(0)
     ).map_err(|e|e.to_string())?;
 
-    let new_today: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM patients
+    let new_today: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM patients
          WHERE archived=0 AND created_at>=?1 AND created_at<?2",
-        params![start_ts, end_ts],
-        |r| r.get(0)
-    ).map_err(|e|e.to_string())?;
+            params![start_ts, end_ts],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
 
-    let total_visits: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM visits",
-        [],
-        |r| r.get(0)
-    ).map_err(|e|e.to_string())?;
+    let total_visits: i64 = conn
+        .query_row("SELECT COUNT(*) FROM visits", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
 
-    Ok(Stats{total_patients,today_visits,new_today,total_visits})
+    Ok(Stats {
+        total_patients,
+        today_visits,
+        new_today,
+        total_visits,
+    })
 }
 
 #[tauri::command]
@@ -933,17 +1294,33 @@ fn list_doctors(state: State<AppState>, query: DoctorQuery) -> Result<Vec<Doctor
     } else {
         "SELECT id,name,specialty,active FROM doctors ORDER BY active DESC,name"
     };
-    let mut stmt = conn.prepare(sql).map_err(|e|e.to_string())?;
-    let rows = stmt.query_map([],|r|Ok(Doctor{id:r.get(0)?,name:r.get(1)?,specialty:r.get(2)?,active:r.get::<_,i64>(3)?!=0})).map_err(|e|e.to_string())?;
-    rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(Doctor {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                specialty: r.get(2)?,
+                active: r.get::<_, i64>(3)? != 0,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn save_doctor(state: State<AppState>, input: DoctorInput) -> Result<String, String> {
-    if input.name.trim().is_empty(){return Err("اسم الطبيب مطلوب".into());}
-    let conn=open_db(&state)?;
-    let now=Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let id=if input.id.trim().is_empty(){Uuid::new_v4().to_string()}else{input.id};
+    if input.name.trim().is_empty() {
+        return Err("اسم الطبيب مطلوب".into());
+    }
+    let conn = open_db(&state)?;
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let id = if input.id.trim().is_empty() {
+        Uuid::new_v4().to_string()
+    } else {
+        input.id
+    };
     conn.execute(
         "INSERT INTO doctors(id,name,specialty,active,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?5)
          ON CONFLICT(id) DO UPDATE SET name=excluded.name,specialty=excluded.specialty,active=excluded.active,updated_at=excluded.updated_at",
@@ -961,8 +1338,8 @@ fn delete_doctor(state: State<AppState>, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn run_report(state: State<AppState>, query: ReportQuery) -> Result<ReportResult,String> {
-    let conn=open_db(&state)?;
+fn run_report(state: State<AppState>, query: ReportQuery) -> Result<ReportResult, String> {
+    let conn = open_db(&state)?;
 
     let from_date = NaiveDate::parse_from_str(query.from.trim(), "%Y-%m-%d")
         .map_err(|_| "تاريخ البداية غير صالح".to_string())?;
@@ -977,7 +1354,11 @@ fn run_report(state: State<AppState>, query: ReportQuery) -> Result<ReportResult
     let from_s = from_date.format("%Y-%m-%d").to_string();
     let end_s = end_date.format("%Y-%m-%d").to_string();
 
-    let doctor_like=if query.doctor.trim().is_empty(){"%".to_string()}else{query.doctor.trim().to_string()};
+    let doctor_like = if query.doctor.trim().is_empty() {
+        "%".to_string()
+    } else {
+        query.doctor.trim().to_string()
+    };
     let start_hour = get_operational_start_hour(&conn)?;
     let boundary = format!("{:02}:00", start_hour);
 
@@ -992,32 +1373,52 @@ fn run_report(state: State<AppState>, query: ReportQuery) -> Result<ReportResult
          ORDER BY v.visit_date DESC,v.visit_time DESC"
     ).map_err(|e|e.to_string())?;
 
-    let rows_iter=stmt.query_map(params![from_s,end_s,doctor_like,boundary],map_visit).map_err(|e|e.to_string())?;
-    let rows=rows_iter.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
-    let total_visits=rows.len() as i64;
+    let rows_iter = stmt
+        .query_map(params![from_s, end_s, doctor_like, boundary], map_visit)
+        .map_err(|e| e.to_string())?;
+    let rows = rows_iter
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let total_visits = rows.len() as i64;
 
-    let mut ids=std::collections::HashSet::new();
-    for v in &rows { ids.insert(v.patient_id.clone()); }
+    let mut ids = std::collections::HashSet::new();
+    for v in &rows {
+        ids.insert(v.patient_id.clone());
+    }
 
-    Ok(ReportResult{total_visits,unique_patients:ids.len() as i64,rows})
-}
-
-fn backup_item(path:&PathBuf)->Result<BackupItem,String>{
-    let meta=fs::metadata(path).map_err(|e|e.to_string())?;
-    let modified=meta.modified().ok()
-        .and_then(|t|t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d|d.as_secs().to_string()).unwrap_or_default();
-    Ok(BackupItem{
-        name:path.file_name().unwrap_or_default().to_string_lossy().to_string(),
-        path:path.to_string_lossy().to_string(), modified, size:meta.len()
+    Ok(ReportResult {
+        total_visits,
+        unique_patients: ids.len() as i64,
+        rows,
     })
 }
 
-fn checkpoint_and_copy(state:&AppState,target:&PathBuf)->Result<(),String>{
-    let conn=open_db(state)?;
-    conn.execute_batch("PRAGMA wal_checkpoint(FULL);").map_err(|e|e.to_string())?;
+fn backup_item(path: &PathBuf) -> Result<BackupItem, String> {
+    let meta = fs::metadata(path).map_err(|e| e.to_string())?;
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_default();
+    Ok(BackupItem {
+        name: path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string(),
+        path: path.to_string_lossy().to_string(),
+        modified,
+        size: meta.len(),
+    })
+}
+
+fn checkpoint_and_copy(state: &AppState, target: &PathBuf) -> Result<(), String> {
+    let conn = open_db(state)?;
+    conn.execute_batch("PRAGMA wal_checkpoint(FULL);")
+        .map_err(|e| e.to_string())?;
     drop(conn);
-    fs::copy(&state.db_path,target).map_err(|e|e.to_string())?;
+    fs::copy(&state.db_path, target).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1028,7 +1429,6 @@ fn create_safety_backup(state: &AppState, prefix: &str) -> Result<PathBuf, Strin
     checkpoint_and_copy(state, &target)?;
     Ok(target)
 }
-
 
 #[tauri::command]
 fn get_settings(state: State<AppState>) -> Result<SettingsInfo, String> {
@@ -1054,7 +1454,8 @@ fn save_settings(state: State<AppState>, input: SettingsInput) -> Result<Setting
         let v = value.trim();
         !v.is_empty()
             && v.len() <= 32
-            && v.chars().all(|c| c.is_ascii_digit() || matches!(c, '+' | '-' | ' ' | '(' | ')'))
+            && v.chars()
+                .all(|c| c.is_ascii_digit() || matches!(c, '+' | '-' | ' ' | '(' | ')'))
     }
 
     if !valid_contact(&input.whatsapp_number) || !valid_contact(&input.phone_number) {
@@ -1067,13 +1468,17 @@ fn save_settings(state: State<AppState>, input: SettingsInput) -> Result<Setting
     for (key, value) in [
         ("contact_whatsapp", input.whatsapp_number.trim().to_string()),
         ("contact_phone", input.phone_number.trim().to_string()),
-        ("operational_start_hour", input.operational_start_hour.to_string()),
+        (
+            "operational_start_hour",
+            input.operational_start_hour.to_string(),
+        ),
     ] {
         tx.execute(
             "INSERT INTO app_meta(key,value) VALUES(?1,?2)
              ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            params![key, value]
-        ).map_err(|e| e.to_string())?;
+            params![key, value],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     tx.commit().map_err(|e| e.to_string())?;
@@ -1086,16 +1491,18 @@ fn save_settings(state: State<AppState>, input: SettingsInput) -> Result<Setting
 fn health_check(state: State<AppState>) -> Result<HealthCheck, String> {
     let conn = open_db(&state)?;
 
-    let integrity_message: String = conn.query_row(
-        "PRAGMA integrity_check",
-        [],
-        |row| row.get(0)
-    ).map_err(|e| e.to_string())?;
+    let integrity_message: String = conn
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
 
     let integrity_ok = integrity_message.eq_ignore_ascii_case("ok");
 
-    let mut fk_stmt = conn.prepare("PRAGMA foreign_key_check").map_err(|e| e.to_string())?;
-    let fk_rows = fk_stmt.query_map([], |_| Ok(())).map_err(|e| e.to_string())?;
+    let mut fk_stmt = conn
+        .prepare("PRAGMA foreign_key_check")
+        .map_err(|e| e.to_string())?;
+    let fk_rows = fk_stmt
+        .query_map([], |_| Ok(()))
+        .map_err(|e| e.to_string())?;
     let mut foreign_key_issues = 0i64;
     for row in fk_rows {
         row.map_err(|e| e.to_string())?;
@@ -1126,60 +1533,72 @@ fn health_check(state: State<AppState>) -> Result<HealthCheck, String> {
 }
 
 #[tauri::command]
-fn create_backup(state: State<AppState>) -> Result<BackupItem,String>{
-    fs::create_dir_all(&state.backup_dir).map_err(|e|e.to_string())?;
-    let stamp=Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
-    let target=state.backup_dir.join(format!("clinic-cases-backup-{}.db",stamp));
-    checkpoint_and_copy(&state,&target)?;
+fn create_backup(state: State<AppState>) -> Result<BackupItem, String> {
+    fs::create_dir_all(&state.backup_dir).map_err(|e| e.to_string())?;
+    let stamp = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+    let target = state
+        .backup_dir
+        .join(format!("clinic-cases-backup-{}.db", stamp));
+    checkpoint_and_copy(&state, &target)?;
     backup_item(&target)
 }
 
 #[tauri::command]
-fn list_backups(state: State<AppState>) -> Result<Vec<BackupItem>,String>{
-    fs::create_dir_all(&state.backup_dir).map_err(|e|e.to_string())?;
-    let mut items=Vec::new();
-    for e in fs::read_dir(&state.backup_dir).map_err(|e|e.to_string())?{
-        let p=e.map_err(|e|e.to_string())?.path();
-        if p.extension().and_then(|x|x.to_str())==Some("db"){ if let Ok(i)=backup_item(&p){items.push(i);} }
+fn list_backups(state: State<AppState>) -> Result<Vec<BackupItem>, String> {
+    fs::create_dir_all(&state.backup_dir).map_err(|e| e.to_string())?;
+    let mut items = Vec::new();
+    for e in fs::read_dir(&state.backup_dir).map_err(|e| e.to_string())? {
+        let p = e.map_err(|e| e.to_string())?.path();
+        if p.extension().and_then(|x| x.to_str()) == Some("db") {
+            if let Ok(i) = backup_item(&p) {
+                items.push(i);
+            }
+        }
     }
-    items.sort_by(|a,b|b.name.cmp(&a.name));
+    items.sort_by(|a, b| b.name.cmp(&a.name));
     Ok(items)
 }
 
 #[tauri::command]
-fn restore_backup(state: State<AppState>, path: String) -> Result<(),String>{
+fn restore_backup(state: State<AppState>, path: String) -> Result<(), String> {
     let backup_root = fs::canonicalize(&state.backup_dir)
         .map_err(|_| "تعذر الوصول إلى مجلد النسخ الاحتياطية".to_string())?;
 
-    let source = fs::canonicalize(PathBuf::from(path))
-        .map_err(|_| "ملف النسخة غير موجود".to_string())?;
+    let source =
+        fs::canonicalize(PathBuf::from(path)).map_err(|_| "ملف النسخة غير موجود".to_string())?;
 
     if !source.starts_with(&backup_root) {
         return Err("لأسباب الأمان يمكن استعادة النسخ الموجودة داخل مجلد النسخ الاحتياطية فقط".into());
     }
 
-    if source.extension().and_then(|x| x.to_str()).map(|x| x.eq_ignore_ascii_case("db")) != Some(true) {
+    if source
+        .extension()
+        .and_then(|x| x.to_str())
+        .map(|x| x.eq_ignore_ascii_case("db"))
+        != Some(true)
+    {
         return Err("امتداد ملف النسخة غير صالح".into());
     }
 
-    let test=Connection::open(&source).map_err(|_|"ملف النسخة غير صالح".to_string())?;
+    let test = Connection::open(&source).map_err(|_| "ملف النسخة غير صالح".to_string())?;
 
-    let quick_check: String = test.query_row(
-        "PRAGMA quick_check",
-        [],
-        |row| row.get(0)
-    ).map_err(|_| "تعذر فحص سلامة النسخة".to_string())?;
+    let quick_check: String = test
+        .query_row("PRAGMA quick_check", [], |row| row.get(0))
+        .map_err(|_| "تعذر فحص سلامة النسخة".to_string())?;
 
     if !quick_check.eq_ignore_ascii_case("ok") {
         return Err("النسخة الاحتياطية تالفة ولا يمكن استعادتها".into());
     }
 
     for required_table in ["patients", "visits"] {
-        let exists: Option<String> = test.query_row(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?1",
-            params![required_table],
-            |row| row.get(0)
-        ).optional().map_err(|e| e.to_string())?;
+        let exists: Option<String> = test
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?1",
+                params![required_table],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
 
         if exists.is_none() {
             return Err("الملف ليس نسخة صالحة للنظام".into());
@@ -1188,24 +1607,24 @@ fn restore_backup(state: State<AppState>, path: String) -> Result<(),String>{
 
     drop(test);
 
-    let safety=state.backup_dir.join(format!(
+    let safety = state.backup_dir.join(format!(
         "before-restore-{}.db",
         Local::now().format("%Y-%m-%d_%H-%M-%S")
     ));
-    checkpoint_and_copy(&state,&safety)?;
+    checkpoint_and_copy(&state, &safety)?;
 
-    let wal=PathBuf::from(format!("{}-wal",state.db_path.to_string_lossy()));
-    let shm=PathBuf::from(format!("{}-shm",state.db_path.to_string_lossy()));
-    let _=fs::remove_file(&wal);
-    let _=fs::remove_file(&shm);
+    let wal = PathBuf::from(format!("{}-wal", state.db_path.to_string_lossy()));
+    let shm = PathBuf::from(format!("{}-shm", state.db_path.to_string_lossy()));
+    let _ = fs::remove_file(&wal);
+    let _ = fs::remove_file(&shm);
 
-    fs::copy(&source,&state.db_path).map_err(|e|e.to_string())?;
+    fs::copy(&source, &state.db_path).map_err(|e| e.to_string())?;
     init_db(&state.db_path)?;
     Ok(())
 }
 
 #[tauri::command]
-fn save_export(_state: State<AppState>, input: SaveExportInput) -> Result<String,String>{
+fn save_export(_state: State<AppState>, input: SaveExportInput) -> Result<String, String> {
     const MAX_EXPORT_BYTES: usize = 30 * 1024 * 1024;
     const MAX_BASE64_CHARS: usize = 42 * 1024 * 1024;
 
@@ -1218,7 +1637,8 @@ fn save_export(_state: State<AppState>, input: SaveExportInput) -> Result<String
     }
 
     let intended_path = PathBuf::from(input.file_name.trim());
-    let intended_ext = intended_path.extension()
+    let intended_ext = intended_path
+        .extension()
         .and_then(|x| x.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
@@ -1233,7 +1653,8 @@ fn save_export(_state: State<AppState>, input: SaveExportInput) -> Result<String
         return Err("مسار الحفظ غير صالح".into());
     }
 
-    let target_ext = target.extension()
+    let target_ext = target
+        .extension()
         .and_then(|x| x.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
@@ -1242,7 +1663,8 @@ fn save_export(_state: State<AppState>, input: SaveExportInput) -> Result<String
         return Err("امتداد الملف لا يطابق نوع الملف الذي يتم حفظه".into());
     }
 
-    let parent = target.parent()
+    let parent = target
+        .parent()
         .ok_or_else(|| "مسار الحفظ غير صالح".to_string())?;
 
     if !parent.exists() || !parent.is_dir() {
@@ -1276,19 +1698,24 @@ fn save_export(_state: State<AppState>, input: SaveExportInput) -> Result<String
 }
 
 #[tauri::command]
-fn open_export_folder(state: State<AppState>) -> Result<(),String>{
-    fs::create_dir_all(&state.export_dir).map_err(|e|e.to_string())?;
-    Command::new("explorer.exe").arg(&state.export_dir).spawn().map_err(|e|e.to_string())?;
+fn open_export_folder(state: State<AppState>) -> Result<(), String> {
+    fs::create_dir_all(&state.export_dir).map_err(|e| e.to_string())?;
+    Command::new("explorer.exe")
+        .arg(&state.export_dir)
+        .spawn()
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
-fn open_backup_folder(state: State<AppState>) -> Result<(),String>{
-    fs::create_dir_all(&state.backup_dir).map_err(|e|e.to_string())?;
-    Command::new("explorer.exe").arg(&state.backup_dir).spawn().map_err(|e|e.to_string())?;
+fn open_backup_folder(state: State<AppState>) -> Result<(), String> {
+    fs::create_dir_all(&state.backup_dir).map_err(|e| e.to_string())?;
+    Command::new("explorer.exe")
+        .arg(&state.backup_dir)
+        .spawn()
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
-
 
 const DAILY_BACKUP_TASK: &str = "Clinic Cases Daily Backup 4AM";
 const CATCHUP_BACKUP_TASK: &str = "Clinic Cases Backup CatchUp";
@@ -1355,10 +1782,9 @@ fn automatic_backup_due(state: &AppState) -> Result<bool, String> {
         return Ok(false);
     }
 
-    let daily = state.backup_dir.join(format!(
-        "clinic-cases-auto-{}.db",
-        now.format("%Y-%m-%d")
-    ));
+    let daily = state
+        .backup_dir
+        .join(format!("clinic-cases-auto-{}.db", now.format("%Y-%m-%d")));
 
     if daily.exists() {
         return Ok(false);
@@ -1368,72 +1794,101 @@ fn automatic_backup_due(state: &AppState) -> Result<bool, String> {
     Ok(true)
 }
 
-pub fn run(){
+pub fn run() {
     let backup_only = std::env::args().any(|arg| arg == "--backup-only");
 
     tauri::Builder::default()
-      .plugin(tauri_plugin_dialog::init())
-      .setup(move |app|{
-        let data_dir=app.path().app_data_dir()?;
-        fs::create_dir_all(&data_dir)?;
+        .plugin(tauri_plugin_dialog::init())
+        .setup(move |app| {
+            let data_dir = app.path().app_data_dir()?;
+            fs::create_dir_all(&data_dir)?;
 
-        let db_path=data_dir.join("clinic-cases.db");
-        init_db(&db_path).map_err(|e|std::io::Error::new(std::io::ErrorKind::Other,e))?;
+            let db_path = data_dir.join("clinic-cases.db");
+            init_db(&db_path).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-        let documents_dir=app.path().document_dir().unwrap_or_else(|_|data_dir.clone());
+            let documents_dir = app
+                .path()
+                .document_dir()
+                .unwrap_or_else(|_| data_dir.clone());
 
-        let backup_dir=documents_dir.join("Clinic Cases Backups");
-        fs::create_dir_all(&backup_dir)?;
+            let backup_dir = documents_dir.join("Clinic Cases Backups");
+            fs::create_dir_all(&backup_dir)?;
 
-        let downloads_dir=app.path().download_dir().unwrap_or_else(|_|documents_dir.clone());
-        let export_dir=downloads_dir.join("تسجيل حالات عيادات العقاد");
-        fs::create_dir_all(&export_dir)?;
+            let downloads_dir = app
+                .path()
+                .download_dir()
+                .unwrap_or_else(|_| documents_dir.clone());
+            let export_dir = downloads_dir.join("تسجيل حالات عيادات العقاد");
+            fs::create_dir_all(&export_dir)?;
 
-        let state=AppState{db_path,backup_dir,export_dir};
+            let state = AppState {
+                db_path,
+                backup_dir,
+                export_dir,
+            };
 
-        if backup_only {
-          if let Some(window) = app.get_webview_window("main") {
-            let _ = window.hide();
-          }
+            if backup_only {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
 
-          let _ = automatic_backup_due(&state);
+                let _ = automatic_backup_due(&state);
 
-          // Tauri 2: exit through AppHandle, not App.
-          app.handle().exit(0);
-          return Ok(());
-        }
+                // Tauri 2: exit through AppHandle, not App.
+                app.handle().exit(0);
+                return Ok(());
+            }
 
-        // Windows schedules the real daily 04:00 backup using local system time.
-        let _ = ensure_backup_tasks();
+            // Windows schedules the real daily 04:00 backup using local system time.
+            let _ = ensure_backup_tasks();
 
-        // Catch-up if Windows/device missed 04:00.
-        let _ = automatic_backup_due(&state);
+            // Catch-up if Windows/device missed 04:00.
+            let _ = automatic_backup_due(&state);
 
-        app.manage(state);
-        Ok(())
-      })
-      .invoke_handler(tauri::generate_handler![
-        register_patient,add_visit,get_visit,update_visit,delete_visit,
-        list_patients,get_patient_details,update_patient,
-        set_patient_archived,set_patient_blacklisted,set_visit_status,delete_patient,get_stats,
-        list_doctors,save_doctor,delete_doctor,run_report,get_settings,save_settings,health_check,
-        create_backup,list_backups,restore_backup,open_backup_folder,save_export,open_export_folder
-      ])
-      .run(tauri::generate_context!())
-      .expect("error while running Clinic Cases System");
+            app.manage(state);
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            register_patient,
+            add_visit,
+            get_visit,
+            update_visit,
+            delete_visit,
+            list_patient_labs,
+            add_patient_lab,
+            delete_patient_lab,
+            list_patients,
+            get_patient_details,
+            update_patient,
+            set_patient_archived,
+            set_patient_blacklisted,
+            set_visit_status,
+            delete_patient,
+            get_stats,
+            list_doctors,
+            save_doctor,
+            delete_doctor,
+            run_report,
+            get_settings,
+            save_settings,
+            health_check,
+            create_backup,
+            list_backups,
+            restore_backup,
+            open_backup_folder,
+            save_export,
+            open_export_folder
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running Clinic Cases System");
 }
-
 
 #[cfg(test)]
 mod production_tests {
     use super::*;
 
     fn test_db_path(label: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "clinic-cases-{}-{}.db",
-            label,
-            Uuid::new_v4()
-        ))
+        std::env::temp_dir().join(format!("clinic-cases-{}-{}.db", label, Uuid::new_v4()))
     }
 
     fn cleanup(path: &PathBuf) {
@@ -1449,12 +1904,14 @@ mod production_tests {
 
         let conn = Connection::open(&path).expect("open failed");
 
-        for table in ["patients", "visits", "doctors", "app_meta"] {
-            let count: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
-                params![table],
-                |row| row.get(0)
-            ).expect("table query failed");
+        for table in ["patients", "visits", "doctors", "patient_labs", "app_meta"] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    params![table],
+                    |row| row.get(0),
+                )
+                .expect("table query failed");
             assert_eq!(count, 1, "missing table: {}", table);
         }
 
@@ -1465,20 +1922,25 @@ mod production_tests {
             "idx_visits_date_time",
             "idx_visits_doctor_date",
             "idx_visits_status",
+            "idx_patient_labs_patient",
         ] {
-            let count: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
-                params![index],
-                |row| row.get(0)
-            ).expect("index query failed");
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
+                    params![index],
+                    |row| row.get(0),
+                )
+                .expect("index query failed");
             assert_eq!(count, 1, "missing index: {}", index);
         }
 
-        let has_status: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='status'",
-            [],
-            |row| row.get(0)
-        ).expect("status query failed");
+        let has_status: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('visits') WHERE name='status'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("status query failed");
         assert_eq!(has_status, 1);
 
         drop(conn);
@@ -1494,20 +1956,21 @@ mod production_tests {
 
     #[test]
     fn visit_validation_rejects_bad_values() {
-        assert!(validate_visit_fields(
-            "كشف جديد", "طبيب", "300", "حضر", "2026-09-28", "13:30"
-        ).is_ok());
+        assert!(
+            validate_visit_fields("كشف جديد", "طبيب", "300", "حضر", "2026-09-28", "13:30").is_ok()
+        );
 
-        assert!(validate_visit_fields(
-            "نوع غير صالح", "طبيب", "300", "حضر", "2026-09-28", "13:30"
-        ).is_err());
+        assert!(
+            validate_visit_fields("نوع غير صالح", "طبيب", "300", "حضر", "2026-09-28", "13:30")
+                .is_err()
+        );
 
-        assert!(validate_visit_fields(
-            "كشف جديد", "طبيب", "-1", "حضر", "2026-09-28", "13:30"
-        ).is_err());
+        assert!(
+            validate_visit_fields("كشف جديد", "طبيب", "-1", "حضر", "2026-09-28", "13:30").is_err()
+        );
 
-        assert!(validate_visit_fields(
-            "كشف جديد", "طبيب", "300", "حضر", "bad-date", "13:30"
-        ).is_err());
+        assert!(
+            validate_visit_fields("كشف جديد", "طبيب", "300", "حضر", "bad-date", "13:30").is_err()
+        );
     }
 }
