@@ -1478,3 +1478,257 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
   .patient-lab-selected-row{align-items:flex-start}
   .lab-result-actions{flex-direction:column;align-items:stretch}
 }
+
+/* V6.0 compact labs window */
+.lab-catalog-modal{
+  width:min(900px,calc(100vw - 34px));
+  max-width:900px;
+  max-height:calc(100vh - 30px);
+  padding:16px 18px 14px;
+  overflow:hidden;
+}
+.lab-catalog-modal .modal-head{
+  margin-bottom:10px;
+  padding-bottom:9px;
+}
+.lab-catalog-modal .modal-head h2{
+  font-size:19px;
+  line-height:1.15;
+  margin:0;
+}
+.lab-catalog-modal .modal-head p{
+  font-size:10px;
+  margin-top:3px;
+}
+.lab-catalog-modal .patient-feature-title{gap:8px}
+.lab-catalog-modal .patient-feature-title-icon{
+  width:38px;
+  height:38px;
+  min-width:38px;
+  border-radius:10px;
+  font-size:19px;
+}
+.lab-catalog-modal .modal-close{
+  width:34px;
+  height:34px;
+  border-radius:9px;
+  font-size:18px;
+}
+
+.lab-catalog-modal .patient-labs-selected-panel{
+  padding:8px 10px;
+  margin-bottom:9px;
+  border-radius:11px;
+}
+.lab-catalog-modal .patient-labs-selected-head{
+  margin-bottom:6px;
+  min-height:30px;
+}
+.lab-catalog-modal .patient-labs-selected-head>div:first-child strong{
+  font-size:12px;
+}
+.lab-catalog-modal .patient-labs-selected-head>div:first-child span{
+  padding:2px 6px;
+  font-size:8px;
+}
+.lab-catalog-modal .patient-labs-total{
+  min-width:105px;
+  padding:4px 9px;
+  border-radius:8px;
+}
+.lab-catalog-modal .patient-labs-total span{
+  font-size:8px;
+  line-height:1;
+}
+.lab-catalog-modal .patient-labs-total strong{
+  font-size:12px;
+  line-height:1.15;
+  margin-top:2px;
+}
+.lab-catalog-modal .patient-labs-selected-list{
+  gap:4px;
+  max-height:112px;
+}
+.lab-catalog-modal .patient-lab-selected-row{
+  min-height:35px;
+  padding:5px 8px;
+  border-radius:8px;
+}
+.lab-catalog-modal .patient-lab-selected-row>div:first-child{
+  gap:0;
+}
+.lab-catalog-modal .patient-lab-selected-row>div:first-child strong{
+  font-size:10.5px;
+}
+.lab-catalog-modal .patient-lab-selected-row>div:first-child small{
+  display:none;
+}
+.lab-catalog-modal .patient-lab-selected-side{
+  gap:6px;
+}
+.lab-catalog-modal .patient-lab-selected-side b{
+  font-size:10px;
+}
+.lab-catalog-modal .patient-lab-selected-side .icon-action{
+  width:28px;
+  height:28px;
+  min-width:28px;
+  padding:0;
+  border-radius:7px;
+  font-size:12px;
+}
+.lab-catalog-modal .patient-labs-empty{
+  padding:9px;
+  font-size:9px;
+}
+
+.lab-catalog-modal .lab-search-shell{
+  gap:6px;
+}
+.lab-catalog-modal .lab-search-row{
+  gap:7px;
+}
+.lab-catalog-modal .lab-search-box{
+  min-height:39px;
+  height:39px;
+  border-radius:10px;
+  padding:0 10px;
+  gap:7px;
+}
+.lab-catalog-modal .lab-search-box>span{
+  font-size:18px;
+}
+.lab-catalog-modal .lab-search-box input{
+  padding:7px 0;
+  font-size:12px;
+}
+.lab-catalog-modal #clearLabSearch{
+  min-height:36px;
+  padding:6px 11px;
+  font-size:10px;
+  border-radius:9px;
+}
+.lab-catalog-modal .lab-search-hint{
+  padding:5px 9px;
+  border-radius:8px;
+  font-size:8.5px;
+  line-height:1.35;
+}
+.lab-catalog-modal .lab-search-summary{
+  min-height:22px;
+  font-size:8.5px;
+  gap:8px;
+}
+.lab-catalog-modal .lab-search-summary strong{
+  font-size:10.5px;
+}
+
+.lab-catalog-modal .lab-results{
+  gap:4px;
+  max-height:calc(100vh - 390px);
+  min-height:170px;
+  padding:1px 2px 3px;
+  scrollbar-width:thin;
+}
+.lab-catalog-modal .lab-result-card{
+  min-height:52px;
+  gap:9px;
+  padding:6px 9px;
+  border-radius:9px;
+}
+.lab-catalog-modal .lab-result-copy{
+  gap:1px;
+  line-height:1.15;
+}
+.lab-catalog-modal .lab-result-copy strong{
+  font-size:11.5px;
+}
+.lab-catalog-modal .lab-result-copy span{
+  font-size:9.5px;
+}
+.lab-catalog-modal .lab-result-copy small{
+  font-size:7.5px;
+  line-height:1.1;
+  color:#93a0ad;
+}
+.lab-catalog-modal .lab-result-actions{
+  gap:6px;
+}
+.lab-catalog-modal .lab-result-price{
+  min-width:83px;
+  padding:4px 7px;
+  border-radius:8px;
+}
+.lab-catalog-modal .lab-result-price span{
+  font-size:7px;
+  margin-bottom:1px;
+}
+.lab-catalog-modal .lab-result-price strong{
+  font-size:11.5px;
+}
+.lab-catalog-modal .lab-result-price.missing strong{
+  font-size:8px;
+}
+.lab-catalog-modal .lab-add-btn{
+  min-width:64px;
+  min-height:31px;
+  padding:5px 8px;
+  border-radius:8px;
+  font-size:9.5px;
+}
+.lab-catalog-modal .lab-search-empty{
+  min-height:120px;
+}
+.lab-catalog-modal .lab-search-empty>span{font-size:24px}
+.lab-catalog-modal .lab-search-empty strong{font-size:11px}
+.lab-catalog-modal .lab-search-empty small{font-size:8.5px}
+
+.lab-catalog-modal>.form-actions{
+  margin-top:8px;
+  padding-top:7px;
+}
+.lab-catalog-modal>.form-actions .btn{
+  min-height:33px;
+  padding:6px 11px;
+  font-size:9.5px;
+  border-radius:8px;
+}
+
+@media(max-height:760px){
+  .lab-catalog-modal{
+    max-height:calc(100vh - 18px);
+    padding-top:11px;
+    padding-bottom:10px;
+  }
+  .lab-catalog-modal .patient-labs-selected-list{max-height:82px}
+  .lab-catalog-modal .lab-results{max-height:calc(100vh - 330px)}
+  .lab-catalog-modal .lab-search-hint{display:none}
+}
+
+@media(max-width:760px){
+  .lab-catalog-modal{
+    width:calc(100vw - 18px);
+    padding:12px;
+  }
+  .lab-catalog-modal .lab-search-row{
+    flex-direction:row;
+    align-items:center;
+  }
+  .lab-catalog-modal .patient-labs-selected-head{
+    flex-direction:row;
+    align-items:center;
+  }
+  .lab-catalog-modal .patient-labs-total{
+    width:auto;
+  }
+  .lab-catalog-modal .lab-result-card{
+    align-items:center;
+  }
+  .lab-catalog-modal .lab-result-actions{
+    flex-direction:row;
+    align-items:center;
+  }
+  .lab-catalog-modal .lab-result-copy small{
+    display:none;
+  }
+}
