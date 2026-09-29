@@ -115,7 +115,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.0.0'
+  version: '6.1.0'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -2164,30 +2164,35 @@ async function openPatient(id: string) {
   const p = details.patient;
   const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
   root.innerHTML = `
-    <div class="modal-backdrop" id="patientModalBackdrop" data-patient-id="${esc(p.id)}">
-      <section class="modal wide">
-        <div class="modal-head">
-          <div>
-            <h2>${esc(p.fullName || "بدون اسم")} ${p.blacklisted ? '<span class="blacklist-badge">Black List</span>' : ''}</h2>
-            <p class="ltr patient-phone">📞 ${esc(p.phone || "بدون رقم تليفون")}</p>
+    <div class="modal-backdrop patient-profile-backdrop" id="patientModalBackdrop" data-patient-id="${esc(p.id)}">
+      <section class="modal wide patient-profile-modal">
+        <div class="modal-head patient-profile-head">
+          <div class="patient-profile-identity">
+            <div class="patient-profile-avatar">${esc((p.fullName || 'م').trim().charAt(0) || 'م')}</div>
+            <div>
+              <div class="patient-profile-name-row">
+                <h2>${esc(p.fullName || "بدون اسم")}</h2>
+                ${p.blacklisted ? '<span class="blacklist-badge">Black List</span>' : ''}
+              </div>
+              <p class="ltr patient-phone">📞 ${esc(p.phone || "بدون رقم تليفون")}</p>
+            </div>
           </div>
           <button class="modal-close" id="closePatient">×</button>
         </div>
 
-        <div class="patient-summary">
-          <div><span>رقم التليفون</span><strong class="ltr">${esc(p.phone || '—')}</strong></div>
+        <div class="patient-summary patient-summary-compact">
           <div><span>السن</span><strong>${p.age ?? '—'}</strong></div>
           <div><span>النوع</span><strong>${esc(p.gender || '—')}</strong></div>
-          <div><span>العنوان</span><strong>${esc(p.address || '—')}</strong></div>
+          <div class="patient-summary-address"><span>العنوان</span><strong>${esc(p.address || '—')}</strong></div>
           <div><span>عدد الزيارات</span><strong>${p.visitsCount}</strong></div>
         </div>
 
-        <div class="patient-feature-grid">
+        <div class="patient-feature-grid patient-feature-grid-compact">
           <button class="patient-feature-card nursing" id="patientNursingServices">
             <span class="patient-feature-card-icon">✚</span>
             <span class="patient-feature-card-copy">
               <strong>خدمات تمريض</strong>
-              <small>فتح سجل خدمات التمريض للمريض</small>
+              <small>فتح سجل خدمات التمريض</small>
             </span>
             <span class="patient-feature-card-arrow">‹</span>
           </button>
@@ -2196,27 +2201,33 @@ async function openPatient(id: string) {
             <span class="patient-feature-card-icon">🧪</span>
             <span class="patient-feature-card-copy">
               <strong>تحاليل</strong>
-              <small>فتح سجل التحاليل للمريض</small>
+              <small>فتح سجل التحاليل</small>
             </span>
             <span class="patient-feature-card-arrow">‹</span>
           </button>
         </div>
 
-        <div class="profile-actions">
-          <button class="btn ghost small" id="patientExportImage">تحميل صورة</button>
-          <button class="btn ghost small" id="patientExportPdf">تحميل PDF</button>
-          <button class="btn ghost small" id="editPatientFromDetails">✎ تعديل البيانات</button>
+        <div class="profile-actions patient-profile-actions">
+          <button class="btn primary small patient-primary-action" id="addVisitToPatient">＋ إضافة زيارة</button>
+          <span class="patient-action-divider"></span>
+          <button class="btn ghost small" id="editPatientFromDetails">✎ تعديل</button>
+          <button class="btn ghost small" id="patientExportPdf">PDF</button>
+          <button class="btn ghost small" id="patientExportImage">صورة</button>
           <button class="btn ${p.blacklisted ? 'ghost' : 'danger-outline'} small" id="toggleBlacklist">
-            ${p.blacklisted ? 'إزالة من Black List' : '⛔ إضافة إلى Black List'}
+            ${p.blacklisted ? 'إزالة Black List' : '⛔ Black List'}
           </button>
-          <button class="btn danger-outline small" id="deletePatient">🗑 حذف المريض</button>
-          <button class="btn primary small" id="addVisitToPatient">＋ إضافة زيارة</button>
+          <button class="btn danger-outline small" id="deletePatient">🗑 حذف</button>
         </div>
 
-        <div class="modal-toolbar">
-          <h3>سجل الزيارات</h3>
+        <div class="modal-toolbar patient-visits-heading">
+          <div>
+            <h3>سجل الزيارات</h3>
+            <small>${details.visits.length ? `${details.visits.length} زيارة مسجلة` : 'لا توجد زيارات مسجلة'}</small>
+          </div>
         </div>
-        ${visitTable(details.visits)}
+        <div class="patient-visits-table-wrap">
+          ${visitTable(details.visits)}
+        </div>
       </section>
     </div>`;
 
