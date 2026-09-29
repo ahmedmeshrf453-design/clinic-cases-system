@@ -115,7 +115,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.1.0'
+  version: '6.1.2'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
