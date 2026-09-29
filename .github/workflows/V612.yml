@@ -1,0 +1,147 @@
+name: Clinic Cases V6.1.2 Tight 3D Icons
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply V6.1.2 tight 3D icons
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > _patch.b64 <<'PATCH'
+          CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAppbXBvcnQganNvbgoKbWFpbl9wYXRoID0gUGF0aCgic3JjL21haW4udHMiKQpzID0g
+          bWFpbl9wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQoKIyBLZWVwIGV4aXN0aW5nIG1vZGFsIGNsYXNzIGZyb20gVjYu
+          MS4xOyBvbmx5IGJ1bXAgdmVyc2lvbgpzID0gcy5yZXBsYWNlKCJ2ZXJzaW9uOiAnNi4xLjEnIiwgInZlcnNpb246ICc2LjEuMici
+          KQpzID0gcy5yZXBsYWNlKCJ2ZXJzaW9uOiAnNi4xLjAnIiwgInZlcnNpb246ICc2LjEuMiciKQptYWluX3BhdGgud3JpdGVfdGV4
+          dChzLCBlbmNvZGluZz0idXRmLTgiKQoKc3R5bGVfcGF0aCA9IFBhdGgoInNyYy9zdHlsZS5jc3MiKQpzdHlsZSA9IHN0eWxlX3Bh
+          dGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCmNzcyA9ICdcbi8qIFY2LjEuMiBjb21wYWN0IDNEIGljb25zIGFuZCB0aWdo
+          dCBidXR0b25zICovXG4ucGF0aWVudC1wcm9maWxlLXY2MTEgLnBhdGllbnQtZmVhdHVyZS1ncmlkLWNvbXBhY3QgLnBhdGllbnQt
+          ZmVhdHVyZS1jYXJke1xuICBkaXNwbGF5OmZsZXg7XG4gIGFsaWduLWl0ZW1zOmNlbnRlcjtcbiAganVzdGlmeS1jb250ZW50OnNw
+          YWNlLWJldHdlZW47XG4gIGdhcDoxMHB4O1xufVxuXG4ucGF0aWVudC1wcm9maWxlLXY2MTEgLnBhdGllbnQtZmVhdHVyZS1ncmlk
+          LWNvbXBhY3QgLnBhdGllbnQtZmVhdHVyZS1jYXJkLWljb257XG4gIHdpZHRoOjM0cHg7XG4gIGhlaWdodDozNHB4O1xuICBtaW4t
+          d2lkdGg6MzRweDtcbiAgYm9yZGVyLXJhZGl1czoxMHB4O1xuICBib3gtc2hhZG93OlxuICAgIGluc2V0IDAgMXB4IDAgcmdiYSgy
+          NTUsMjU1LDI1NSwuNjUpLFxuICAgIDAgNnB4IDE0cHggcmdiYSg4LDQ3LDczLC4xNCksXG4gICAgMCAxcHggM3B4IHJnYmEoOCw0
+          Nyw3MywuMDgpO1xuICBib3JkZXI6MXB4IHNvbGlkIHJnYmEoMTcsOTEsMTMwLC4xNik7XG4gIGJhY2tncm91bmQ6bGluZWFyLWdy
+          YWRpZW50KDE4MGRlZywjZjdmYmZmIDAlLCNkZmYwZmIgMTAwJSk7XG4gIHRyYW5zZm9ybTp0cmFuc2xhdGVaKDApO1xufVxuXG4u
+          cGF0aWVudC1wcm9maWxlLXY2MTEgLnBhdGllbnQtcHJvZmlsZS1hY3Rpb25ze1xuICBncmlkLXRlbXBsYXRlLWNvbHVtbnM6cmVw
+          ZWF0KDYsbWF4LWNvbnRlbnQpO1xuICBqdXN0aWZ5LWNvbnRlbnQ6ZmxleC1zdGFydDtcbiAgZ2FwOjhweDtcbn1cblxuLnBhdGll
+          bnQtcHJvZmlsZS12NjExIC5wYXRpZW50LXByb2ZpbGUtYWN0aW9ucyAuYnRue1xuICB3aWR0aDphdXRvICFpbXBvcnRhbnQ7XG4g
+          IG1pbi13aWR0aDp1bnNldCAhaW1wb3J0YW50O1xuICBwYWRkaW5nOjdweCAxMnB4O1xuICBmb250LXNpemU6MTBweDtcbiAgYm9y
+          ZGVyLXJhZGl1czoxMHB4O1xuICBib3gtc2hhZG93OlxuICAgIGluc2V0IDAgMXB4IDAgcmdiYSgyNTUsMjU1LDI1NSwuNTUpLFxu
+          ICAgIDAgNXB4IDEycHggcmdiYSg4LDQ3LDczLC4wOCk7XG59XG5cbi5wYXRpZW50LXByb2ZpbGUtdjYxMSAucGF0aWVudC1wcm9m
+          aWxlLWFjdGlvbnMgLmJ0bi1wcmltYXJ5e1xuICBiYWNrZ3JvdW5kOmxpbmVhci1ncmFkaWVudCgxODBkZWcsIzEwM2I2NyAwJSwg
+          IzBiMmU1MiAxMDAlKTtcbn1cblxuLnBhdGllbnQtcHJvZmlsZS12NjExIC5wYXRpZW50LXByb2ZpbGUtYWN0aW9ucyAuYnRuLXNl
+          Y29uZGFyeSxcbi5wYXRpZW50LXByb2ZpbGUtdjYxMSAucGF0aWVudC1wcm9maWxlLWFjdGlvbnMgLmJ0bi1naG9zdHtcbiAgYmFj
+          a2dyb3VuZDpsaW5lYXItZ3JhZGllbnQoMTgwZGVnLCNmZmZmZmYgMCUsICNlZWY0ZjggMTAwJSk7XG59XG5cbi5wYXRpZW50LXBy
+          b2ZpbGUtdjYxMSAucGF0aWVudC1wcm9maWxlLWFjdGlvbnMgLmJ0bi1kYW5nZXJ7XG4gIGJhY2tncm91bmQ6bGluZWFyLWdyYWRp
+          ZW50KDE4MGRlZywjZmZmOGY4IDAlLCAjZmZlOWU5IDEwMCUpO1xufVxuXG4ucGF0aWVudC1wcm9maWxlLXY2MTEgLnBhdGllbnQt
+          cHJvZmlsZS1hY3Rpb25zIC5idG4gLmljb24sXG4ucGF0aWVudC1wcm9maWxlLXY2MTEgLnBhdGllbnQtZmVhdHVyZS1jYXJkLWlj
+          b24gLmljb24sXG4ucGF0aWVudC1wcm9maWxlLXY2MTEgLnBhdGllbnQtcHJvZmlsZS1oZWFkIC5pY29ue1xuICBmaWx0ZXI6ZHJv
+          cC1zaGFkb3coMCAxcHggMXB4IHJnYmEoMCwwLDAsLjE0KSk7XG59XG5cbi5wYXRpZW50LXByb2ZpbGUtdjYxMSAucGF0aWVudC1z
+          dW1tYXJ5LWNvbXBhY3R7XG4gIGdyaWQtdGVtcGxhdGUtY29sdW1uczptYXgtY29udGVudCBtYXgtY29udGVudCAxZnIgbWF4LWNv
+          bnRlbnQ7XG59XG5cbi5wYXRpZW50LXByb2ZpbGUtdjYxMSAucGF0aWVudC1zdW1tYXJ5LWNvbXBhY3Q+ZGl2e1xuICBwYWRkaW5n
+          OjhweCAxMnB4O1xufVxuXG4ucGF0aWVudC1wcm9maWxlLXY2MTEgLnBhdGllbnQtdmlzaXRzLWhlYWRpbmd7XG4gIGRpc3BsYXk6
+          ZmxleDtcbiAgYWxpZ24taXRlbXM6Y2VudGVyO1xuICBqdXN0aWZ5LWNvbnRlbnQ6c3BhY2UtYmV0d2VlbjtcbiAgZ2FwOjhweDtc
+          bn1cblxuLnBhdGllbnQtcHJvZmlsZS12NjExIC5wYXRpZW50LXZpc2l0cy10YWJsZS13cmFwe1xuICBtYXJnaW4tdG9wOjZweDtc
+          bn1cblxuQG1lZGlhKG1heC13aWR0aDoxMTAwcHgpe1xuICAucGF0aWVudC1wcm9maWxlLXY2MTEgLnBhdGllbnQtcHJvZmlsZS1h
+          Y3Rpb25ze1xuICAgIGdyaWQtdGVtcGxhdGUtY29sdW1uczpyZXBlYXQoMyxtYXgtY29udGVudCk7XG4gIH1cbn1cblxuQG1lZGlh
+          KG1heC13aWR0aDo3NjBweCl7XG4gIC5wYXRpZW50LXByb2ZpbGUtdjYxMSAucGF0aWVudC1wcm9maWxlLWFjdGlvbnN7XG4gICAg
+          Z3JpZC10ZW1wbGF0ZS1jb2x1bW5zOnJlcGVhdCgyLG1heC1jb250ZW50KTtcbiAgfVxufVxuJwppZiAiLyogVjYuMS4yIGNvbXBh
+          Y3QgM0QgaWNvbnMgYW5kIHRpZ2h0IGJ1dHRvbnMgKi8iIG5vdCBpbiBzdHlsZToKICAgIHN0eWxlICs9ICJcbiIgKyBjc3Muc3Ry
+          aXAoKSArICJcbiIKc3R5bGVfcGF0aC53cml0ZV90ZXh0KHN0eWxlLCBlbmNvZGluZz0idXRmLTgiKQoKcGtnX3BhdGggPSBQYXRo
+          KCJwYWNrYWdlLmpzb24iKQpwa2cgPSBqc29uLmxvYWRzKHBrZ19wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKSkKcGtn
+          WyJ2ZXJzaW9uIl0gPSAiNi4xLjIiCnBrZ19wYXRoLndyaXRlX3RleHQoanNvbi5kdW1wcyhwa2csIGVuc3VyZV9hc2NpaT1GYWxz
+          ZSwgaW5kZW50PTIpICsgIlxuIiwgZW5jb2Rpbmc9InV0Zi04IikKCmNvbmZfcGF0aCA9IFBhdGgoInNyYy10YXVyaS90YXVyaS5j
+          b25mLmpzb24iKQpjb25mID0ganNvbi5sb2Fkcyhjb25mX3BhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpKQpjb25mWyJ2
+          ZXJzaW9uIl0gPSAiNi4xLjIiCmNvbmZfcGF0aC53cml0ZV90ZXh0KGpzb24uZHVtcHMoY29uZiwgZW5zdXJlX2FzY2lpPUZhbHNl
+          LCBpbmRlbnQ9MikgKyAiXG4iLCBlbmNvZGluZz0idXRmLTgiKQoKY2FyZ29fcGF0aCA9IFBhdGgoInNyYy10YXVyaS9DYXJnby50
+          b21sIikKbGluZXMgPSBjYXJnb19wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKS5zcGxpdGxpbmVzKCkKZm9yIGksIGxp
+          bmUgaW4gZW51bWVyYXRlKGxpbmVzKToKICAgIGlmIGxpbmUuc3RhcnRzd2l0aCgndmVyc2lvbiA9ICInKToKICAgICAgICBsaW5l
+          c1tpXSA9ICd2ZXJzaW9uID0gIjYuMS4yIicKICAgICAgICBicmVhawpjYXJnb19wYXRoLndyaXRlX3RleHQoIlxuIi5qb2luKGxp
+          bmVzKSArICJcbiIsIGVuY29kaW5nPSJ1dGYtOCIpCgpwcmludCgiVjYuMS4yIGNvbXBhY3QgM0QgaWNvbiBVSSBhcHBsaWVkIikK
+          PATCH
+          tr -d '\r\n ' < _patch.b64 > _patch.clean.b64
+          python -c "import base64; open('_v612_patch.py','wb').write(base64.b64decode(open('_patch.clean.b64','rb').read()))"
+          python _v612_patch.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust compile check
+        shell: bash
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: V6.1.2 UI gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          main = Path("src/main.ts").read_text(encoding="utf-8")
+          css = Path("src/style.css").read_text(encoding="utf-8")
+          conf = json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+          assert "version: '6.1.2'" in main or "6.1.2" in main
+          assert "/* V6.1.2 compact 3D icons and tight buttons */" in css
+          assert "grid-template-columns:repeat(6,max-content);" in css
+          assert "box-shadow:" in css
+          assert conf["version"] == "6.1.2"
+          print("V6.1.2 UI gate passed")
+          PY
+
+      - name: Build V6.1.2 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          if ($installer.Length -lt 1000000) { throw "Setup EXE is unexpectedly small" }
+
+      - name: Commit validated V6.1.2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src/style.css src-tauri/tauri.conf.json package.json src-tauri/Cargo.toml
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V6.1.2: tight buttons and 3D icons"
+            git push
+          fi
+
+      - name: Upload V6.1.2 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V6.1.2-Tight-3D-Icons
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
