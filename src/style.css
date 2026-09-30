@@ -2286,3 +2286,16 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
   .lab-order-money-grid,.lab-receipt-money{grid-template-columns:repeat(3,1fr)}
   .today-summary-grid-v62{grid-template-columns:repeat(3,1fr)}
 }
+
+/* V6.2.1 dashboard privacy: no financial amounts */
+.dashboard-stats-v47{
+  grid-template-columns:repeat(3,minmax(160px,1fr));
+}
+.dashboard-grid .doctor-day-card{
+  justify-content:flex-start;
+}
+@media(max-width:1200px){
+  .dashboard-stats-v47{
+    grid-template-columns:repeat(2,minmax(160px,1fr));
+  }
+}

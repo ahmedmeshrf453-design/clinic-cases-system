@@ -146,7 +146,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.2.0'
+  version: '6.2.1'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -1120,14 +1120,8 @@ async function renderDashboard() {
       <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
         <div class="stat-icon">◷</div><div><span>حالات اليوم</span><strong>${todayCases}</strong></div>
       </article>
-      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
-        <div class="stat-icon">ج.م</div><div><span>إجمالي التحصيل</span><strong>${todayTotalCollection.toFixed(2)}</strong></div>
-      </article>
-      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
-        <div class="stat-icon">⌂</div><div><span>مبلغ العيادات</span><strong>${todayClinicTotal.toFixed(2)}</strong></div>
-      </article>
-      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="reports" title="فتح التقارير">
-        <div class="stat-icon">⚕</div><div><span>مبلغ الأطباء</span><strong>${todayDoctorAmount.toFixed(2)}</strong></div>
+      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات التحاليل اليوم">
+        <div class="stat-icon">🧪</div><div><span>تحاليل اليوم</span><strong>${todayLabOrders.length}</strong></div>
       </article>
       <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
         <div class="stat-icon">＋</div><div><span>كشف جديد</span><strong>${newVisits}</strong></div>
@@ -1139,14 +1133,13 @@ async function renderDashboard() {
 
     <div class="dashboard-grid">
       <section class="card">
-        <div class="card-head"><div><h2>حالات الأطباء اليوم</h2><p>${displayDate(dayKey)} • عدد الحالات والتحصيل لكل طبيب</p></div>
+        <div class="card-head"><div><h2>حالات الأطباء اليوم</h2><p>${displayDate(dayKey)} • عدد الحالات لكل طبيب</p></div>
           <button class="btn ghost" id="goTodayBtn">فتح حالات اليوم</button>
         </div>
         <div class="doctor-day-grid">
           ${todayLabOrders.length ? `
             <article class="doctor-day-card dashboard-clickable lab-day-card" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات التحاليل اليوم">
               <div><strong>🧪 تحاليل اليوم</strong><span>${todayLabOrders.length} حالة</span></div>
-              <b class="ltr">${labPaidToday.toFixed(2)} ج.م محصل</b>
             </article>
           ` : ''}
           ${doctorRows.length ? doctorRows.map(([doctor, item]) => `
@@ -1155,7 +1148,6 @@ async function renderDashboard() {
                 <strong>${esc(doctor)}</strong>
                 <span>${item.count} حالة</span>
               </div>
-              <b class="ltr">${item.revenue.toFixed(2)} ج.م</b>
             </article>
           `).join('') : `<div class="empty-block">لا توجد حالات مسجلة في اليوم التشغيلي الحالي</div>`}
         </div>
