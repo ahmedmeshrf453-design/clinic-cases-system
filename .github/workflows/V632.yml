@@ -1,0 +1,176 @@
+name: Clinic Cases V6.3.2 Remove Quick Actions
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply V6.3.2 dashboard cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > _patch.b64 <<'PATCH'
+          CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAppbXBvcnQganNvbgoKbWFpbl9wYXRoID0gUGF0aCgic3JjL21haW4udHMiKQpzID0g
+          bWFpbl9wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQoKb2xkX2Jsb2NrID0gIiIiICAgIDxkaXYgY2xhc3M9ImRhc2hi
+          b2FyZC1ncmlkIj4KICAgICAgPHNlY3Rpb24gY2xhc3M9ImNhcmQiPgogICAgICAgIDxkaXYgY2xhc3M9ImNhcmQtaGVhZCI+CiAg
+          ICAgICAgICA8ZGl2PgogICAgICAgICAgICA8aDI+2YPYtNmI2YHYp9iqINin2YTYo9i32KjYp9ihINin2YTZitmI2YU8L2gyPgog
+          ICAgICAgICAgICA8cD4ke2Rpc3BsYXlEYXRlKGRheUtleSl9IOKAoiDYqtmI2LLZiti5INin2YTZg9i02YjZgdin2Kog2YjYp9mE
+          2KfYs9iq2LTYp9ix2KfYqiDYudmE2Ykg2KfZhNij2LfYqNin2KE8L3A+CiAgICAgICAgICA8L2Rpdj4KICAgICAgICAgIDxidXR0
+          b24gY2xhc3M9ImJ0biBnaG9zdCIgaWQ9ImdvVG9kYXlCdG4iPtmB2KrYrSDYrdin2YTYp9iqINin2YTZitmI2YU8L2J1dHRvbj4K
+          ICAgICAgICA8L2Rpdj4KCiAgICAgICAgPGRpdiBjbGFzcz0iZG9jdG9yLWRheS1ncmlkIj4KICAgICAgICAgICR7ZG9jdG9yUm93
+          cy5sZW5ndGggPyBkb2N0b3JSb3dzLm1hcCgoW2RvY3RvciwgY291bnRdKSA9PiBgCiAgICAgICAgICAgIDxhcnRpY2xlIGNsYXNz
+          PSJkb2N0b3ItZGF5LWNhcmQgZGFzaGJvYXJkLWNsaWNrYWJsZSIgcm9sZT0iYnV0dG9uIiB0YWJpbmRleD0iMCIgZGF0YS1kYXNo
+          Ym9hcmQtdGFyZ2V0PSJ0b2RheSIgdGl0bGU9ItmB2KrYrSDYrdin2YTYp9iqINin2YTZitmI2YUiPgogICAgICAgICAgICAgIDxk
+          aXY+CiAgICAgICAgICAgICAgICA8c3Ryb25nPiR7ZXNjKGRvY3Rvcil9PC9zdHJvbmc+CiAgICAgICAgICAgICAgICA8c3Bhbj4k
+          e2NvdW50fSDYrdin2YTYqTwvc3Bhbj4KICAgICAgICAgICAgICA8L2Rpdj4KICAgICAgICAgICAgPC9hcnRpY2xlPgogICAgICAg
+          ICAgYCkuam9pbignJykgOiBgPGRpdiBjbGFzcz0iZW1wdHktYmxvY2siPtmE2Kcg2KrZiNis2K8g2YPYtNmI2YHYp9iqINij2Ygg
+          2KfYs9iq2LTYp9ix2KfYqiDZhdiz2KzZhNipINin2YTZitmI2YU8L2Rpdj5gfQogICAgICAgIDwvZGl2PgogICAgICA8L3NlY3Rp
+          b24+CgogICAgICA8c2VjdGlvbiBjbGFzcz0icXVpY2stY2FyZCI+CiAgICAgICAgPGgyPtil2KzYsdin2KHYp9iqINiz2LHZiti5
+          2Kk8L2gyPgogICAgICAgIDxidXR0b24gY2xhc3M9InF1aWNrIiBpZD0icXVpY2tOZXciPu+8iyA8c3Bhbj48Yj7Yqtiz2KzZitmE
+          INit2KfZhNipINmD2LTZgTwvYj48c21hbGw+2KjZitin2YbYp9iqINin2YTZhdix2YrYtiDYq9mFINin2YTYstmK2KfYsdipPC9z
+          bWFsbD48L3NwYW4+PC9idXR0b24+CiAgICAgICAgPGJ1dHRvbiBjbGFzcz0icXVpY2siIGlkPSJxdWlja1RvZGF5Ij7il7cgPHNw
+          YW4+PGI+2K3Yp9mE2KfYqiDYp9mE2YrZiNmFPC9iPjxzbWFsbD7Zg9mEINiq2LPYrNmK2YTYp9iqINin2YTZitmI2YUg2YHZiiDY
+          tNin2LTYqSDZiNin2K3Yr9ipPC9zbWFsbD48L3NwYW4+PC9idXR0b24+CiAgICAgICAgPGJ1dHRvbiBjbGFzcz0icXVpY2siIGlk
+          PSJxdWlja0JhY2t1cCI+4p+zIDxzcGFuPjxiPtmG2LPYrtipINin2K3YqtmK2KfYt9mK2Kk8L2I+PHNtYWxsPtit2YHYuCDZhtiz
+          2K7YqSDZhdmGINmC2KfYudiv2Kkg2KfZhNio2YrYp9mG2KfYqiDYp9mE2KLZhjwvc21hbGw+PC9zcGFuPjwvYnV0dG9uPgogICAg
+          ICA8L3NlY3Rpb24+CiAgICA8L2Rpdj4iIiIKCm5ld19ibG9jayA9ICIiIiAgICA8ZGl2IGNsYXNzPSJkYXNoYm9hcmQtZ3JpZCBk
+          YXNoYm9hcmQtZ3JpZC12NjMyIj4KICAgICAgPHNlY3Rpb24gY2xhc3M9ImNhcmQiPgogICAgICAgIDxkaXYgY2xhc3M9ImNhcmQt
+          aGVhZCI+CiAgICAgICAgICA8ZGl2PgogICAgICAgICAgICA8aDI+2YPYtNmI2YHYp9iqINin2YTYo9i32KjYp9ihINin2YTZitmI
+          2YU8L2gyPgogICAgICAgICAgICA8cD4ke2Rpc3BsYXlEYXRlKGRheUtleSl9IOKAoiDYqtmI2LLZiti5INin2YTZg9i02YjZgdin
+          2Kog2YjYp9mE2KfYs9iq2LTYp9ix2KfYqiDYudmE2Ykg2KfZhNij2LfYqNin2KE8L3A+CiAgICAgICAgICA8L2Rpdj4KICAgICAg
+          ICAgIDxidXR0b24gY2xhc3M9ImJ0biBnaG9zdCIgaWQ9ImdvVG9kYXlCdG4iPtmB2KrYrSDYrdin2YTYp9iqINin2YTZitmI2YU8
+          L2J1dHRvbj4KICAgICAgICA8L2Rpdj4KCiAgICAgICAgPGRpdiBjbGFzcz0iZG9jdG9yLWRheS1ncmlkIj4KICAgICAgICAgICR7
+          ZG9jdG9yUm93cy5sZW5ndGggPyBkb2N0b3JSb3dzLm1hcCgoW2RvY3RvciwgY291bnRdKSA9PiBgCiAgICAgICAgICAgIDxhcnRp
+          Y2xlIGNsYXNzPSJkb2N0b3ItZGF5LWNhcmQgZGFzaGJvYXJkLWNsaWNrYWJsZSIgcm9sZT0iYnV0dG9uIiB0YWJpbmRleD0iMCIg
+          ZGF0YS1kYXNoYm9hcmQtdGFyZ2V0PSJ0b2RheSIgdGl0bGU9ItmB2KrYrSDYrdin2YTYp9iqINin2YTZitmI2YUiPgogICAgICAg
+          ICAgICAgIDxkaXY+CiAgICAgICAgICAgICAgICA8c3Ryb25nPiR7ZXNjKGRvY3Rvcil9PC9zdHJvbmc+CiAgICAgICAgICAgICAg
+          ICA8c3Bhbj4ke2NvdW50fSDYrdin2YTYqTwvc3Bhbj4KICAgICAgICAgICAgICA8L2Rpdj4KICAgICAgICAgICAgPC9hcnRpY2xl
+          PgogICAgICAgICAgYCkuam9pbignJykgOiBgPGRpdiBjbGFzcz0iZW1wdHktYmxvY2siPtmE2Kcg2KrZiNis2K8g2YPYtNmI2YHY
+          p9iqINij2Ygg2KfYs9iq2LTYp9ix2KfYqiDZhdiz2KzZhNipINin2YTZitmI2YU8L2Rpdj5gfQogICAgICAgIDwvZGl2PgogICAg
+          ICA8L3NlY3Rpb24+CiAgICA8L2Rpdj4iIiIKCmlmIG9sZF9ibG9jayBub3QgaW4gczoKICAgIHJhaXNlIFJ1bnRpbWVFcnJvcigi
+          cXVpY2sgYWN0aW9ucyBkYXNoYm9hcmQgYmxvY2sgbm90IGZvdW5kIikKcyA9IHMucmVwbGFjZShvbGRfYmxvY2ssIG5ld19ibG9j
+          aywgMSkKCmZvciBsaW5lIGluIFsKICAgICIgIGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3I8SFRNTEJ1dHRvbkVsZW1lbnQ+KCcjcXVp
+          Y2tOZXcnKSEub25jbGljayA9ICgpID0+IG9wZW5DYXNlTW9kYWwoKTtcbiIsCiAgICAiICBkb2N1bWVudC5xdWVyeVNlbGVjdG9y
+          PEhUTUxCdXR0b25FbGVtZW50PignI3F1aWNrVG9kYXknKSEub25jbGljayA9ICgpID0+IG5hdmlnYXRlKCd0b2RheScpO1xuIiwK
+          XToKICAgIHMgPSBzLnJlcGxhY2UobGluZSwgIiIsIDEpCgpvbGRfYmFja3VwID0gIiIiICBkb2N1bWVudC5xdWVyeVNlbGVjdG9y
+          PEhUTUxCdXR0b25FbGVtZW50PignI3F1aWNrQmFja3VwJykhLm9uY2xpY2sgPSBhc3luYyAoKSA9PiB7CiAgICBjb25zdCBpdGVt
+          ID0gYXdhaXQgaW52b2tlPEJhY2t1cEl0ZW0+KCdjcmVhdGVfYmFja3VwJyk7CiAgICB0b2FzdChg2KrZhSDYpdmG2LTYp9ihINin
+          2YTZhtiz2K7YqTogJHtpdGVtLm5hbWV9YCk7CiAgfTsKIiIiCnMgPSBzLnJlcGxhY2Uob2xkX2JhY2t1cCwgIiIsIDEpCgpzID0g
+          cy5yZXBsYWNlKCJ2ZXJzaW9uOiAnNi4zLjEnIiwgInZlcnNpb246ICc2LjMuMiciLCAxKQptYWluX3BhdGgud3JpdGVfdGV4dChz
+          LCBlbmNvZGluZz0idXRmLTgiKQoKc3R5bGVfcGF0aCA9IFBhdGgoInNyYy9zdHlsZS5jc3MiKQpzdHlsZSA9IHN0eWxlX3BhdGgu
+          cmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCmNzcyA9ICdcbi8qIFY2LjMuMiByZW1vdmUgcmVkdW5kYW50IHF1aWNrIGFjdGlv
+          bnMgZnJvbSBkYXNoYm9hcmQgKi9cbi5kYXNoYm9hcmQtZ3JpZC12NjMye1xuICBncmlkLXRlbXBsYXRlLWNvbHVtbnM6bWlubWF4
+          KDAsMWZyKTtcbn1cbicKaWYgIi8qIFY2LjMuMiByZW1vdmUgcmVkdW5kYW50IHF1aWNrIGFjdGlvbnMgZnJvbSBkYXNoYm9hcmQg
+          Ki8iIG5vdCBpbiBzdHlsZToKICAgIHN0eWxlICs9ICJcbiIgKyBjc3Muc3RyaXAoKSArICJcbiIKc3R5bGVfcGF0aC53cml0ZV90
+          ZXh0KHN0eWxlLCBlbmNvZGluZz0idXRmLTgiKQoKcGtnX3BhdGggPSBQYXRoKCJwYWNrYWdlLmpzb24iKQpwa2cgPSBqc29uLmxv
+          YWRzKHBrZ19wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKSkKcGtnWyJ2ZXJzaW9uIl0gPSAiNi4zLjIiCnBrZ19wYXRo
+          LndyaXRlX3RleHQoanNvbi5kdW1wcyhwa2csIGVuc3VyZV9hc2NpaT1GYWxzZSwgaW5kZW50PTIpICsgIlxuIiwgZW5jb2Rpbmc9
+          InV0Zi04IikKCmNvbmZfcGF0aCA9IFBhdGgoInNyYy10YXVyaS90YXVyaS5jb25mLmpzb24iKQpjb25mID0ganNvbi5sb2Fkcyhj
+          b25mX3BhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpKQpjb25mWyJ2ZXJzaW9uIl0gPSAiNi4zLjIiCmFzc2VydCBjb25m
+          LmdldCgiYnVuZGxlIiwge30pLmdldCgid2luZG93cyIsIHt9KS5nZXQoIndlYnZpZXdJbnN0YWxsTW9kZSIsIHt9KS5nZXQoInR5
+          cGUiKSA9PSAib2ZmbGluZUluc3RhbGxlciIKY29uZl9wYXRoLndyaXRlX3RleHQoanNvbi5kdW1wcyhjb25mLCBlbnN1cmVfYXNj
+          aWk9RmFsc2UsIGluZGVudD0yKSArICJcbiIsIGVuY29kaW5nPSJ1dGYtOCIpCgpjYXJnb19wYXRoID0gUGF0aCgic3JjLXRhdXJp
+          L0NhcmdvLnRvbWwiKQpsaW5lcyA9IGNhcmdvX3BhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpLnNwbGl0bGluZXMoKQpm
+          b3IgaSwgbGluZSBpbiBlbnVtZXJhdGUobGluZXMpOgogICAgaWYgbGluZS5zdGFydHN3aXRoKCd2ZXJzaW9uID0gIicpOgogICAg
+          ICAgIGxpbmVzW2ldID0gJ3ZlcnNpb24gPSAiNi4zLjIiJwogICAgICAgIGJyZWFrCmNhcmdvX3BhdGgud3JpdGVfdGV4dCgiXG4i
+          LmpvaW4obGluZXMpICsgIlxuIiwgZW5jb2Rpbmc9InV0Zi04IikKCnByaW50KCJWNi4zLjIgcXVpY2sgYWN0aW9ucyByZW1vdmVk
+          IikK
+          PATCH
+          tr -d '\r\n ' < _patch.b64 > _patch.clean.b64
+          python -c "import base64; open('_v632_patch.py','wb').write(base64.b64decode(open('_patch.clean.b64','rb').read()))"
+          python _v632_patch.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: V6.3.2 feature gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          main = Path("src/main.ts").read_text(encoding="utf-8")
+          css = Path("src/style.css").read_text(encoding="utf-8")
+          conf = json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+
+          start = main.index("async function renderDashboard()")
+          end = main.index("async function renderPatients(", start)
+          dash = main[start:end]
+
+          for forbidden in [
+              "إجراءات سريعة",
+              "quickNew",
+              "quickToday",
+              "quickBackup",
+              'class="quick-card"',
+          ]:
+              assert forbidden not in dash, forbidden
+
+          assert "dashboard-grid-v632" in dash
+          assert "version: '6.3.2'" in main
+          assert "/* V6.3.2 remove redundant quick actions from dashboard */" in css
+          assert conf["version"] == "6.3.2"
+          assert conf["bundle"]["windows"]["webviewInstallMode"]["type"] == "offlineInstaller"
+          print("V6.3.2 feature gate passed")
+          PY
+
+      - name: Build V6.3.2 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify self-contained installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          if ($installer.Length -lt 80000000) { throw "Offline WebView2 installer missing or setup too small" }
+
+      - name: Commit validated V6.3.2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src/style.css src-tauri/tauri.conf.json package.json src-tauri/Cargo.toml
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V6.3.2: remove redundant dashboard quick actions"
+            git push
+          fi
+
+      - name: Upload V6.3.2 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V6.3.2-Dashboard-Cleanup
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
