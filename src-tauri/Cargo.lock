@@ -344,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "clinic-cases-system"
-version = "6.2.2"
+version = "6.3.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",

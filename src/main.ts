@@ -59,6 +59,18 @@ type PatientLab = {
 
 
 
+type NursingOrder = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientPhone: string;
+  serviceName: string;
+  price: string;
+  orderDate: string;
+  orderTime: string;
+  createdAt: string;
+};
+
 type LabOrder = {
   id: string;
   patientId: string;
@@ -135,7 +147,7 @@ type HealthCheck = {
   backupWritable: boolean;
 };
 
-type Screen = 'dashboard' | 'patients' | 'today' | 'doctors' | 'labs' | 'reports' | 'archive' | 'backups' | 'settings';
+type Screen = 'dashboard' | 'patients' | 'today' | 'doctors' | 'labs' | 'nursing' | 'reports' | 'archive' | 'backups' | 'settings';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 let screen: Screen = 'dashboard';
@@ -146,7 +158,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.2.2'
+  version: '6.3.0'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -215,6 +227,140 @@ function reportPeriodLabel(from: string, to: string) {
 function moneyNumber(value: string) {
   const n = Number(String(value || '').replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
+}
+
+function nursingOrderRowsHtml(rows: NursingOrder[], showPatient = true) {
+  return `
+    <div class="table-wrap nursing-orders-table-wrap">
+      <table class="nursing-orders-table">
+        <thead>
+          <tr>
+            <th>التاريخ</th><th>الوقت</th>
+            ${showPatient ? '<th>المريض</th><th>رقم التليفون</th>' : ''}
+            <th>الخدمة</th><th>السعر</th><th>إجراءات</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map(order => `
+            <tr>
+              <td>${esc(displayDate(order.orderDate))}</td>
+              <td class="ltr">${esc(order.orderTime || '—')}</td>
+              ${showPatient ? `<td>${esc(order.patientName || '—')}</td><td class="ltr">${esc(order.patientPhone || '—')}</td>` : ''}
+              <td>${esc(order.serviceName || '—')}</td>
+              <td class="ltr">${moneyNumber(order.price).toFixed(2)} ج.م</td>
+              <td>
+                <div class="visit-row-actions">
+                  <button class="icon-action" data-open-nursing-order="${esc(order.id)}" title="فتح">⌕</button>
+                  <button class="icon-action" data-nursing-order-pdf="${esc(order.id)}" title="PDF للطباعة">PDF</button>
+                  <button class="icon-action" data-nursing-order-png="${esc(order.id)}" title="صورة">▧</button>
+                </div>
+              </td>
+            </tr>
+          `).join('') : `<tr><td colspan="${showPatient ? 7 : 5}" class="empty-row">لا توجد حالات خدمات تمريض</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function nursingOrderReceiptHtml(order: NursingOrder) {
+  return patientExportSheet(
+    'إيصال خدمة تمريض',
+    `${order.patientName || 'بدون اسم'} • ${displayDate(order.orderDate)} ${order.orderTime || ''}`,
+    `
+      <div class="export-patient-summary">
+        <div><span>المريض</span><strong>${esc(order.patientName || '—')}</strong></div>
+        <div><span>الهاتف</span><strong class="ltr">${esc(order.patientPhone || '—')}</strong></div>
+        <div><span>رقم العملية</span><strong class="ltr">${esc(order.id.slice(0, 8))}</strong></div>
+      </div>
+
+      <div class="nursing-receipt-service">
+        <span>نوع الخدمة</span>
+        <strong>${esc(order.serviceName)}</strong>
+      </div>
+
+      <div class="nursing-receipt-price">
+        <span>السعر</span>
+        <strong class="ltr">${moneyNumber(order.price).toFixed(2)} ج.م</strong>
+      </div>
+    `
+  );
+}
+
+async function exportNursingOrder(order: NursingOrder, format: ExportFormat) {
+  await captureAndSaveExport(
+    nursingOrderReceiptHtml(order),
+    `تمريض-${order.patientName || 'مريض'}-${order.orderDate}-${order.id.slice(0, 8)}`,
+    format
+  );
+}
+
+async function openNursingOrderDetails(orderId: string) {
+  const order = await invoke<NursingOrder>('get_nursing_order', { id: orderId });
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+
+  root.innerHTML = `
+    <div class="modal-backdrop" id="nursingOrderBackdrop">
+      <section class="modal nursing-order-details-modal">
+        <div class="modal-head">
+          <div class="patient-feature-title">
+            <div class="patient-feature-title-icon nursing">✚</div>
+            <div>
+              <h2>حالة خدمة تمريض</h2>
+              <p>${esc(order.patientName || 'بدون اسم')} • <span class="ltr">${esc(order.patientPhone || 'بدون رقم')}</span></p>
+            </div>
+          </div>
+          <button class="modal-close" id="closeNursingOrder">×</button>
+        </div>
+
+        <div class="nursing-order-meta">
+          <span>${displayDate(order.orderDate)}</span>
+          <span class="ltr">${esc(order.orderTime || '—')}</span>
+        </div>
+
+        <div class="nursing-order-detail-card">
+          <span>نوع الخدمة</span>
+          <strong>${esc(order.serviceName)}</strong>
+        </div>
+
+        <div class="nursing-order-detail-card price">
+          <span>السعر</span>
+          <strong class="ltr">${moneyNumber(order.price).toFixed(2)} ج.م</strong>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn ghost" id="nursingOrderPng">تنزيل صورة</button>
+          <button class="btn primary" id="nursingOrderPdf">PDF للطباعة</button>
+          <button class="btn ghost" id="nursingOrderCloseBottom">إغلاق</button>
+        </div>
+      </section>
+    </div>`;
+
+  const close = () => root.innerHTML = '';
+  document.querySelector<HTMLButtonElement>('#closeNursingOrder')!.onclick = close;
+  document.querySelector<HTMLButtonElement>('#nursingOrderCloseBottom')!.onclick = close;
+  document.querySelector<HTMLDivElement>('#nursingOrderBackdrop')!.onclick = e => {
+    if (e.target === e.currentTarget) close();
+  };
+  document.querySelector<HTMLButtonElement>('#nursingOrderPng')!.onclick = () => exportNursingOrder(order, 'png');
+  document.querySelector<HTMLButtonElement>('#nursingOrderPdf')!.onclick = () => exportNursingOrder(order, 'pdf');
+}
+
+function bindNursingOrderActions() {
+  document.querySelectorAll<HTMLButtonElement>('[data-open-nursing-order]').forEach(button => {
+    button.onclick = () => openNursingOrderDetails(button.dataset.openNursingOrder || '');
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-nursing-order-pdf]').forEach(button => {
+    button.onclick = async () => {
+      const order = await invoke<NursingOrder>('get_nursing_order', { id: button.dataset.nursingOrderPdf || '' });
+      await exportNursingOrder(order, 'pdf');
+    };
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-nursing-order-png]').forEach(button => {
+    button.onclick = async () => {
+      const order = await invoke<NursingOrder>('get_nursing_order', { id: button.dataset.nursingOrderPng || '' });
+      await exportNursingOrder(order, 'png');
+    };
+  });
 }
 
 function labOrderStatus(order: LabOrder) {
@@ -386,13 +532,20 @@ function bindLabOrderActions() {
   });
 }
 
-async function exportTodayCombined(visits: Visit[], labOrders: LabOrder[], dayKey: string, format: ExportFormat) {
+async function exportTodayCombined(
+  visits: Visit[],
+  labOrders: LabOrder[],
+  nursingOrders: NursingOrder[],
+  dayKey: string,
+  format: ExportFormat
+) {
   const visitMetrics = reportMetrics(visits);
   const labPaid = labOrders.reduce((sum, o) => sum + moneyNumber(o.paidAmount), 0);
   const labRemaining = labOrders.reduce((sum, o) => sum + moneyNumber(o.remainingAmount), 0);
-  const totalCases = visits.length + labOrders.length;
-  const totalCollection = visitMetrics.revenue + labPaid;
-  const clinicTotal = visitMetrics.clinicTotal + labPaid;
+  const nursingTotal = nursingOrders.reduce((sum, o) => sum + moneyNumber(o.price), 0);
+  const totalCases = visits.length + labOrders.length + nursingOrders.length;
+  const totalCollection = visitMetrics.revenue + labPaid + nursingTotal;
+  const clinicTotal = visitMetrics.clinicTotal + labPaid + nursingTotal;
 
   const labRows = labOrders.length ? `
     <h3>حالات التحاليل</h3>
@@ -410,6 +563,20 @@ async function exportTodayCombined(visits: Visit[], labOrders: LabOrder[], dayKe
       `).join('')}</tbody>
     </table>` : '';
 
+  const nursingRows = nursingOrders.length ? `
+    <h3>خدمات التمريض</h3>
+    <table class="export-table">
+      <thead><tr><th>المريض</th><th>الهاتف</th><th>الخدمة</th><th>السعر</th></tr></thead>
+      <tbody>${nursingOrders.map(o => `
+        <tr>
+          <td>${esc(o.patientName || '—')}</td>
+          <td class="ltr">${esc(o.patientPhone || '—')}</td>
+          <td>${esc(o.serviceName)}</td>
+          <td class="ltr">${moneyNumber(o.price).toFixed(2)} ج.م</td>
+        </tr>
+      `).join('')}</tbody>
+    </table>` : '';
+
   const body = `
     <div class="report-stats export-report-stats">
       <div><span>إجمالي الحالات</span><strong>${totalCases}</strong></div>
@@ -421,6 +588,7 @@ async function exportTodayCombined(visits: Visit[], labOrders: LabOrder[], dayKe
     <h3>الكشوفات والاستشارات</h3>
     ${exportVisitRows(visits, true)}
     ${labRows}
+    ${nursingRows}
   `;
 
   await captureAndSaveExport(
@@ -851,6 +1019,7 @@ function shell(content: string, title: string, subtitle: string) {
           ${navButton('today','◷','حالات اليوم')}
           ${navButton('doctors','⚕','الأطباء')}
           ${navButton('labs','🧪','التحاليل')}
+          ${navButton('nursing','✚','خدمات التمريض')}
           ${navButton('reports','▤','التقارير')}
           ${navButton('archive','▣','الأرشيف')}
           ${navButton('backups','⟳','النسخ الاحتياطية')}
@@ -1025,6 +1194,7 @@ async function renderScreen() {
   if (screen === 'today') return renderToday();
   if (screen === 'doctors') return renderDoctors();
   if (screen === 'labs') return renderLabPrices();
+  if (screen === 'nursing') return renderNursingServices();
   if (screen === 'reports') return renderReports();
   if (screen === 'backups') return renderBackups();
   if (screen === 'settings') return renderSettings();
@@ -1075,15 +1245,17 @@ function bindPatientActions() {
 async function renderDashboard() {
   const dayKey = businessDay();
 
-  const [stats, recent, todayReport, todayLabOrders] = await Promise.all([
+  const [stats, recent, todayReport, todayLabOrders, todayNursingOrders] = await Promise.all([
     invoke<Stats>('get_stats'),
     invoke<Patient[]>('list_patients', { query: { search: '', archivedOnly: false, limit: 8 } }),
     invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } }),
-    invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } })
+    invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } }),
+    invoke<NursingOrder[]>('list_nursing_orders', { query: { from: dayKey, to: dayKey } })
   ]);
 
   const clinicPatientsToday = todayReport.totalVisits;
   const labPatientsToday = todayLabOrders.length;
+  const nursingPatientsToday = todayNursingOrders.length;
   const newVisits = todayReport.rows.filter(v => v.visitType === 'كشف جديد').length;
   const consultations = todayReport.rows.filter(v => v.visitType === 'استشارة').length;
 
@@ -1121,6 +1293,11 @@ async function renderDashboard() {
           <div><span>مرضى التحاليل اليوم</span><strong>${labPatientsToday}</strong></div>
         </article>
 
+        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="nursing" title="فتح خدمات التمريض">
+          <div class="stat-icon">✚</div>
+          <div><span>مرضى خدمات التمريض</span><strong>${nursingPatientsToday}</strong></div>
+        </article>
+
         <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات الكشف الجديد">
           <div class="stat-icon">＋</div>
           <div><span>كشف جديد</span><strong>${newVisits}</strong></div>
@@ -1129,15 +1306,6 @@ async function renderDashboard() {
         <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات الاستشارة">
           <div class="stat-icon">↻</div>
           <div><span>استشارة</span><strong>${consultations}</strong></div>
-        </article>
-
-        <article class="stat dashboard-nursing-pending" title="عداد خدمات التمريض يحتاج سجل تمريض فعلي ليحسب الحالات بشكل صحيح">
-          <div class="stat-icon">✚</div>
-          <div>
-            <span>مرضى خدمات التمريض</span>
-            <strong>—</strong>
-            <small>يُفعّل مع سجل التمريض</small>
-          </div>
         </article>
       </div>
     </section>
@@ -1167,7 +1335,7 @@ async function renderDashboard() {
       <section class="quick-card">
         <h2>إجراءات سريعة</h2>
         <button class="quick" id="quickNew">＋ <span><b>تسجيل حالة جديدة</b><small>بيانات المريض ثم الزيارة مباشرة</small></span></button>
-        <button class="quick" id="quickToday">◷ <span><b>حالات اليوم</b><small>العيادات والتحاليل في شاشة واحدة</small></span></button>
+        <button class="quick" id="quickToday">◷ <span><b>حالات اليوم</b><small>العيادات والتحاليل والتمريض</small></span></button>
         <button class="quick" id="quickBackup">⟳ <span><b>نسخة احتياطية</b><small>حفظ نسخة من قاعدة البيانات الآن</small></span></button>
       </section>
     </div>
@@ -1192,6 +1360,7 @@ async function renderDashboard() {
   const openDashboardTarget = (target: string) => {
     if (target === 'patients') navigate('patients');
     else if (target === 'today') navigate('today');
+    else if (target === 'nursing') navigate('nursing');
   };
 
   document.querySelectorAll<HTMLElement>('[data-dashboard-target]').forEach(card => {
@@ -1247,16 +1416,19 @@ async function renderPatients(archived: boolean) {
 
 async function renderToday() {
   const dayKey = businessDay();
-  const [baseResult, labOrders] = await Promise.all([
+  const [baseResult, labOrders, nursingOrders] = await Promise.all([
     invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } }),
-    invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } })
+    invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } }),
+    invoke<NursingOrder[]>('list_nursing_orders', { query: { from: dayKey, to: dayKey } })
   ]);
+
   const metrics = reportMetrics(baseResult.rows);
   const labPaid = labOrders.reduce((sum, o) => sum + moneyNumber(o.paidAmount), 0);
   const labRemaining = labOrders.reduce((sum, o) => sum + moneyNumber(o.remainingAmount), 0);
-  const totalCases = baseResult.totalVisits + labOrders.length;
-  const totalCollection = metrics.revenue + labPaid;
-  const clinicTotal = metrics.clinicTotal + labPaid;
+  const nursingTotal = nursingOrders.reduce((sum, o) => sum + moneyNumber(o.price), 0);
+  const totalCases = baseResult.totalVisits + labOrders.length + nursingOrders.length;
+  const totalCollection = metrics.revenue + labPaid + nursingTotal;
+  const clinicTotal = metrics.clinicTotal + labPaid + nursingTotal;
 
   ensureCaseContextMenu();
   shell(`
@@ -1293,6 +1465,7 @@ async function renderToday() {
             <option>كشف جديد</option>
             <option>استشارة</option>
             <option>تحاليل</option>
+            <option>خدمات تمريض</option>
           </select>
         </label>
         <label>مصدر الحجز
@@ -1317,7 +1490,7 @@ async function renderToday() {
       </div>
       <div id="todayPatientSearchResults"></div>
     </section>
-  `, 'حالات اليوم', 'الكشوفات والاستشارات والتحاليل والتحصيل');
+  `, 'حالات اليوم', 'الكشوفات والاستشارات والتحاليل وخدمات التمريض');
 
   const doctorFilter = document.querySelector<HTMLSelectElement>('#todayDoctorFilter')!;
   const typeFilter = document.querySelector<HTMLSelectElement>('#todayTypeFilter')!;
@@ -1326,6 +1499,7 @@ async function renderToday() {
 
   const visibleVisits = () => baseResult.rows.filter(v =>
     typeFilter.value !== 'تحاليل' &&
+    typeFilter.value !== 'خدمات تمريض' &&
     (!doctorFilter.value || v.doctor === doctorFilter.value) &&
     (!typeFilter.value || v.visitType === typeFilter.value) &&
     (!sourceFilter.value || (v.bookingSource || 'عادي') === sourceFilter.value)
@@ -1337,23 +1511,37 @@ async function renderToday() {
     return labOrders;
   };
 
+  const visibleNursing = () => {
+    if (typeFilter.value && typeFilter.value !== 'خدمات تمريض') return [];
+    if (doctorFilter.value || sourceFilter.value) return [];
+    return nursingOrders;
+  };
+
   const applyFilters = () => {
     const visits = visibleVisits();
     const labs = visibleLabs();
+    const nursing = visibleNursing();
 
     host.innerHTML = `
-      ${visits.length || typeFilter.value !== 'تحاليل' ? `
+      ${visits.length || (!typeFilter.value || typeFilter.value === 'كشف جديد' || typeFilter.value === 'استشارة') ? `
         <div class="today-case-section-head"><h3>الكشوفات والاستشارات</h3><span>${visits.length} حالة</span></div>
         ${visitTable(visits, true)}
       ` : ''}
+
       ${labs.length || typeFilter.value === 'تحاليل' || !typeFilter.value ? `
         <div class="today-case-section-head labs"><h3>حالات التحاليل</h3><span>${labs.length} حالة</span></div>
         ${labOrderRowsHtml(labs, true)}
+      ` : ''}
+
+      ${nursing.length || typeFilter.value === 'خدمات تمريض' || !typeFilter.value ? `
+        <div class="today-case-section-head nursing"><h3>خدمات التمريض</h3><span>${nursing.length} حالة</span></div>
+        ${nursingOrderRowsHtml(nursing, true)}
       ` : ''}
     `;
 
     ensureCaseContextMenu();
     bindLabOrderActions();
+    bindNursingOrderActions();
   };
 
   doctorFilter.onchange = applyFilters;
@@ -1362,9 +1550,9 @@ async function renderToday() {
   applyFilters();
 
   document.querySelector<HTMLButtonElement>('#todayImage')!.onclick = () =>
-    exportTodayCombined(visibleVisits(), visibleLabs(), dayKey, 'png');
+    exportTodayCombined(visibleVisits(), visibleLabs(), visibleNursing(), dayKey, 'png');
   document.querySelector<HTMLButtonElement>('#todayPdf')!.onclick = () =>
-    exportTodayCombined(visibleVisits(), visibleLabs(), dayKey, 'pdf');
+    exportTodayCombined(visibleVisits(), visibleLabs(), visibleNursing(), dayKey, 'pdf');
 
   const search = document.querySelector<HTMLInputElement>('#todayPatientSearch')!;
   const results = document.querySelector<HTMLDivElement>('#todayPatientSearchResults')!;
@@ -1798,6 +1986,123 @@ async function openLabPatientRegistrationModal() {
       toast(`تعذر تسجيل المريض: ${String(err)}`, 'error');
     }
   };
+}
+
+async function openNursingPatientRegistrationModal() {
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+
+  root.innerHTML = `
+    <div class="modal-backdrop" id="nursingPatientRegisterBackdrop">
+      <section class="modal form-modal nursing-patient-register-modal">
+        <div class="modal-head">
+          <div class="patient-feature-title">
+            <div class="patient-feature-title-icon nursing">✚</div>
+            <div>
+              <h2>تسجيل مريض خدمة تمريض</h2>
+              <p>تسجيل بيانات المريض فقط بدون كشف أو زيارة طبيب</p>
+            </div>
+          </div>
+          <button class="modal-close" id="closeNursingPatientRegister">×</button>
+        </div>
+
+        <form id="nursingPatientRegisterForm">
+          <div class="section-title">بيانات المريض</div>
+
+          <div class="patient-register-grid">
+            <label class="field-name">الاسم بالكامل<input name="fullName" autocomplete="off"></label>
+            <label class="field-phone">رقم التليفون<input class="ltr" name="phone" inputmode="tel" autocomplete="off"></label>
+            <label class="field-age">السن<input name="age" type="number" min="0" max="130"></label>
+            <label class="field-gender">النوع<select name="gender"><option value="">—</option><option>ذكر</option><option>أنثى</option></select></label>
+            <label class="field-address">العنوان (اختياري)<input name="address" autocomplete="off"></label>
+          </div>
+
+          <div class="lab-patient-register-note">
+            لن يتم إنشاء كشف. بعد الحفظ سيفتح تسجيل خدمة التمريض مباشرة.
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn ghost" id="cancelNursingPatientRegister">إلغاء</button>
+            <button type="submit" class="btn primary">حفظ وفتح خدمة التمريض</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+
+  const close = () => root.innerHTML = '';
+
+  document.querySelector<HTMLButtonElement>('#closeNursingPatientRegister')!.onclick = close;
+  document.querySelector<HTMLButtonElement>('#cancelNursingPatientRegister')!.onclick = close;
+  document.querySelector<HTMLDivElement>('#nursingPatientRegisterBackdrop')!.onclick = e => {
+    if (e.target === e.currentTarget) close();
+  };
+
+  document.querySelector<HTMLFormElement>('#nursingPatientRegisterForm')!.onsubmit = async e => {
+    e.preventDefault();
+
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    const rawAge = String(fd.get('age') || '').trim();
+
+    try {
+      const result = await invoke<{id:string, existed:boolean}>('register_patient', {
+        input: {
+          fullName: String(fd.get('fullName') || '').trim(),
+          phone: String(fd.get('phone') || '').trim(),
+          age: rawAge ? Number(rawAge) : null,
+          gender: String(fd.get('gender') || ''),
+          address: String(fd.get('address') || '').trim()
+        }
+      });
+
+      close();
+      toast(result.existed
+        ? 'المريض مسجل بالفعل — تم فتح خدمة التمريض'
+        : 'تم تسجيل بيانات مريض خدمة التمريض');
+
+      await renderScreen();
+      await openPatientFeaturePanel(result.id, 'nursing');
+    } catch (err) {
+      toast(`تعذر تسجيل المريض: ${String(err)}`, 'error');
+    }
+  };
+}
+
+async function renderNursingServices() {
+  const dayKey = businessDay();
+  const rows = await invoke<NursingOrder[]>('list_nursing_orders', {
+    query: { from: dayKey, to: dayKey }
+  });
+
+  shell(`
+    <section class="card nursing-main-card">
+      <div class="card-head toolbar">
+        <div>
+          <h2>خدمات التمريض</h2>
+          <p>${displayDate(dayKey)} • تسجيل ومتابعة حالات خدمات التمريض</p>
+        </div>
+        <button class="btn primary small" id="registerNursingPatient">＋ تسجيل حالة تمريض</button>
+      </div>
+
+      <div class="nursing-main-summary">
+        <div>
+          <span>حالات اليوم</span>
+          <strong>${rows.length}</strong>
+        </div>
+      </div>
+
+      <div class="today-case-section-head nursing">
+        <h3>حالات خدمات التمريض اليوم</h3>
+        <span>${rows.length} حالة</span>
+      </div>
+
+      ${nursingOrderRowsHtml(rows, true)}
+    </section>
+  `, 'خدمات التمريض', 'تسجيل الخدمة والسعر يدويًا');
+
+  document.querySelector<HTMLButtonElement>('#registerNursingPatient')!.onclick = () => {
+    openNursingPatientRegistrationModal();
+  };
+
+  bindNursingOrderActions();
 }
 
 function renderLabPrices() {
@@ -2680,12 +2985,14 @@ async function openPatientFeaturePanel(
     return;
   }
 
+const nursingHistory = await invoke<NursingOrder[]>('list_patient_nursing_orders', { patientId });
+
   root.innerHTML = `
     <div class="modal-backdrop" id="patientFeatureBackdrop">
-      <section class="modal wide patient-feature-modal">
+      <section class="modal wide patient-feature-modal nursing-service-modal">
         <div class="modal-head">
           <div class="patient-feature-title">
-            <div class="patient-feature-title-icon">✚</div>
+            <div class="patient-feature-title-icon nursing">✚</div>
             <div>
               <h2>خدمات تمريض</h2>
               <p>${esc(p.fullName || 'بدون اسم')} • <span class="ltr">${esc(p.phone || 'بدون رقم')}</span></p>
@@ -2694,19 +3001,72 @@ async function openPatientFeaturePanel(
           <button class="modal-close" id="closePatientFeature">×</button>
         </div>
 
-        <div class="patient-feature-empty">
-          <div class="patient-feature-empty-icon">✚</div>
-          <strong>سجل خدمات التمريض الخاصة بالمريض</strong>
-          <span>جاهز لإضافة تفاصيل خدمات التمريض في المرحلة التالية.</span>
-        </div>
+        <form id="nursingServiceForm">
+          <div class="nursing-service-entry-grid">
+            <label class="span2">نوع الخدمة
+              <input
+                id="nursingServiceName"
+                name="serviceName"
+                autocomplete="off"
+                placeholder="اكتب نوع الخدمة يدويًا..."
+              >
+            </label>
 
-        <div class="form-actions">
-          <button class="btn ghost" id="backToPatientProfile">← رجوع لملف المريض</button>
-        </div>
+            <label>السعر
+              <input
+                id="nursingServicePrice"
+                name="price"
+                class="ltr"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="يكتب يدويًا"
+              >
+            </label>
+
+            <label>التاريخ
+              <input name="orderDate" type="date" value="${today()}">
+            </label>
+
+            <label>الوقت
+              <input name="orderTime" type="time" value="${timeNow()}">
+            </label>
+          </div>
+
+          <div class="nursing-service-note">
+            نوع الخدمة والسعر يتم إدخالهم يدويًا لكل حالة.
+          </div>
+
+          <div class="form-actions nursing-finish-actions">
+            <button class="btn primary" type="submit">✓ حفظ وإنهاء الحالة</button>
+            <button class="btn ghost" type="button" id="backToPatientProfile">← رجوع لملف المريض</button>
+          </div>
+        </form>
+
+        <section class="nursing-history-section">
+          <div class="lab-order-history-head">
+            <strong>سجل خدمات التمريض السابقة</strong>
+            <span>${nursingHistory.length} حالة</span>
+          </div>
+
+          <div class="nursing-history-list">
+            ${nursingHistory.length ? nursingHistory.slice(0, 12).map(order => `
+              <div class="nursing-history-row">
+                <div>
+                  <strong>${esc(order.serviceName)}</strong>
+                  <span>${displayDate(order.orderDate)} • <span class="ltr">${esc(order.orderTime || '')}</span></span>
+                </div>
+                <b class="ltr">${moneyNumber(order.price).toFixed(2)} ج.م</b>
+                <button class="btn ghost small" type="button" data-open-nursing-order="${esc(order.id)}">فتح</button>
+              </div>
+            `).join('') : '<div class="patient-labs-empty">لا توجد خدمات تمريض سابقة لهذا المريض.</div>'}
+          </div>
+        </section>
       </section>
     </div>`;
 
   const close = () => root.innerHTML = '';
+
   document.querySelector<HTMLButtonElement>('#closePatientFeature')!.onclick = close;
   document.querySelector<HTMLDivElement>('#patientFeatureBackdrop')!.onclick = e => {
     if (e.target === e.currentTarget) close();
@@ -2715,6 +3075,32 @@ async function openPatientFeaturePanel(
     close();
     await openPatient(patientId);
   };
+
+  document.querySelector<HTMLFormElement>('#nursingServiceForm')!.onsubmit = async e => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+
+    try {
+      const order = await invoke<NursingOrder>('add_nursing_order', {
+        input: {
+          patientId,
+          serviceName: String(fd.get('serviceName') || '').trim(),
+          price: String(fd.get('price') || '').trim(),
+          orderDate: String(fd.get('orderDate') || ''),
+          orderTime: String(fd.get('orderTime') || '')
+        }
+      });
+
+      close();
+      toast('تم حفظ خدمة التمريض وإضافتها إلى حالات اليوم');
+      await renderScreen();
+      await openNursingOrderDetails(order.id);
+    } catch (err) {
+      toast(`تعذر حفظ خدمة التمريض: ${String(err)}`, 'error');
+    }
+  };
+
+  bindNursingOrderActions();
 }
 
 async function openPatient(id: string) {

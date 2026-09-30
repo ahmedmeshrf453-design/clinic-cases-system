@@ -274,6 +274,37 @@ struct LabOrderDetails {
     items: Vec<LabOrderItem>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NursingOrderInput {
+    patient_id: String,
+    service_name: String,
+    price: String,
+    order_date: String,
+    order_time: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NursingOrderQuery {
+    from: String,
+    to: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct NursingOrder {
+    id: String,
+    patient_id: String,
+    patient_name: String,
+    patient_phone: String,
+    service_name: String,
+    price: String,
+    order_date: String,
+    order_time: String,
+    created_at: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Doctor {
@@ -521,6 +552,17 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         price TEXT NOT NULL DEFAULT '',
         FOREIGN KEY(order_id) REFERENCES lab_orders(id)
       );
+      CREATE TABLE IF NOT EXISTS nursing_orders(
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL,
+        service_name TEXT NOT NULL DEFAULT '',
+        price TEXT NOT NULL DEFAULT '',
+        order_date TEXT NOT NULL DEFAULT '',
+        order_time TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(patient_id) REFERENCES patients(id)
+      );
     "#,
     )
     .map_err(|e| e.to_string())?;
@@ -689,6 +731,10 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         ON lab_orders(patient_id,order_date DESC,order_time DESC);
       CREATE INDEX IF NOT EXISTS idx_lab_order_items_order
         ON lab_order_items(order_id);
+      CREATE INDEX IF NOT EXISTS idx_nursing_orders_date_time
+        ON nursing_orders(order_date DESC,order_time DESC);
+      CREATE INDEX IF NOT EXISTS idx_nursing_orders_patient
+        ON nursing_orders(patient_id,order_date DESC,order_time DESC);
     "#,
     )
     .map_err(|e| e.to_string())?;
@@ -1553,11 +1599,187 @@ fn list_patient_lab_orders(
         .map_err(|e| e.to_string())
 }
 
+fn map_nursing_order(row: &rusqlite::Row<'_>) -> rusqlite::Result<NursingOrder> {
+    Ok(NursingOrder {
+        id: row.get(0)?,
+        patient_id: row.get(1)?,
+        patient_name: row.get(2)?,
+        patient_phone: row.get(3)?,
+        service_name: row.get(4)?,
+        price: row.get(5)?,
+        order_date: row.get(6)?,
+        order_time: row.get(7)?,
+        created_at: row.get(8)?,
+    })
+}
+
+#[tauri::command]
+fn add_nursing_order(
+    state: State<AppState>,
+    input: NursingOrderInput,
+) -> Result<NursingOrder, String> {
+    let service_name = input.service_name.trim();
+    if service_name.is_empty() {
+        return Err("نوع خدمة التمريض مطلوب".into());
+    }
+    if service_name.len() > 240 {
+        return Err("نوع خدمة التمريض أطول من المسموح".into());
+    }
+
+    if input.price.trim().is_empty() {
+        return Err("سعر خدمة التمريض مطلوب".into());
+    }
+    validate_money_field(input.price.trim(), "سعر خدمة التمريض")?;
+
+    NaiveDate::parse_from_str(input.order_date.trim(), "%Y-%m-%d")
+        .map_err(|_| "تاريخ خدمة التمريض غير صالح".to_string())?;
+    if !input.order_time.trim().is_empty() {
+        NaiveTime::parse_from_str(input.order_time.trim(), "%H:%M")
+            .map_err(|_| "وقت خدمة التمريض غير صالح".to_string())?;
+    }
+
+    let mut conn = open_db(&state)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let patient: Option<(String, String)> = tx
+        .query_row(
+            "SELECT full_name,phone FROM patients WHERE id=?1 AND archived=0",
+            params![input.patient_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    let (patient_name, patient_phone) =
+        patient.ok_or_else(|| "ملف المريض غير موجود".to_string())?;
+
+    let id = Uuid::new_v4().to_string();
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    tx.execute(
+        "INSERT INTO nursing_orders(
+           id,patient_id,service_name,price,order_date,order_time,created_at,updated_at
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?7)",
+        params![
+            id,
+            input.patient_id,
+            service_name,
+            input.price.trim(),
+            input.order_date.trim(),
+            input.order_time.trim(),
+            now
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "UPDATE patients SET updated_at=?1 WHERE id=?2",
+        params![now, input.patient_id.clone()],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(NursingOrder {
+        id,
+        patient_id: input.patient_id,
+        patient_name,
+        patient_phone,
+        service_name: service_name.to_string(),
+        price: input.price.trim().to_string(),
+        order_date: input.order_date,
+        order_time: input.order_time,
+        created_at: now,
+    })
+}
+
+#[tauri::command]
+fn get_nursing_order(state: State<AppState>, id: String) -> Result<NursingOrder, String> {
+    let conn = open_db(&state)?;
+    conn.query_row(
+        "SELECT n.id,n.patient_id,p.full_name,p.phone,n.service_name,n.price,n.order_date,n.order_time,n.created_at
+         FROM nursing_orders n
+         JOIN patients p ON p.id=n.patient_id
+         WHERE n.id=?1",
+        params![id],
+        map_nursing_order,
+    )
+    .map_err(|_| "حالة خدمة التمريض غير موجودة".to_string())
+}
+
+#[tauri::command]
+fn list_nursing_orders(
+    state: State<AppState>,
+    query: NursingOrderQuery,
+) -> Result<Vec<NursingOrder>, String> {
+    let conn = open_db(&state)?;
+
+    let from_date = NaiveDate::parse_from_str(query.from.trim(), "%Y-%m-%d")
+        .map_err(|_| "تاريخ البداية غير صالح".to_string())?;
+    let to_date = NaiveDate::parse_from_str(query.to.trim(), "%Y-%m-%d")
+        .map_err(|_| "تاريخ النهاية غير صالح".to_string())?;
+    if to_date < from_date {
+        return Err("تاريخ النهاية يجب أن يكون بعد أو مساويًا لتاريخ البداية".into());
+    }
+
+    let end_date = to_date + Duration::days(1);
+    let from_s = from_date.format("%Y-%m-%d").to_string();
+    let end_s = end_date.format("%Y-%m-%d").to_string();
+    let start_hour = get_operational_start_hour(&conn)?;
+    let boundary = format!("{:02}:00", start_hour);
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT n.id,n.patient_id,p.full_name,p.phone,n.service_name,n.price,n.order_date,n.order_time,n.created_at
+             FROM nursing_orders n
+             JOIN patients p ON p.id=n.patient_id
+             WHERE p.archived=0
+               AND (n.order_date > ?1 OR (n.order_date=?1 AND COALESCE(NULLIF(n.order_time,''),'00:00') >= ?3))
+               AND (n.order_date < ?2 OR (n.order_date=?2 AND COALESCE(NULLIF(n.order_time,''),'00:00') < ?3))
+             ORDER BY n.order_date DESC,n.order_time DESC,n.created_at DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(params![from_s, end_s, boundary], map_nursing_order)
+        .map_err(|e| e.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_patient_nursing_orders(
+    state: State<AppState>,
+    patient_id: String,
+) -> Result<Vec<NursingOrder>, String> {
+    let conn = open_db(&state)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT n.id,n.patient_id,p.full_name,p.phone,n.service_name,n.price,n.order_date,n.order_time,n.created_at
+             FROM nursing_orders n
+             JOIN patients p ON p.id=n.patient_id
+             WHERE n.patient_id=?1
+             ORDER BY n.order_date DESC,n.order_time DESC,n.created_at DESC
+             LIMIT 50",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(params![patient_id], map_nursing_order)
+        .map_err(|e| e.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn delete_patient(state: State<AppState>, id: String) -> Result<(), String> {
     create_safety_backup(&state, "before-delete-patient")?;
     let mut conn = open_db(&state)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM nursing_orders WHERE patient_id=?1", params![id.clone()])
+        .map_err(|e| e.to_string())?;
     tx.execute(
         "DELETE FROM lab_order_items WHERE order_id IN (SELECT id FROM lab_orders WHERE patient_id=?1)",
         params![id.clone()],
@@ -1685,6 +1907,17 @@ fn get_stats(state: State<AppState>) -> Result<Stats, String> {
         |r| r.get(0)
     ).map_err(|e|e.to_string())?;
 
+    let today_nursing_orders: i64 = conn.query_row(
+        "SELECT COUNT(*)
+         FROM nursing_orders n
+         JOIN patients p ON p.id=n.patient_id
+         WHERE p.archived=0
+           AND (n.order_date > ?1 OR (n.order_date=?1 AND COALESCE(NULLIF(n.order_time,''),'00:00') >= ?3))
+           AND (n.order_date < ?2 OR (n.order_date=?2 AND COALESCE(NULLIF(n.order_time,''),'00:00') < ?3))",
+        params![day_s, next_day_s, boundary],
+        |r| r.get(0)
+    ).map_err(|e|e.to_string())?;
+
     let new_today: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM patients
@@ -1700,11 +1933,14 @@ fn get_stats(state: State<AppState>) -> Result<Stats, String> {
     let total_lab_orders: i64 = conn
         .query_row("SELECT COUNT(*) FROM lab_orders", [], |r| r.get(0))
         .map_err(|e| e.to_string())?;
-    let total_visits = doctor_visits + total_lab_orders;
+    let total_nursing_orders: i64 = conn
+        .query_row("SELECT COUNT(*) FROM nursing_orders", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    let total_visits = doctor_visits + total_lab_orders + total_nursing_orders;
 
     Ok(Stats {
         total_patients,
-        today_visits: today_visits + today_lab_orders,
+        today_visits: today_visits + today_lab_orders + today_nursing_orders,
         new_today,
         total_visits,
     })
@@ -2285,6 +2521,10 @@ pub fn run() {
             get_lab_order,
             list_lab_orders,
             list_patient_lab_orders,
+            add_nursing_order,
+            get_nursing_order,
+            list_nursing_orders,
+            list_patient_nursing_orders,
             list_patients,
             get_patient_details,
             update_patient,
@@ -2332,7 +2572,7 @@ mod production_tests {
 
         let conn = Connection::open(&path).expect("open failed");
 
-        for table in ["patients", "visits", "doctors", "patient_labs", "lab_orders", "lab_order_items", "app_meta"] {
+        for table in ["patients", "visits", "doctors", "patient_labs", "lab_orders", "lab_order_items", "nursing_orders", "app_meta"] {
             let count: i64 = conn
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
@@ -2354,6 +2594,8 @@ mod production_tests {
             "idx_lab_orders_date_time",
             "idx_lab_orders_patient",
             "idx_lab_order_items_order",
+            "idx_nursing_orders_date_time",
+            "idx_nursing_orders_patient",
         ] {
             let count: i64 = conn
                 .query_row(
