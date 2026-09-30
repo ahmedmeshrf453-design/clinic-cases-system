@@ -158,10 +158,11 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.3.0'
+  version: '6.3.1'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
+let sidebarPatientsTotal = 0;
 
 function esc(v: unknown) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({
@@ -987,9 +988,11 @@ function ensureCaseContextMenu() {
   document.addEventListener('scroll', () => closeCaseContextMenu(), true);
 }
 
-function navButton(id: Screen, icon: string, label: string) {
+function navButton(id: Screen, icon: string, label: string, count?: number) {
   return `<button class="nav ${screen===id?'active':''}" data-screen="${id}">
-    <span class="nav-icon">${icon}</span><span>${label}</span>
+    <span class="nav-icon">${icon}</span>
+    <span class="nav-label">${label}</span>
+    ${typeof count === 'number' ? `<span class="nav-count">${count}</span>` : ''}
   </button>`;
 }
 
@@ -999,6 +1002,11 @@ async function loadDoctors() {
 
 async function loadSettings() {
   appSettings = await invoke<AppSettings>('get_settings');
+}
+
+async function loadSidebarPatientsTotal() {
+  const stats = await invoke<Stats>('get_stats');
+  sidebarPatientsTotal = stats.totalPatients;
 }
 
 function shell(content: string, title: string, subtitle: string) {
@@ -1015,7 +1023,7 @@ function shell(content: string, title: string, subtitle: string) {
 
         <nav>
           ${navButton('dashboard','⌂','الرئيسية')}
-          ${navButton('patients','◉','المرضى')}
+          ${navButton('patients','◉','المرضى', sidebarPatientsTotal)}
           ${navButton('today','◷','حالات اليوم')}
           ${navButton('doctors','⚕','الأطباء')}
           ${navButton('labs','🧪','التحاليل')}
@@ -1187,7 +1195,7 @@ async function navigate(next: Screen) {
 }
 
 async function renderScreen() {
-  await Promise.all([loadDoctors(), loadSettings()]);
+  await Promise.all([loadDoctors(), loadSettings(), loadSidebarPatientsTotal()]);
   if (screen === 'dashboard') return renderDashboard();
   if (screen === 'patients') return renderPatients(false);
   if (screen === 'archive') return renderPatients(true);
@@ -1245,19 +1253,17 @@ function bindPatientActions() {
 async function renderDashboard() {
   const dayKey = businessDay();
 
-  const [stats, recent, todayReport, todayLabOrders, todayNursingOrders] = await Promise.all([
-    invoke<Stats>('get_stats'),
-    invoke<Patient[]>('list_patients', { query: { search: '', archivedOnly: false, limit: 8 } }),
+  const [todayReport, todayLabOrders, todayNursingOrders] = await Promise.all([
     invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } }),
     invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } }),
     invoke<NursingOrder[]>('list_nursing_orders', { query: { from: dayKey, to: dayKey } })
   ]);
 
-  const clinicPatientsToday = todayReport.totalVisits;
-  const labPatientsToday = todayLabOrders.length;
-  const nursingPatientsToday = todayNursingOrders.length;
   const newVisits = todayReport.rows.filter(v => v.visitType === 'كشف جديد').length;
   const consultations = todayReport.rows.filter(v => v.visitType === 'استشارة').length;
+  const labPatientsToday = todayLabOrders.length;
+  const nursingPatientsToday = todayNursingOrders.length;
+  const totalToday = newVisits + consultations + labPatientsToday + nursingPatientsToday;
 
   const doctorMap = new Map<string, number>();
   for (const visit of todayReport.rows) {
@@ -1272,30 +1278,15 @@ async function renderDashboard() {
     <section class="dashboard-overview-card">
       <div class="dashboard-overview-head">
         <div>
-          <h2>ملخص اليوم</h2>
-          <p>${displayDate(dayKey)} • أرقام تشغيلية فقط بدون أي بيانات مالية</p>
+          <h2>تسجيلات اليوم</h2>
+          <p>${displayDate(dayKey)} • الحالات المسجلة اليوم فقط</p>
         </div>
       </div>
 
-      <div class="stats-grid dashboard-stats-v622">
-        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="patients" title="فتح ملفات المرضى">
-          <div class="stat-icon">👥</div>
-          <div><span>إجمالي المرضى</span><strong>${stats.totalPatients}</strong></div>
-        </article>
-
-        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح مرضى العيادات اليوم">
-          <div class="stat-icon">🩺</div>
-          <div><span>مرضى العيادات اليوم</span><strong>${clinicPatientsToday}</strong></div>
-        </article>
-
-        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح مرضى التحاليل اليوم">
-          <div class="stat-icon">🧪</div>
-          <div><span>مرضى التحاليل اليوم</span><strong>${labPatientsToday}</strong></div>
-        </article>
-
-        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="nursing" title="فتح خدمات التمريض">
-          <div class="stat-icon">✚</div>
-          <div><span>مرضى خدمات التمريض</span><strong>${nursingPatientsToday}</strong></div>
+      <div class="stats-grid dashboard-stats-v631">
+        <article class="stat dashboard-clickable dashboard-total-today" role="button" tabindex="0" data-dashboard-target="today" title="فتح كل حالات اليوم">
+          <div class="stat-icon">◷</div>
+          <div><span>إجمالي تسجيلات اليوم</span><strong>${totalToday}</strong></div>
         </article>
 
         <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات الكشف الجديد">
@@ -1307,6 +1298,16 @@ async function renderDashboard() {
           <div class="stat-icon">↻</div>
           <div><span>استشارة</span><strong>${consultations}</strong></div>
         </article>
+
+        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات التحاليل اليوم">
+          <div class="stat-icon">🧪</div>
+          <div><span>تحاليل</span><strong>${labPatientsToday}</strong></div>
+        </article>
+
+        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="nursing" title="فتح خدمات التمريض اليوم">
+          <div class="stat-icon">✚</div>
+          <div><span>خدمات تمريض</span><strong>${nursingPatientsToday}</strong></div>
+        </article>
       </div>
     </section>
 
@@ -1314,8 +1315,8 @@ async function renderDashboard() {
       <section class="card">
         <div class="card-head">
           <div>
-            <h2>مرضى الأطباء اليوم</h2>
-            <p>${displayDate(dayKey)} • عدد الحالات لكل طبيب فقط</p>
+            <h2>كشوفات الأطباء اليوم</h2>
+            <p>${displayDate(dayKey)} • توزيع الكشوفات والاستشارات على الأطباء</p>
           </div>
           <button class="btn ghost" id="goTodayBtn">فتح حالات اليوم</button>
         </div>
@@ -1328,38 +1329,27 @@ async function renderDashboard() {
                 <span>${count} حالة</span>
               </div>
             </article>
-          `).join('') : `<div class="empty-block">لا توجد حالات أطباء مسجلة اليوم</div>`}
+          `).join('') : `<div class="empty-block">لا توجد كشوفات أو استشارات مسجلة اليوم</div>`}
         </div>
       </section>
 
       <section class="quick-card">
         <h2>إجراءات سريعة</h2>
-        <button class="quick" id="quickNew">＋ <span><b>تسجيل حالة جديدة</b><small>بيانات المريض ثم الزيارة مباشرة</small></span></button>
-        <button class="quick" id="quickToday">◷ <span><b>حالات اليوم</b><small>العيادات والتحاليل والتمريض</small></span></button>
+        <button class="quick" id="quickNew">＋ <span><b>تسجيل حالة كشف</b><small>بيانات المريض ثم الزيارة</small></span></button>
+        <button class="quick" id="quickToday">◷ <span><b>حالات اليوم</b><small>كل تسجيلات اليوم في شاشة واحدة</small></span></button>
         <button class="quick" id="quickBackup">⟳ <span><b>نسخة احتياطية</b><small>حفظ نسخة من قاعدة البيانات الآن</small></span></button>
       </section>
     </div>
+  `, 'لوحة التحكم', 'تسجيلات اليوم فقط بدون إجماليات تراكمية');
 
-    <section class="card dashboard-recent-card">
-      <div class="card-head">
-        <div><h2>آخر ملفات المرضى</h2><p>أحدث الملفات التي تم التعامل معها</p></div>
-        <button class="btn ghost" id="allPatientsBtn">عرض الكل</button>
-      </div>
-      ${patientTable(recent, false)}
-    </section>
-  `, 'لوحة التحكم', 'نظرة سريعة على حركة اليوم بدون مبالغ');
-
-  bindPatientActions();
   ensureCaseContextMenu();
 
-  document.querySelector<HTMLButtonElement>('#allPatientsBtn')!.onclick = () => navigate('patients');
   document.querySelector<HTMLButtonElement>('#goTodayBtn')!.onclick = () => navigate('today');
   document.querySelector<HTMLButtonElement>('#quickNew')!.onclick = () => openCaseModal();
   document.querySelector<HTMLButtonElement>('#quickToday')!.onclick = () => navigate('today');
 
   const openDashboardTarget = (target: string) => {
-    if (target === 'patients') navigate('patients');
-    else if (target === 'today') navigate('today');
+    if (target === 'today') navigate('today');
     else if (target === 'nursing') navigate('nursing');
   };
 

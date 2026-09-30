@@ -2356,3 +2356,55 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
 @media(max-width:1200px){
   .nursing-service-entry-grid{grid-template-columns:1fr 1fr}
 }
+
+/* V6.3.1 daily-only dashboard + patient total sidebar badge */
+.nav{
+  position:relative;
+}
+.nav-label{
+  flex:1;
+}
+.nav-count{
+  margin-inline-start:auto;
+  min-width:25px;
+  height:22px;
+  padding:0 7px;
+  display:inline-grid;
+  place-items:center;
+  border-radius:999px;
+  background:rgba(255,255,255,.14);
+  border:1px solid rgba(255,255,255,.12);
+  color:#fff;
+  font-size:10px;
+  font-weight:800;
+  line-height:1;
+}
+.nav.active .nav-count{
+  background:#fff;
+  color:#184b7d;
+  border-color:#fff;
+}
+.dashboard-stats-v631{
+  grid-template-columns:repeat(5,minmax(150px,1fr));
+  gap:11px;
+  margin-bottom:0;
+}
+.dashboard-stats-v631 .stat{
+  min-height:104px;
+  padding:14px 16px;
+}
+.dashboard-stats-v631 .stat span{
+  font-size:11px;
+}
+.dashboard-stats-v631 .stat strong{
+  font-size:28px;
+}
+.dashboard-total-today{
+  border-color:#cddce8;
+  box-shadow:0 7px 20px rgba(18,55,88,.08);
+}
+@media(max-width:1250px){
+  .dashboard-stats-v631{
+    grid-template-columns:repeat(3,minmax(170px,1fr));
+  }
+}
