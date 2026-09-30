@@ -2299,3 +2299,20 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
     grid-template-columns:repeat(2,minmax(160px,1fr));
   }
 }
+
+/* V6.2.2 organized dashboard without duplicate totals */
+.dashboard-overview-card{margin-bottom:16px}
+.dashboard-overview-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+.dashboard-overview-head h2{margin:0 0 3px;font-size:15px;color:#173650}
+.dashboard-overview-head p{margin:0;font-size:9px;color:#8390a1}
+.dashboard-stats-v622{grid-template-columns:repeat(3,minmax(190px,1fr));gap:11px;margin-bottom:0}
+.dashboard-stats-v622 .stat{min-height:104px;padding:14px 16px}
+.dashboard-stats-v622 .stat span{font-size:11px}
+.dashboard-stats-v622 .stat strong{font-size:27px}
+.dashboard-stats-v622 .stat small{display:block;margin-top:3px;font-size:8px;color:#99a4b1}
+.dashboard-nursing-pending{opacity:.72;cursor:default}
+.dashboard-nursing-pending .stat-icon{background:#f3f5f7;color:#7e8b99}
+.dashboard-grid .doctor-day-card{justify-content:flex-start}
+@media(max-width:1200px){
+  .dashboard-stats-v622{grid-template-columns:repeat(2,minmax(180px,1fr))}
+}

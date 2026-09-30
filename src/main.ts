@@ -146,7 +146,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.2.1'
+  version: '6.2.2'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -1082,92 +1082,104 @@ async function renderDashboard() {
     invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } })
   ]);
 
-  const numberFee = (v: Visit) => {
-    const n = Number(String(v.fee || '').replace(',', '.'));
-    return Number.isFinite(n) ? n : 0;
-  };
-
-  const todayRevenue = todayReport.rows.reduce((sum, v) => sum + numberFee(v), 0);
-  const todayClinicAmount = todayReport.rows.reduce((sum, v) => sum + moneyNumber(v.clinicAmount), 0);
-  const todayDoctorAmount = todayReport.rows.reduce((sum, v) => sum + moneyNumber(v.doctorAmount), 0);
+  const clinicPatientsToday = todayReport.totalVisits;
+  const labPatientsToday = todayLabOrders.length;
   const newVisits = todayReport.rows.filter(v => v.visitType === 'كشف جديد').length;
   const consultations = todayReport.rows.filter(v => v.visitType === 'استشارة').length;
-  const labPaidToday = todayLabOrders.reduce((sum, o) => sum + moneyNumber(o.paidAmount), 0);
-  const todayCases = todayReport.totalVisits + todayLabOrders.length;
-  const todayTotalCollection = todayRevenue + labPaidToday;
-  const todayClinicTotal = todayClinicAmount + labPaidToday;
 
-  const doctorMap = new Map<string, {count:number; revenue:number}>();
+  const doctorMap = new Map<string, number>();
   for (const visit of todayReport.rows) {
     const doctor = (visit.doctor || '').trim() || 'بدون طبيب';
-    const item = doctorMap.get(doctor) || { count: 0, revenue: 0 };
-    item.count += 1;
-    item.revenue += numberFee(visit);
-    doctorMap.set(doctor, item);
+    doctorMap.set(doctor, (doctorMap.get(doctor) || 0) + 1);
   }
 
   const doctorRows = [...doctorMap.entries()]
-    .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0], 'ar'));
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ar'));
 
   shell(`
-    <div class="stats-grid dashboard-stats-v47">
-      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="patients" title="فتح ملفات المرضى">
-        <div class="stat-icon">👥</div><div><span>إجمالي المرضى</span><strong>${stats.totalPatients}</strong></div>
-      </article>
-      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="إجمالي كل الحالات المسجلة">
-        <div class="stat-icon">Σ</div><div><span>إجمالي الحالات</span><strong>${stats.totalVisits}</strong></div>
-      </article>
-      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
-        <div class="stat-icon">◷</div><div><span>حالات اليوم</span><strong>${todayCases}</strong></div>
-      </article>
-      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات التحاليل اليوم">
-        <div class="stat-icon">🧪</div><div><span>تحاليل اليوم</span><strong>${todayLabOrders.length}</strong></div>
-      </article>
-      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
-        <div class="stat-icon">＋</div><div><span>كشف جديد</span><strong>${newVisits}</strong></div>
-      </article>
-      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
-        <div class="stat-icon">↻</div><div><span>استشارة</span><strong>${consultations}</strong></div>
-      </article>
-    </div>
+    <section class="dashboard-overview-card">
+      <div class="dashboard-overview-head">
+        <div>
+          <h2>ملخص اليوم</h2>
+          <p>${displayDate(dayKey)} • أرقام تشغيلية فقط بدون أي بيانات مالية</p>
+        </div>
+      </div>
+
+      <div class="stats-grid dashboard-stats-v622">
+        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="patients" title="فتح ملفات المرضى">
+          <div class="stat-icon">👥</div>
+          <div><span>إجمالي المرضى</span><strong>${stats.totalPatients}</strong></div>
+        </article>
+
+        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح مرضى العيادات اليوم">
+          <div class="stat-icon">🩺</div>
+          <div><span>مرضى العيادات اليوم</span><strong>${clinicPatientsToday}</strong></div>
+        </article>
+
+        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح مرضى التحاليل اليوم">
+          <div class="stat-icon">🧪</div>
+          <div><span>مرضى التحاليل اليوم</span><strong>${labPatientsToday}</strong></div>
+        </article>
+
+        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات الكشف الجديد">
+          <div class="stat-icon">＋</div>
+          <div><span>كشف جديد</span><strong>${newVisits}</strong></div>
+        </article>
+
+        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات الاستشارة">
+          <div class="stat-icon">↻</div>
+          <div><span>استشارة</span><strong>${consultations}</strong></div>
+        </article>
+
+        <article class="stat dashboard-nursing-pending" title="عداد خدمات التمريض يحتاج سجل تمريض فعلي ليحسب الحالات بشكل صحيح">
+          <div class="stat-icon">✚</div>
+          <div>
+            <span>مرضى خدمات التمريض</span>
+            <strong>—</strong>
+            <small>يُفعّل مع سجل التمريض</small>
+          </div>
+        </article>
+      </div>
+    </section>
 
     <div class="dashboard-grid">
       <section class="card">
-        <div class="card-head"><div><h2>حالات الأطباء اليوم</h2><p>${displayDate(dayKey)} • عدد الحالات لكل طبيب</p></div>
+        <div class="card-head">
+          <div>
+            <h2>مرضى الأطباء اليوم</h2>
+            <p>${displayDate(dayKey)} • عدد الحالات لكل طبيب فقط</p>
+          </div>
           <button class="btn ghost" id="goTodayBtn">فتح حالات اليوم</button>
         </div>
+
         <div class="doctor-day-grid">
-          ${todayLabOrders.length ? `
-            <article class="doctor-day-card dashboard-clickable lab-day-card" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات التحاليل اليوم">
-              <div><strong>🧪 تحاليل اليوم</strong><span>${todayLabOrders.length} حالة</span></div>
-            </article>
-          ` : ''}
-          ${doctorRows.length ? doctorRows.map(([doctor, item]) => `
+          ${doctorRows.length ? doctorRows.map(([doctor, count]) => `
             <article class="doctor-day-card dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
               <div>
                 <strong>${esc(doctor)}</strong>
-                <span>${item.count} حالة</span>
+                <span>${count} حالة</span>
               </div>
             </article>
-          `).join('') : `<div class="empty-block">لا توجد حالات مسجلة في اليوم التشغيلي الحالي</div>`}
+          `).join('') : `<div class="empty-block">لا توجد حالات أطباء مسجلة اليوم</div>`}
         </div>
       </section>
 
       <section class="quick-card">
         <h2>إجراءات سريعة</h2>
         <button class="quick" id="quickNew">＋ <span><b>تسجيل حالة جديدة</b><small>بيانات المريض ثم الزيارة مباشرة</small></span></button>
-        <button class="quick" id="quickToday">◷ <span><b>حالات اليوم</b><small>عرض الحالات المسجلة اليوم</small></span></button>
+        <button class="quick" id="quickToday">◷ <span><b>حالات اليوم</b><small>العيادات والتحاليل في شاشة واحدة</small></span></button>
         <button class="quick" id="quickBackup">⟳ <span><b>نسخة احتياطية</b><small>حفظ نسخة من قاعدة البيانات الآن</small></span></button>
       </section>
     </div>
 
     <section class="card dashboard-recent-card">
-      <div class="card-head"><div><h2>آخر ملفات المرضى</h2><p>أحدث الملفات التي تم التعامل معها</p></div>
+      <div class="card-head">
+        <div><h2>آخر ملفات المرضى</h2><p>أحدث الملفات التي تم التعامل معها</p></div>
         <button class="btn ghost" id="allPatientsBtn">عرض الكل</button>
       </div>
       ${patientTable(recent, false)}
     </section>
-  `, 'لوحة التحكم', 'حركة العيادة اليوم بشكل مباشر');
+  `, 'لوحة التحكم', 'نظرة سريعة على حركة اليوم بدون مبالغ');
 
   bindPatientActions();
   ensureCaseContextMenu();
@@ -1180,7 +1192,6 @@ async function renderDashboard() {
   const openDashboardTarget = (target: string) => {
     if (target === 'patients') navigate('patients');
     else if (target === 'today') navigate('today');
-    else if (target === 'reports') navigate('reports');
   };
 
   document.querySelectorAll<HTMLElement>('[data-dashboard-target]').forEach(card => {
@@ -1193,6 +1204,7 @@ async function renderDashboard() {
       }
     };
   });
+
   document.querySelector<HTMLButtonElement>('#quickBackup')!.onclick = async () => {
     const item = await invoke<BackupItem>('create_backup');
     toast(`تم إنشاء النسخة: ${item.name}`);
