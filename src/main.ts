@@ -59,6 +59,37 @@ type PatientLab = {
 
 
 
+type LabOrder = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientPhone: string;
+  orderDate: string;
+  orderTime: string;
+  subtotal: string;
+  discountType: string;
+  discountValue: string;
+  discountAmount: string;
+  netTotal: string;
+  paidAmount: string;
+  remainingAmount: string;
+  itemsCount: number;
+  createdAt: string;
+};
+
+type LabOrderItem = {
+  id: string;
+  orderId: string;
+  catalogId: number;
+  testName: string;
+  price: string;
+};
+
+type LabOrderDetails = {
+  order: LabOrder;
+  items: LabOrderItem[];
+};
+
 type Doctor = {
   id: string;
   name: string;
@@ -115,7 +146,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.1.4'
+  version: '6.2.0'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -184,6 +215,219 @@ function reportPeriodLabel(from: string, to: string) {
 function moneyNumber(value: string) {
   const n = Number(String(value || '').replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
+}
+
+function labOrderStatus(order: LabOrder) {
+  const paid = moneyNumber(order.paidAmount);
+  const remaining = moneyNumber(order.remainingAmount);
+  if (remaining <= 0.0001) return 'مدفوع';
+  if (paid <= 0.0001) return 'غير مدفوع';
+  return 'دفع جزئي';
+}
+
+function labOrderRowsHtml(rows: LabOrder[], showPatient = true) {
+  return `
+    <div class="table-wrap lab-orders-table-wrap">
+      <table class="lab-orders-table">
+        <thead>
+          <tr>
+            <th>التاريخ</th><th>الوقت</th>
+            ${showPatient ? '<th>المريض</th><th>رقم التليفون</th>' : ''}
+            <th>التحاليل</th><th>الإجمالي</th><th>الخصم</th><th>الصافي</th><th>المدفوع</th><th>المتبقي</th><th>الحالة</th><th>إجراءات</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map(order => `
+            <tr>
+              <td>${esc(displayDate(order.orderDate))}</td>
+              <td class="ltr">${esc(order.orderTime || '—')}</td>
+              ${showPatient ? `<td>${esc(order.patientName || '—')}</td><td class="ltr">${esc(order.patientPhone || '—')}</td>` : ''}
+              <td>${order.itemsCount}</td>
+              <td class="ltr">${moneyNumber(order.subtotal).toFixed(2)} ج.م</td>
+              <td class="ltr">${moneyNumber(order.discountAmount).toFixed(2)} ج.م</td>
+              <td class="ltr">${moneyNumber(order.netTotal).toFixed(2)} ج.م</td>
+              <td class="ltr">${moneyNumber(order.paidAmount).toFixed(2)} ج.م</td>
+              <td class="ltr">${moneyNumber(order.remainingAmount).toFixed(2)} ج.م</td>
+              <td><span class="lab-payment-status ${moneyNumber(order.remainingAmount) > 0 ? 'due' : 'paid'}">${labOrderStatus(order)}</span></td>
+              <td>
+                <div class="visit-row-actions">
+                  <button class="icon-action" data-open-lab-order="${esc(order.id)}" title="فتح">⌕</button>
+                  <button class="icon-action" data-lab-order-pdf="${esc(order.id)}" title="PDF للطباعة">PDF</button>
+                  <button class="icon-action" data-lab-order-png="${esc(order.id)}" title="صورة">▧</button>
+                </div>
+              </td>
+            </tr>
+          `).join('') : `<tr><td colspan="${showPatient ? 12 : 10}" class="empty-row">لا توجد حالات تحاليل</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function labOrderReceiptHtml(details: LabOrderDetails) {
+  const o = details.order;
+  return patientExportSheet(
+    'إيصال تحاليل',
+    `${o.patientName || 'بدون اسم'} • ${displayDate(o.orderDate)} ${o.orderTime || ''}`,
+    `
+      <div class="export-patient-summary">
+        <div><span>المريض</span><strong>${esc(o.patientName || '—')}</strong></div>
+        <div><span>الهاتف</span><strong class="ltr">${esc(o.patientPhone || '—')}</strong></div>
+        <div><span>رقم العملية</span><strong class="ltr">${esc(o.id.slice(0, 8))}</strong></div>
+      </div>
+
+      <table class="export-table">
+        <thead><tr><th>التحليل</th><th>السعر</th></tr></thead>
+        <tbody>
+          ${details.items.map(item => `
+            <tr>
+              <td class="ltr">${esc(item.testName)}</td>
+              <td class="ltr">${moneyNumber(item.price).toFixed(2)} ج.م</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+
+      <div class="lab-receipt-money">
+        <div><span>إجمالي التحاليل</span><strong class="ltr">${moneyNumber(o.subtotal).toFixed(2)} ج.م</strong></div>
+        <div><span>الخصم</span><strong class="ltr">${moneyNumber(o.discountAmount).toFixed(2)} ج.م</strong></div>
+        <div><span>الصافي بعد الخصم</span><strong class="ltr">${moneyNumber(o.netTotal).toFixed(2)} ج.م</strong></div>
+        <div><span>المدفوع</span><strong class="ltr">${moneyNumber(o.paidAmount).toFixed(2)} ج.م</strong></div>
+        <div class="remaining"><span>المتبقي</span><strong class="ltr">${moneyNumber(o.remainingAmount).toFixed(2)} ج.م</strong></div>
+      </div>
+    `
+  );
+}
+
+async function exportLabOrder(details: LabOrderDetails, format: ExportFormat) {
+  const o = details.order;
+  await captureAndSaveExport(
+    labOrderReceiptHtml(details),
+    `تحاليل-${o.patientName || 'مريض'}-${o.orderDate}-${o.id.slice(0, 8)}`,
+    format
+  );
+}
+
+async function openLabOrderDetails(orderId: string) {
+  const details = await invoke<LabOrderDetails>('get_lab_order', { id: orderId });
+  const o = details.order;
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+
+  root.innerHTML = `
+    <div class="modal-backdrop" id="labOrderBackdrop">
+      <section class="modal wide lab-order-details-modal">
+        <div class="modal-head">
+          <div class="patient-feature-title">
+            <div class="patient-feature-title-icon labs">🧪</div>
+            <div>
+              <h2>حالة تحاليل محفوظة</h2>
+              <p>${esc(o.patientName || 'بدون اسم')} • <span class="ltr">${esc(o.patientPhone || 'بدون رقم')}</span></p>
+            </div>
+          </div>
+          <button class="modal-close" id="closeLabOrder">×</button>
+        </div>
+
+        <div class="lab-order-meta">
+          <span>${displayDate(o.orderDate)}</span>
+          <span class="ltr">${esc(o.orderTime || '—')}</span>
+          <span>${details.items.length} تحليل</span>
+          <span class="lab-payment-status ${moneyNumber(o.remainingAmount) > 0 ? 'due' : 'paid'}">${labOrderStatus(o)}</span>
+        </div>
+
+        <div class="lab-order-item-list">
+          ${details.items.map(item => `
+            <div class="lab-order-item-row">
+              <strong class="ltr">${esc(item.testName)}</strong>
+              <b class="ltr">${moneyNumber(item.price).toFixed(2)} ج.م</b>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="lab-order-money-grid">
+          <div><span>الإجمالي</span><strong class="ltr">${moneyNumber(o.subtotal).toFixed(2)} ج.م</strong></div>
+          <div><span>الخصم</span><strong class="ltr">${moneyNumber(o.discountAmount).toFixed(2)} ج.م</strong></div>
+          <div><span>الصافي</span><strong class="ltr">${moneyNumber(o.netTotal).toFixed(2)} ج.م</strong></div>
+          <div><span>المدفوع</span><strong class="ltr">${moneyNumber(o.paidAmount).toFixed(2)} ج.م</strong></div>
+          <div class="remaining"><span>المتبقي</span><strong class="ltr">${moneyNumber(o.remainingAmount).toFixed(2)} ج.م</strong></div>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn ghost" id="labOrderPng">تنزيل صورة</button>
+          <button class="btn primary" id="labOrderPdf">PDF للطباعة</button>
+          <button class="btn ghost" id="labOrderCloseBottom">إغلاق</button>
+        </div>
+      </section>
+    </div>`;
+
+  const close = () => root.innerHTML = '';
+  document.querySelector<HTMLButtonElement>('#closeLabOrder')!.onclick = close;
+  document.querySelector<HTMLButtonElement>('#labOrderCloseBottom')!.onclick = close;
+  document.querySelector<HTMLDivElement>('#labOrderBackdrop')!.onclick = e => {
+    if (e.target === e.currentTarget) close();
+  };
+  document.querySelector<HTMLButtonElement>('#labOrderPng')!.onclick = () => exportLabOrder(details, 'png');
+  document.querySelector<HTMLButtonElement>('#labOrderPdf')!.onclick = () => exportLabOrder(details, 'pdf');
+}
+
+function bindLabOrderActions() {
+  document.querySelectorAll<HTMLButtonElement>('[data-open-lab-order]').forEach(button => {
+    button.onclick = () => openLabOrderDetails(button.dataset.openLabOrder || '');
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-lab-order-pdf]').forEach(button => {
+    button.onclick = async () => {
+      const d = await invoke<LabOrderDetails>('get_lab_order', { id: button.dataset.labOrderPdf || '' });
+      await exportLabOrder(d, 'pdf');
+    };
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-lab-order-png]').forEach(button => {
+    button.onclick = async () => {
+      const d = await invoke<LabOrderDetails>('get_lab_order', { id: button.dataset.labOrderPng || '' });
+      await exportLabOrder(d, 'png');
+    };
+  });
+}
+
+async function exportTodayCombined(visits: Visit[], labOrders: LabOrder[], dayKey: string, format: ExportFormat) {
+  const visitMetrics = reportMetrics(visits);
+  const labPaid = labOrders.reduce((sum, o) => sum + moneyNumber(o.paidAmount), 0);
+  const labRemaining = labOrders.reduce((sum, o) => sum + moneyNumber(o.remainingAmount), 0);
+  const totalCases = visits.length + labOrders.length;
+  const totalCollection = visitMetrics.revenue + labPaid;
+  const clinicTotal = visitMetrics.clinicTotal + labPaid;
+
+  const labRows = labOrders.length ? `
+    <h3>حالات التحاليل</h3>
+    <table class="export-table">
+      <thead><tr><th>المريض</th><th>الهاتف</th><th>التحاليل</th><th>الصافي</th><th>المدفوع</th><th>المتبقي</th></tr></thead>
+      <tbody>${labOrders.map(o => `
+        <tr>
+          <td>${esc(o.patientName || '—')}</td>
+          <td class="ltr">${esc(o.patientPhone || '—')}</td>
+          <td>${o.itemsCount}</td>
+          <td class="ltr">${moneyNumber(o.netTotal).toFixed(2)} ج.م</td>
+          <td class="ltr">${moneyNumber(o.paidAmount).toFixed(2)} ج.م</td>
+          <td class="ltr">${moneyNumber(o.remainingAmount).toFixed(2)} ج.م</td>
+        </tr>
+      `).join('')}</tbody>
+    </table>` : '';
+
+  const body = `
+    <div class="report-stats export-report-stats">
+      <div><span>إجمالي الحالات</span><strong>${totalCases}</strong></div>
+      <div><span>إجمالي التحصيل</span><strong>${totalCollection.toFixed(2)} ج.م</strong></div>
+      <div><span>مبلغ العيادات</span><strong>${clinicTotal.toFixed(2)} ج.م</strong></div>
+      <div><span>مبلغ الأطباء</span><strong>${visitMetrics.doctorTotal.toFixed(2)} ج.م</strong></div>
+      <div><span>متبقي التحاليل</span><strong>${labRemaining.toFixed(2)} ج.م</strong></div>
+    </div>
+    <h3>الكشوفات والاستشارات</h3>
+    ${exportVisitRows(visits, true)}
+    ${labRows}
+  `;
+
+  await captureAndSaveExport(
+    exportSheet('حالات اليوم', displayDate(dayKey), body),
+    `حالات-اليوم-${dayKey}`,
+    format
+  );
 }
 
 function visitFeeNumber(v: Visit) {
@@ -831,10 +1075,11 @@ function bindPatientActions() {
 async function renderDashboard() {
   const dayKey = businessDay();
 
-  const [stats, recent, todayReport] = await Promise.all([
+  const [stats, recent, todayReport, todayLabOrders] = await Promise.all([
     invoke<Stats>('get_stats'),
     invoke<Patient[]>('list_patients', { query: { search: '', archivedOnly: false, limit: 8 } }),
-    invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } })
+    invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } }),
+    invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } })
   ]);
 
   const numberFee = (v: Visit) => {
@@ -847,6 +1092,10 @@ async function renderDashboard() {
   const todayDoctorAmount = todayReport.rows.reduce((sum, v) => sum + moneyNumber(v.doctorAmount), 0);
   const newVisits = todayReport.rows.filter(v => v.visitType === 'كشف جديد').length;
   const consultations = todayReport.rows.filter(v => v.visitType === 'استشارة').length;
+  const labPaidToday = todayLabOrders.reduce((sum, o) => sum + moneyNumber(o.paidAmount), 0);
+  const todayCases = todayReport.totalVisits + todayLabOrders.length;
+  const todayTotalCollection = todayRevenue + labPaidToday;
+  const todayClinicTotal = todayClinicAmount + labPaidToday;
 
   const doctorMap = new Map<string, {count:number; revenue:number}>();
   for (const visit of todayReport.rows) {
@@ -865,14 +1114,17 @@ async function renderDashboard() {
       <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="patients" title="فتح ملفات المرضى">
         <div class="stat-icon">👥</div><div><span>إجمالي المرضى</span><strong>${stats.totalPatients}</strong></div>
       </article>
+      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="إجمالي كل الحالات المسجلة">
+        <div class="stat-icon">Σ</div><div><span>إجمالي الحالات</span><strong>${stats.totalVisits}</strong></div>
+      </article>
       <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
-        <div class="stat-icon">◷</div><div><span>حالات اليوم</span><strong>${todayReport.totalVisits}</strong></div>
+        <div class="stat-icon">◷</div><div><span>حالات اليوم</span><strong>${todayCases}</strong></div>
       </article>
-      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="reports" title="فتح التقارير">
-        <div class="stat-icon">ج.م</div><div><span>إجمالي الكشف</span><strong>${todayRevenue.toFixed(2)}</strong></div>
+      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
+        <div class="stat-icon">ج.م</div><div><span>إجمالي التحصيل</span><strong>${todayTotalCollection.toFixed(2)}</strong></div>
       </article>
-      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="reports" title="فتح التقارير">
-        <div class="stat-icon">⌂</div><div><span>مبلغ العيادات</span><strong>${todayClinicAmount.toFixed(2)}</strong></div>
+      <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
+        <div class="stat-icon">⌂</div><div><span>مبلغ العيادات</span><strong>${todayClinicTotal.toFixed(2)}</strong></div>
       </article>
       <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="reports" title="فتح التقارير">
         <div class="stat-icon">⚕</div><div><span>مبلغ الأطباء</span><strong>${todayDoctorAmount.toFixed(2)}</strong></div>
@@ -891,6 +1143,12 @@ async function renderDashboard() {
           <button class="btn ghost" id="goTodayBtn">فتح حالات اليوم</button>
         </div>
         <div class="doctor-day-grid">
+          ${todayLabOrders.length ? `
+            <article class="doctor-day-card dashboard-clickable lab-day-card" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات التحاليل اليوم">
+              <div><strong>🧪 تحاليل اليوم</strong><span>${todayLabOrders.length} حالة</span></div>
+              <b class="ltr">${labPaidToday.toFixed(2)} ج.م محصل</b>
+            </article>
+          ` : ''}
           ${doctorRows.length ? doctorRows.map(([doctor, item]) => `
             <article class="doctor-day-card dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
               <div>
@@ -985,8 +1243,16 @@ async function renderPatients(archived: boolean) {
 
 async function renderToday() {
   const dayKey = businessDay();
-  const baseResult = await invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } });
+  const [baseResult, labOrders] = await Promise.all([
+    invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } }),
+    invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } })
+  ]);
   const metrics = reportMetrics(baseResult.rows);
+  const labPaid = labOrders.reduce((sum, o) => sum + moneyNumber(o.paidAmount), 0);
+  const labRemaining = labOrders.reduce((sum, o) => sum + moneyNumber(o.remainingAmount), 0);
+  const totalCases = baseResult.totalVisits + labOrders.length;
+  const totalCollection = metrics.revenue + labPaid;
+  const clinicTotal = metrics.clinicTotal + labPaid;
 
   ensureCaseContextMenu();
   shell(`
@@ -994,19 +1260,20 @@ async function renderToday() {
       <div class="card-head">
         <div>
           <h2>حالات اليوم</h2>
-          <p>اليوم التشغيلي يبدأ ${operationalStartLabel()} • ${displayDate(dayKey)} • ${baseResult.totalVisits} حالة</p>
+          <p>اليوم التشغيلي يبدأ ${operationalStartLabel()} • ${displayDate(dayKey)} • ${totalCases} حالة</p>
         </div>
         <div class="filters">
           <button class="btn ghost small" id="todayImage">تحميل صورة</button>
-          <button class="btn primary small" id="todayPdf">تحميل PDF</button>
+          <button class="btn primary small" id="todayPdf">PDF للطباعة</button>
         </div>
       </div>
 
-      <div class="today-summary-grid">
-        <div><span>الحالات</span><strong>${metrics.totalVisits}</strong></div>
-        <div><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
-        <div><span>مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)} ج.م</strong></div>
+      <div class="today-summary-grid today-summary-grid-v62">
+        <div><span>إجمالي الحالات</span><strong>${totalCases}</strong></div>
+        <div><span>إجمالي التحصيل</span><strong class="ltr">${totalCollection.toFixed(2)} ج.م</strong></div>
+        <div><span>مبلغ العيادات</span><strong class="ltr">${clinicTotal.toFixed(2)} ج.م</strong></div>
         <div><span>مبلغ الأطباء</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)} ج.م</strong></div>
+        <div><span>متبقي التحاليل</span><strong class="ltr">${labRemaining.toFixed(2)} ج.م</strong></div>
       </div>
 
       <div class="today-filter-panel">
@@ -1016,11 +1283,12 @@ async function renderToday() {
             ${doctors.filter(d => d.active).map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}
           </select>
         </label>
-        <label>نوع الزيارة
+        <label>نوع الحالة
           <select id="todayTypeFilter">
             <option value="">كل الأنواع</option>
             <option>كشف جديد</option>
             <option>استشارة</option>
+            <option>تحاليل</option>
           </select>
         </label>
         <label>مصدر الحجز
@@ -1034,7 +1302,7 @@ async function renderToday() {
         </label>
       </div>
 
-      <div id="todayVisitTable">${visitTable(baseResult.rows, true)}</div>
+      <div id="todayCasesHost"></div>
 
       <div class="today-search-panel">
         <div>
@@ -1045,39 +1313,54 @@ async function renderToday() {
       </div>
       <div id="todayPatientSearchResults"></div>
     </section>
-  `, 'حالات اليوم', 'متابعة الحالات والتحصيل وحالات الأطباء');
+  `, 'حالات اليوم', 'الكشوفات والاستشارات والتحاليل والتحصيل');
 
   const doctorFilter = document.querySelector<HTMLSelectElement>('#todayDoctorFilter')!;
   const typeFilter = document.querySelector<HTMLSelectElement>('#todayTypeFilter')!;
   const sourceFilter = document.querySelector<HTMLSelectElement>('#todaySourceFilter')!;
-  const tableHost = document.querySelector<HTMLDivElement>('#todayVisitTable')!;
+  const host = document.querySelector<HTMLDivElement>('#todayCasesHost')!;
 
-  const filteredRows = () => baseResult.rows.filter(v =>
+  const visibleVisits = () => baseResult.rows.filter(v =>
+    typeFilter.value !== 'تحاليل' &&
     (!doctorFilter.value || v.doctor === doctorFilter.value) &&
     (!typeFilter.value || v.visitType === typeFilter.value) &&
     (!sourceFilter.value || (v.bookingSource || 'عادي') === sourceFilter.value)
   );
 
+  const visibleLabs = () => {
+    if (typeFilter.value && typeFilter.value !== 'تحاليل') return [];
+    if (doctorFilter.value || sourceFilter.value) return [];
+    return labOrders;
+  };
+
   const applyFilters = () => {
-    tableHost.innerHTML = visitTable(filteredRows(), true);
+    const visits = visibleVisits();
+    const labs = visibleLabs();
+
+    host.innerHTML = `
+      ${visits.length || typeFilter.value !== 'تحاليل' ? `
+        <div class="today-case-section-head"><h3>الكشوفات والاستشارات</h3><span>${visits.length} حالة</span></div>
+        ${visitTable(visits, true)}
+      ` : ''}
+      ${labs.length || typeFilter.value === 'تحاليل' || !typeFilter.value ? `
+        <div class="today-case-section-head labs"><h3>حالات التحاليل</h3><span>${labs.length} حالة</span></div>
+        ${labOrderRowsHtml(labs, true)}
+      ` : ''}
+    `;
+
     ensureCaseContextMenu();
+    bindLabOrderActions();
   };
 
   doctorFilter.onchange = applyFilters;
   typeFilter.onchange = applyFilters;
   sourceFilter.onchange = applyFilters;
+  applyFilters();
 
-  document.querySelector<HTMLButtonElement>('#todayImage')!.onclick = () => {
-    const rows = filteredRows();
-    const ids = new Set(rows.map(v => v.patientId));
-    return exportReportFile({ totalVisits: rows.length, uniquePatients: ids.size, rows }, dayKey, dayKey, doctorFilter.value, 'png');
-  };
-
-  document.querySelector<HTMLButtonElement>('#todayPdf')!.onclick = () => {
-    const rows = filteredRows();
-    const ids = new Set(rows.map(v => v.patientId));
-    return exportReportFile({ totalVisits: rows.length, uniquePatients: ids.size, rows }, dayKey, dayKey, doctorFilter.value, 'pdf');
-  };
+  document.querySelector<HTMLButtonElement>('#todayImage')!.onclick = () =>
+    exportTodayCombined(visibleVisits(), visibleLabs(), dayKey, 'png');
+  document.querySelector<HTMLButtonElement>('#todayPdf')!.onclick = () =>
+    exportTodayCombined(visibleVisits(), visibleLabs(), dayKey, 'pdf');
 
   const search = document.querySelector<HTMLInputElement>('#todayPatientSearch')!;
   const results = document.querySelector<HTMLDivElement>('#todayPatientSearchResults')!;
@@ -2133,7 +2416,10 @@ async function openPatientFeaturePanel(
   const isNursing = kind === 'nursing';
 
   if (!isNursing) {
-    let selectedLabs = await invoke<PatientLab[]>('list_patient_labs', { patientId });
+    let [selectedLabs, labHistory] = await Promise.all([
+      invoke<PatientLab[]>('list_patient_labs', { patientId }),
+      invoke<LabOrder[]>('list_patient_lab_orders', { patientId })
+    ]);
 
     root.innerHTML = `
       <div class="modal-backdrop" id="patientFeatureBackdrop">
@@ -2152,6 +2438,55 @@ async function openPatientFeaturePanel(
           <section class="patient-labs-selected-panel">
             <div id="patientLabsSelected">
               ${selectedPatientLabsHtml(selectedLabs)}
+            </div>
+          </section>
+
+          <section class="lab-payment-panel">
+            <div class="lab-payment-grid">
+              <label>إجمالي التحاليل
+                <div class="lab-payment-money ltr" id="labSubtotal">0.00 ج.م</div>
+              </label>
+              <label>الخصم
+                <select id="labDiscountType">
+                  <option value="none">بدون خصم</option>
+                  <option value="percent">نسبة %</option>
+                  <option value="amount">مبلغ</option>
+                </select>
+              </label>
+              <label>قيمة الخصم
+                <input id="labDiscountValue" type="number" min="0" step="0.01" value="0" disabled>
+              </label>
+              <label>الصافي
+                <div class="lab-payment-money ltr" id="labNetTotal">0.00 ج.م</div>
+              </label>
+              <label>المدفوع يدويًا
+                <input id="labPaidAmount" type="number" min="0" step="0.01" value="0">
+              </label>
+              <label>المتبقي
+                <div class="lab-payment-money remaining ltr" id="labRemaining">0.00 ج.م</div>
+              </label>
+            </div>
+
+            <div class="lab-finish-actions">
+              <button class="btn primary" id="finishLabOrder">✓ حفظ وإنهاء الحالة</button>
+              <button class="btn ghost" id="backToPatientProfile">← رجوع لملف المريض</button>
+            </div>
+          </section>
+
+          <section class="lab-order-history">
+            <div class="lab-order-history-head">
+              <strong>سجل حالات التحاليل السابقة</strong>
+              <span>${labHistory.length} حالة</span>
+            </div>
+            <div class="lab-order-history-list">
+              ${labHistory.length ? labHistory.slice(0, 8).map(o => `
+                <div class="lab-order-history-row">
+                  <div><strong>${displayDate(o.orderDate)}</strong><span class="ltr">${esc(o.orderTime || '')}</span></div>
+                  <span>${o.itemsCount} تحليل</span>
+                  <b class="ltr">${moneyNumber(o.paidAmount).toFixed(2)} ج.م</b>
+                  <button class="btn ghost small" data-open-lab-order="${esc(o.id)}">فتح</button>
+                </div>
+              `).join('') : '<div class="patient-labs-empty">لا توجد حالات تحاليل سابقة.</div>'}
             </div>
           </section>
 
@@ -2182,9 +2517,6 @@ async function openPatientFeaturePanel(
             <div class="lab-results" id="labResults"></div>
           </div>
 
-          <div class="form-actions">
-            <button class="btn ghost" id="backToPatientProfile">← رجوع لملف المريض</button>
-          </div>
         </section>
       </div>`;
 
@@ -2193,8 +2525,31 @@ async function openPatientFeaturePanel(
     const resultHost = document.querySelector<HTMLDivElement>('#labResults')!;
     const countHost = document.querySelector<HTMLElement>('#labResultCount')!;
     const selectedHost = document.querySelector<HTMLDivElement>('#patientLabsSelected')!;
+    const discountType = document.querySelector<HTMLSelectElement>('#labDiscountType')!;
+    const discountValue = document.querySelector<HTMLInputElement>('#labDiscountValue')!;
+    const paidAmount = document.querySelector<HTMLInputElement>('#labPaidAmount')!;
+    const subtotalHost = document.querySelector<HTMLElement>('#labSubtotal')!;
+    const netHost = document.querySelector<HTMLElement>('#labNetTotal')!;
+    const remainingHost = document.querySelector<HTMLElement>('#labRemaining')!;
 
     const selectedCatalogIds = () => new Set(selectedLabs.map(item => item.catalogId));
+
+    const paymentPreview = () => {
+      const subtotal = selectedLabs.reduce((sum, item) => sum + moneyNumber(item.price), 0);
+      const rawDiscount = Math.max(0, moneyNumber(discountValue.value));
+      const discountAmount = discountType.value === 'percent'
+        ? subtotal * Math.min(rawDiscount, 100) / 100
+        : discountType.value === 'amount'
+          ? Math.min(rawDiscount, subtotal)
+          : 0;
+      const net = Math.max(0, subtotal - discountAmount);
+      const paid = Math.max(0, moneyNumber(paidAmount.value));
+      const remaining = Math.max(0, net - paid);
+
+      subtotalHost.textContent = `${subtotal.toFixed(2)} ج.م`;
+      netHost.textContent = `${net.toFixed(2)} ج.م`;
+      remainingHost.textContent = `${remaining.toFixed(2)} ج.م`;
+    };
 
     const bindDeleteButtons = () => {
       selectedHost.querySelectorAll<HTMLButtonElement>('[data-delete-patient-lab]').forEach(button => {
@@ -2218,6 +2573,7 @@ async function openPatientFeaturePanel(
     const renderSelected = () => {
       selectedHost.innerHTML = selectedPatientLabsHtml(selectedLabs);
       bindDeleteButtons();
+      paymentPreview();
     };
 
     const bindAddButtons = () => {
@@ -2264,6 +2620,45 @@ async function openPatientFeaturePanel(
     document.querySelector<HTMLDivElement>('#patientFeatureBackdrop')!.onclick = e => {
       if (e.target === e.currentTarget) close();
     };
+    discountType.onchange = () => {
+      discountValue.disabled = discountType.value === 'none';
+      if (discountType.value === 'none') discountValue.value = '0';
+      paymentPreview();
+    };
+    discountValue.oninput = paymentPreview;
+    paidAmount.oninput = paymentPreview;
+
+    document.querySelector<HTMLButtonElement>('#finishLabOrder')!.onclick = async () => {
+      if (!selectedLabs.length) {
+        toast('أضف تحليل واحد على الأقل قبل حفظ الحالة', 'error');
+        input.focus();
+        return;
+      }
+
+      try {
+        const details = await invoke<LabOrderDetails>('finalize_lab_order', {
+          input: {
+            patientId,
+            discountType: discountType.value,
+            discountValue: discountValue.value || '0',
+            paidAmount: paidAmount.value || '0',
+            orderDate: today(),
+            orderTime: timeNow()
+          }
+        });
+
+        selectedLabs = [];
+        close();
+        toast('تم حفظ حالة التحاليل وإضافتها إلى حالات اليوم');
+        await renderScreen();
+        await openLabOrderDetails(details.order.id);
+      } catch (err) {
+        toast(`تعذر حفظ حالة التحاليل: ${String(err)}`, 'error');
+      }
+    };
+
+    bindLabOrderActions();
+
     document.querySelector<HTMLButtonElement>('#clearLabSearch')!.onclick = () => {
       input.value = '';
       applySearch();

@@ -2203,3 +2203,86 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
   margin-top:11px;padding:8px 10px;border:1px solid #dfe9ef;border-radius:9px;
   background:#f5f9fb;color:#667a8f;font-size:9px;line-height:1.6
 }
+
+/* V6.2 lab orders, payments and accounting */
+.lab-payment-panel{
+  margin:10px 0;
+  padding:10px;
+  border:1px solid #dce7ee;
+  border-radius:11px;
+  background:#f8fbfd;
+}
+.lab-payment-grid{
+  display:grid;
+  grid-template-columns:repeat(5,minmax(110px,1fr));
+  gap:8px;
+  align-items:end;
+}
+.lab-payment-grid label{
+  display:grid;
+  gap:4px;
+  color:#66788d;
+  font-size:9px;
+}
+.lab-payment-grid input,.lab-payment-grid select{
+  min-height:34px;
+  padding:6px 8px;
+  font-size:10px;
+}
+.lab-payment-money{
+  min-height:34px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid #dbe5eb;
+  border-radius:8px;
+  background:#fff;
+  font-weight:800;
+  color:#173b59;
+  font-size:11px;
+}
+.lab-payment-money.remaining{color:#9d3c2f;background:#fff8f7}
+.lab-finish-actions{
+  display:flex;
+  justify-content:flex-start;
+  gap:8px;
+  margin-top:10px;
+}
+.lab-finish-actions .btn{width:auto;min-width:0}
+.lab-order-history{margin-top:10px;border-top:1px solid #e7edf1;padding-top:8px}
+.lab-order-history-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
+.lab-order-history-head strong{font-size:11px;color:#173b59}.lab-order-history-head span{font-size:9px;color:#8291a2}
+.lab-order-history-list{display:grid;gap:5px;max-height:150px;overflow:auto}
+.lab-order-history-row{display:grid;grid-template-columns:1fr auto auto auto;gap:7px;align-items:center;padding:6px 8px;border:1px solid #e6edf2;border-radius:8px;background:#fff}
+.lab-order-history-row strong{font-size:9px}.lab-order-history-row span{font-size:8px;color:#77879a}
+.lab-order-history-row .btn{padding:5px 8px;font-size:8px}
+.lab-payment-status{display:inline-flex;align-items:center;justify-content:center;padding:4px 7px;border-radius:999px;font-size:8px;font-weight:800;background:#e8f6ef;color:#187054}
+.lab-payment-status.due{background:#fff0ec;color:#a44835}
+.lab-order-details-modal{width:min(850px,92vw)}
+.lab-order-meta{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px}
+.lab-order-meta>span{padding:5px 8px;border-radius:8px;background:#f1f5f8;color:#617489;font-size:9px}
+.lab-order-item-list{display:grid;gap:5px;max-height:320px;overflow:auto;border:1px solid #e4ebf0;border-radius:9px;padding:7px}
+.lab-order-item-row{display:flex;justify-content:space-between;gap:10px;padding:6px 7px;border-bottom:1px solid #edf1f4;font-size:10px}
+.lab-order-item-row:last-child{border-bottom:0}
+.lab-order-money-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:9px}
+.lab-order-money-grid>div,.lab-receipt-money>div{padding:8px;border-radius:8px;background:#f4f8fa}
+.lab-order-money-grid span,.lab-order-money-grid strong,.lab-receipt-money span,.lab-receipt-money strong{display:block}
+.lab-order-money-grid span,.lab-receipt-money span{font-size:8px;color:#75869a}
+.lab-order-money-grid strong,.lab-receipt-money strong{font-size:12px;margin-top:3px;color:#173b59}
+.lab-order-money-grid .remaining,.lab-receipt-money .remaining{background:#fff2ef}
+.lab-order-money-grid .remaining strong,.lab-receipt-money .remaining strong{color:#a34535}
+.lab-receipt-money{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:12px}
+.export-patient-summary{display:grid;grid-template-columns:2fr 1.2fr 1fr;gap:8px;margin-bottom:10px}
+.export-patient-summary>div{padding:8px;border:1px solid #e3e9ee;border-radius:8px}
+.export-patient-summary span,.export-patient-summary strong{display:block}
+.export-patient-summary span{font-size:8px;color:#78889b}.export-patient-summary strong{margin-top:3px}
+.today-case-section-head{display:flex;justify-content:space-between;align-items:center;margin:14px 0 7px}
+.today-case-section-head h3{margin:0;font-size:13px;color:#173b59}.today-case-section-head span{font-size:9px;color:#7b899a}
+.today-case-section-head.labs{margin-top:18px}
+.today-summary-grid-v62{grid-template-columns:repeat(5,minmax(130px,1fr))}
+.lab-orders-table .icon-action{width:auto;min-width:28px;padding:0 6px;font-size:8px}
+@media(max-width:1200px){
+  .lab-payment-grid{grid-template-columns:repeat(3,1fr)}
+  .lab-order-money-grid,.lab-receipt-money{grid-template-columns:repeat(3,1fr)}
+  .today-summary-grid-v62{grid-template-columns:repeat(3,1fr)}
+}
