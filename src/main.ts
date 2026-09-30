@@ -158,7 +158,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.3.1'
+  version: '6.3.2'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -1311,7 +1311,7 @@ async function renderDashboard() {
       </div>
     </section>
 
-    <div class="dashboard-grid">
+    <div class="dashboard-grid dashboard-grid-v632">
       <section class="card">
         <div class="card-head">
           <div>
@@ -1332,21 +1332,12 @@ async function renderDashboard() {
           `).join('') : `<div class="empty-block">لا توجد كشوفات أو استشارات مسجلة اليوم</div>`}
         </div>
       </section>
-
-      <section class="quick-card">
-        <h2>إجراءات سريعة</h2>
-        <button class="quick" id="quickNew">＋ <span><b>تسجيل حالة كشف</b><small>بيانات المريض ثم الزيارة</small></span></button>
-        <button class="quick" id="quickToday">◷ <span><b>حالات اليوم</b><small>كل تسجيلات اليوم في شاشة واحدة</small></span></button>
-        <button class="quick" id="quickBackup">⟳ <span><b>نسخة احتياطية</b><small>حفظ نسخة من قاعدة البيانات الآن</small></span></button>
-      </section>
     </div>
   `, 'لوحة التحكم', 'تسجيلات اليوم فقط بدون إجماليات تراكمية');
 
   ensureCaseContextMenu();
 
   document.querySelector<HTMLButtonElement>('#goTodayBtn')!.onclick = () => navigate('today');
-  document.querySelector<HTMLButtonElement>('#quickNew')!.onclick = () => openCaseModal();
-  document.querySelector<HTMLButtonElement>('#quickToday')!.onclick = () => navigate('today');
 
   const openDashboardTarget = (target: string) => {
     if (target === 'today') navigate('today');
@@ -1364,10 +1355,6 @@ async function renderDashboard() {
     };
   });
 
-  document.querySelector<HTMLButtonElement>('#quickBackup')!.onclick = async () => {
-    const item = await invoke<BackupItem>('create_backup');
-    toast(`تم إنشاء النسخة: ${item.name}`);
-  };
 }
 
 async function renderPatients(archived: boolean) {

@@ -2408,3 +2408,8 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
     grid-template-columns:repeat(3,minmax(170px,1fr));
   }
 }
+
+/* V6.3.2 remove redundant quick actions from dashboard */
+.dashboard-grid-v632{
+  grid-template-columns:minmax(0,1fr);
+}
