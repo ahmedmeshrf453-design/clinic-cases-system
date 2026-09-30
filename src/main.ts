@@ -158,11 +158,12 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.3.2'
+  version: '6.3.3'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
 let sidebarPatientsTotal = 0;
+let screenHistory: Screen[] = [];
 
 function esc(v: unknown) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({
@@ -1014,7 +1015,9 @@ function shell(content: string, title: string, subtitle: string) {
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
-          <div class="brand-mark">AK</div>
+          <div class="brand-mark">
+            <img src="/sidebar-clinic-logo.jpg" alt="لوجو عيادات العقاد التخصصية">
+          </div>
           <div>
             <strong>نظام الحالات</strong>
             <small>عيادات العقاد التخصصية</small>
@@ -1073,9 +1076,17 @@ function shell(content: string, title: string, subtitle: string) {
         <div class="clinic-divider"></div>
 
         <header class="topbar page-topbar">
-          <div>
-            <h1>${title}</h1>
-            <p>${subtitle}</p>
+          <div class="page-title-with-back">
+            ${screen !== 'dashboard' ? `
+              <button class="page-back-btn" id="pageBackBtn" type="button" title="رجوع">
+                <span class="back-arrow-glyph">←</span>
+                <span>رجوع</span>
+              </button>
+            ` : ''}
+            <div>
+              <h1>${title}</h1>
+              <p>${subtitle}</p>
+            </div>
           </div>
           <div class="top-actions">
             <button class="btn primary" id="globalNewCase">＋ تسجيل حالة</button>
@@ -1095,6 +1106,9 @@ function shell(content: string, title: string, subtitle: string) {
   });
 
   document.querySelector<HTMLButtonElement>('#globalNewCase')!.onclick = () => openCaseModal();
+
+  const pageBackBtn = document.querySelector<HTMLButtonElement>('#pageBackBtn');
+  if (pageBackBtn) pageBackBtn.onclick = () => goBackScreen();
 
   window.ononline = updateConnectionStatus;
   window.onoffline = updateConnectionStatus;
@@ -1189,9 +1203,77 @@ function toast(message: string, type: 'ok'|'error'='ok') {
   setTimeout(() => el.remove(), 2800);
 }
 
-async function navigate(next: Screen) {
+async function navigate(next: Screen, remember = true) {
+  if (next === screen) {
+    await renderScreen();
+    return;
+  }
+  if (remember) screenHistory.push(screen);
   screen = next;
   await renderScreen();
+}
+
+async function goBackScreen() {
+  const previous = screenHistory.pop() || 'dashboard';
+  screen = previous;
+  await renderScreen();
+}
+
+function ensureModalBackArrow() {
+  const root = document.querySelector<HTMLDivElement>('#modalRoot');
+  if (!root || !root.children.length) return;
+
+  const head = root.querySelector<HTMLElement>('.modal-head');
+  if (!head || head.querySelector('.modal-back-arrow')) return;
+
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'modal-back-arrow';
+  back.title = 'رجوع';
+  back.setAttribute('aria-label', 'رجوع');
+  back.textContent = '←';
+
+  back.onclick = async () => {
+    const patientBack = root.querySelector<HTMLButtonElement>('#backToPatientProfile');
+    if (patientBack) {
+      patientBack.click();
+      return;
+    }
+
+    const patientContext = root.querySelector<HTMLElement>('[data-back-patient-id]');
+    const patientId = patientContext?.dataset.backPatientId || '';
+    if (patientId) {
+      root.innerHTML = '';
+      await openPatient(patientId);
+      return;
+    }
+
+    const preferred = root.querySelector<HTMLButtonElement>(
+      '#cancelVisit, #cancelEditVisit, #cancelEdit, #cancelDoctor, #cancelCase, #cancelLabPatientRegister, #cancelNursingPatientRegister, #labOrderCloseBottom, #nursingOrderCloseBottom'
+    );
+    if (preferred) {
+      preferred.click();
+      return;
+    }
+
+    const close = head.querySelector<HTMLButtonElement>('.modal-close');
+    if (close) close.click();
+    else root.innerHTML = '';
+  };
+
+  head.prepend(back);
+}
+
+const modalBackObserver = new MutationObserver(() => {
+  queueMicrotask(ensureModalBackArrow);
+});
+
+if (document.body) {
+  modalBackObserver.observe(document.body, { childList: true, subtree: true });
+} else {
+  window.addEventListener('DOMContentLoaded', () => {
+    modalBackObserver.observe(document.body, { childList: true, subtree: true });
+  }, { once: true });
 }
 
 async function renderScreen() {
@@ -3272,7 +3354,7 @@ async function openPatientRegistrationModal() {
 async function openVisitModal(patient: Patient) {
   const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
   root.innerHTML = `
-    <div class="modal-backdrop">
+    <div class="modal-backdrop" data-back-patient-id="${esc(patient.id)}">
       <section class="modal form-modal">
         <div class="modal-head">
           <div>
@@ -3485,7 +3567,7 @@ async function openEditPatient(id: string) {
   const p = d.patient;
   const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
   root.innerHTML = `
-    <div class="modal-backdrop"><section class="modal">
+    <div class="modal-backdrop" data-back-patient-id="${esc(id)}"><section class="modal">
       <div class="modal-head"><div><h2>تعديل بيانات المريض</h2><p>لا يؤثر على سجل الزيارات السابق</p></div><button class="modal-close" id="closeEdit">×</button></div>
       <form id="editPatientForm">
         <div class="form-grid">
