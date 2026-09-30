@@ -158,7 +158,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.3.3'
+  version: '6.4.0'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -330,6 +330,7 @@ async function openNursingOrderDetails(orderId: string) {
         </div>
 
         <div class="form-actions">
+          <button class="btn ghost" id="nursingOrderPatient">👤 ملف المريض</button>
           <button class="btn ghost" id="nursingOrderPng">تنزيل صورة</button>
           <button class="btn primary" id="nursingOrderPdf">PDF للطباعة</button>
           <button class="btn ghost" id="nursingOrderCloseBottom">إغلاق</button>
@@ -342,6 +343,9 @@ async function openNursingOrderDetails(orderId: string) {
   document.querySelector<HTMLButtonElement>('#nursingOrderCloseBottom')!.onclick = close;
   document.querySelector<HTMLDivElement>('#nursingOrderBackdrop')!.onclick = e => {
     if (e.target === e.currentTarget) close();
+  };
+  document.querySelector<HTMLButtonElement>('#nursingOrderPatient')!.onclick = async () => {
+    close(); await openPatient(order.patientId);
   };
   document.querySelector<HTMLButtonElement>('#nursingOrderPng')!.onclick = () => exportNursingOrder(order, 'png');
   document.querySelector<HTMLButtonElement>('#nursingOrderPdf')!.onclick = () => exportNursingOrder(order, 'pdf');
@@ -499,6 +503,7 @@ async function openLabOrderDetails(orderId: string) {
         </div>
 
         <div class="form-actions">
+          <button class="btn ghost" id="labOrderPatient">👤 ملف المريض</button>
           <button class="btn ghost" id="labOrderPng">تنزيل صورة</button>
           <button class="btn primary" id="labOrderPdf">PDF للطباعة</button>
           <button class="btn ghost" id="labOrderCloseBottom">إغلاق</button>
@@ -511,6 +516,9 @@ async function openLabOrderDetails(orderId: string) {
   document.querySelector<HTMLButtonElement>('#labOrderCloseBottom')!.onclick = close;
   document.querySelector<HTMLDivElement>('#labOrderBackdrop')!.onclick = e => {
     if (e.target === e.currentTarget) close();
+  };
+  document.querySelector<HTMLButtonElement>('#labOrderPatient')!.onclick = async () => {
+    close(); await openPatient(o.patientId);
   };
   document.querySelector<HTMLButtonElement>('#labOrderPng')!.onclick = () => exportLabOrder(details, 'png');
   document.querySelector<HTMLButtonElement>('#labOrderPdf')!.onclick = () => exportLabOrder(details, 'pdf');
@@ -1010,6 +1018,28 @@ async function loadSidebarPatientsTotal() {
   sidebarPatientsTotal = stats.totalPatients;
 }
 
+function serviceDockHtml() {
+  const nav = (target: Screen, icon: string, label: string) =>
+    `<button class="service-dock-btn ${screen === target ? 'active' : ''}" data-service-screen="${target}">${icon} ${label}</button>`;
+
+  return `
+    <section class="service-dock" aria-label="روابط الخدمات">
+      <button class="service-dock-btn primary-service" data-service-action="visit">＋ كشف / استشارة</button>
+      <button class="service-dock-btn primary-service" data-service-action="lab-case">🧪 تسجيل تحاليل</button>
+      <button class="service-dock-btn primary-service" data-service-action="nursing-case">✚ تسجيل تمريض</button>
+      ${nav('dashboard','⌂','الرئيسية')}
+      ${nav('patients','👥','المرضى')}
+      ${nav('today','◷','حالات اليوم')}
+      ${nav('doctors','⚕','الأطباء')}
+      ${nav('labs','🧪','أسعار التحاليل')}
+      ${nav('nursing','✚','خدمات التمريض')}
+      ${nav('reports','▤','التقارير')}
+      ${nav('archive','▣','الأرشيف')}
+      ${nav('backups','⟳','النسخ')}
+      ${nav('settings','⚙','الإعدادات')}
+    </section>`;
+}
+
 function shell(content: string, title: string, subtitle: string) {
   app.innerHTML = `
     <div class="app-shell">
@@ -1076,22 +1106,21 @@ function shell(content: string, title: string, subtitle: string) {
         <div class="clinic-divider"></div>
 
         <header class="topbar page-topbar">
-          <div class="page-title-with-back">
+          <div>
+            <h1>${title}</h1>
+            <p>${subtitle}</p>
+          </div>
+          <div class="top-actions">
             ${screen !== 'dashboard' ? `
               <button class="page-back-btn" id="pageBackBtn" type="button" title="رجوع">
                 <span class="back-arrow-glyph">←</span>
                 <span>رجوع</span>
               </button>
             ` : ''}
-            <div>
-              <h1>${title}</h1>
-              <p>${subtitle}</p>
-            </div>
-          </div>
-          <div class="top-actions">
-            <button class="btn primary" id="globalNewCase">＋ تسجيل حالة</button>
           </div>
         </header>
+
+        ${serviceDockHtml()}
 
         <section id="screenContent">${content}</section>
       </main>
@@ -1105,10 +1134,21 @@ function shell(content: string, title: string, subtitle: string) {
     btn.onclick = () => navigate(btn.dataset.screen as Screen);
   });
 
-  document.querySelector<HTMLButtonElement>('#globalNewCase')!.onclick = () => openCaseModal();
-
   const pageBackBtn = document.querySelector<HTMLButtonElement>('#pageBackBtn');
   if (pageBackBtn) pageBackBtn.onclick = () => goBackScreen();
+
+  document.querySelectorAll<HTMLButtonElement>('[data-service-screen]').forEach(button => {
+    button.onclick = () => navigate(button.dataset.serviceScreen as Screen);
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-service-action]').forEach(button => {
+    button.onclick = () => {
+      const action = button.dataset.serviceAction || '';
+      if (action === 'visit') openCaseModal();
+      else if (action === 'lab-case') openLabPatientRegistrationModal();
+      else if (action === 'nursing-case') openNursingPatientRegistrationModal();
+    };
+  });
 
   window.ononline = updateConnectionStatus;
   window.onoffline = updateConnectionStatus;
@@ -1231,7 +1271,7 @@ function ensureModalBackArrow() {
   back.className = 'modal-back-arrow';
   back.title = 'رجوع';
   back.setAttribute('aria-label', 'رجوع');
-  back.textContent = '←';
+  back.textContent = '← رجوع';
 
   back.onclick = async () => {
     const patientBack = root.querySelector<HTMLButtonElement>('#backToPatientProfile');
@@ -1307,8 +1347,15 @@ function patientTable(rows: Patient[], archived: boolean) {
           </button>
           <div class="patient-file-actions">
             ${archived
-              ? `<button class="icon-action restore" data-restore="${esc(p.id)}" title="استعادة">↶</button>`
-              : `<button class="icon-action edit" data-edit="${esc(p.id)}" title="تعديل">✎</button>`
+              ? `
+                <button class="icon-action restore" data-restore="${esc(p.id)}" title="استعادة">↶</button>
+                <button class="icon-action delete-patient-card" data-delete-patient-card="${esc(p.id)}" data-delete-patient-name="${esc(p.fullName || 'المريض')}" title="حذف المريض نهائيًا">🗑</button>
+              `
+              : `
+                <button class="icon-action edit" data-edit="${esc(p.id)}" title="تعديل">✎</button>
+                <button class="icon-action" data-archive="${esc(p.id)}" title="أرشفة">▣</button>
+                <button class="icon-action delete-patient-card" data-delete-patient-card="${esc(p.id)}" data-delete-patient-name="${esc(p.fullName || 'المريض')}" title="حذف المريض نهائيًا">🗑</button>
+              `
             }
           </div>
         </article>
@@ -1319,6 +1366,21 @@ function patientTable(rows: Patient[], archived: boolean) {
 function bindPatientActions() {
   document.querySelectorAll<HTMLButtonElement>('.patient-open').forEach(b => b.onclick = () => openPatient(b.dataset.id!));
   document.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach(b => b.onclick = () => openEditPatient(b.dataset.edit!));
+  document.querySelectorAll<HTMLButtonElement>('[data-delete-patient-card]').forEach(b => b.onclick = async event => {
+    event.stopPropagation();
+    const id = b.dataset.deletePatientCard || '';
+    const name = b.dataset.deletePatientName || 'المريض';
+    if (!id) return;
+    if (!confirm(`حذف ملف ${name} نهائيًا بكل بياناته؟`)) return;
+    if (!confirm('تأكيد أخير: سيتم حذف الزيارات والتحاليل وخدمات التمريض الخاصة بالمريض.')) return;
+    try {
+      await invoke('delete_patient', { id });
+      toast('تم حذف ملف المريض نهائيًا');
+      await renderScreen();
+    } catch (err) {
+      toast(`تعذر حذف المريض: ${String(err)}`, 'error');
+    }
+  });
   document.querySelectorAll<HTMLButtonElement>('[data-archive]').forEach(b => b.onclick = async () => {
     if (!confirm('أرشفة ملف المريض؟ لن يتم حذف أي بيانات.')) return;
     await invoke('set_patient_archived', { input: { id: b.dataset.archive, archived: true } });
@@ -2747,11 +2809,13 @@ function selectedPatientLabsHtml(rows: PatientLab[]) {
         <strong>تحاليل العميل</strong>
         <span>${rows.length} تحليل</span>
       </div>
+      <button class="btn primary small lab-add-another" type="button" data-add-another-lab>＋ إضافة تحليل آخر</button>
       <div class="patient-labs-total">
         <span>الإجمالي</span>
         <strong class="ltr">${total.toFixed(2)} ج.م</strong>
       </div>
     </div>
+    <div class="lab-multi-hint">أضف كل التحاليل المطلوبة لنفس الحالة قبل الضغط على حفظ وإنهاء.</div>
 
     <div class="patient-labs-selected-list">
       ${rows.length ? rows.map(item => `
@@ -2801,6 +2865,13 @@ async function openPatientFeaturePanel(
               </div>
             </div>
             <button class="modal-close" id="closePatientFeature">×</button>
+          </div>
+
+          <div class="patient-context-links">
+            <button class="btn ghost small" id="labCtxPatient">👤 ملف المريض</button>
+            <button class="btn ghost small" id="labCtxVisit">＋ كشف / استشارة</button>
+            <button class="btn ghost small" id="labCtxNursing">✚ خدمة تمريض</button>
+            <button class="btn ghost small" id="labCtxToday">◷ حالات اليوم</button>
           </div>
 
           <section class="patient-labs-selected-panel">
@@ -2889,6 +2960,11 @@ async function openPatientFeaturePanel(
       </div>`;
 
     const close = () => root.innerHTML = '';
+
+    const labSearchShell = document.querySelector<HTMLElement>('.lab-search-shell')!;
+    const selectedPanel = document.querySelector<HTMLElement>('.patient-labs-selected-panel')!;
+    if (labSearchShell && selectedPanel) selectedPanel.insertAdjacentElement('afterend', labSearchShell);
+
     const input = document.querySelector<HTMLInputElement>('#labSearchInput')!;
     const resultHost = document.querySelector<HTMLDivElement>('#labResults')!;
     const countHost = document.querySelector<HTMLElement>('#labResultCount')!;
@@ -2941,6 +3017,12 @@ async function openPatientFeaturePanel(
     const renderSelected = () => {
       selectedHost.innerHTML = selectedPatientLabsHtml(selectedLabs);
       bindDeleteButtons();
+      selectedHost.querySelectorAll<HTMLButtonElement>('[data-add-another-lab]').forEach(button => {
+        button.onclick = () => {
+          labSearchShell.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          setTimeout(() => input.focus(), 220);
+        };
+      });
       paymentPreview();
     };
 
@@ -3036,6 +3118,19 @@ async function openPatientFeaturePanel(
       close();
       await openPatient(patientId);
     };
+    document.querySelector<HTMLButtonElement>('#labCtxPatient')!.onclick = async () => {
+      close(); await openPatient(patientId);
+    };
+    document.querySelector<HTMLButtonElement>('#labCtxVisit')!.onclick = () => {
+      if (p.blacklisted && !confirm('هذا المريض موجود في Black List. هل تريد تسجيل زيارة رغم ذلك؟')) return;
+      close(); openVisitModal(p);
+    };
+    document.querySelector<HTMLButtonElement>('#labCtxNursing')!.onclick = () => {
+      close(); openPatientFeaturePanel(patientId, 'nursing');
+    };
+    document.querySelector<HTMLButtonElement>('#labCtxToday')!.onclick = async () => {
+      close(); await navigate('today');
+    };
 
     input.oninput = applySearch;
     renderSelected();
@@ -3058,6 +3153,13 @@ const nursingHistory = await invoke<NursingOrder[]>('list_patient_nursing_orders
             </div>
           </div>
           <button class="modal-close" id="closePatientFeature">×</button>
+        </div>
+
+        <div class="patient-context-links">
+          <button class="btn ghost small" id="nursingCtxPatient">👤 ملف المريض</button>
+          <button class="btn ghost small" id="nursingCtxVisit">＋ كشف / استشارة</button>
+          <button class="btn ghost small" id="nursingCtxLabs">🧪 تحاليل</button>
+          <button class="btn ghost small" id="nursingCtxToday">◷ حالات اليوم</button>
         </div>
 
         <form id="nursingServiceForm">
@@ -3133,6 +3235,19 @@ const nursingHistory = await invoke<NursingOrder[]>('list_patient_nursing_orders
   document.querySelector<HTMLButtonElement>('#backToPatientProfile')!.onclick = async () => {
     close();
     await openPatient(patientId);
+  };
+  document.querySelector<HTMLButtonElement>('#nursingCtxPatient')!.onclick = async () => {
+    close(); await openPatient(patientId);
+  };
+  document.querySelector<HTMLButtonElement>('#nursingCtxVisit')!.onclick = () => {
+    if (p.blacklisted && !confirm('هذا المريض موجود في Black List. هل تريد تسجيل زيارة رغم ذلك؟')) return;
+    close(); openVisitModal(p);
+  };
+  document.querySelector<HTMLButtonElement>('#nursingCtxLabs')!.onclick = () => {
+    close(); openPatientFeaturePanel(patientId, 'labs');
+  };
+  document.querySelector<HTMLButtonElement>('#nursingCtxToday')!.onclick = async () => {
+    close(); await navigate('today');
   };
 
   document.querySelector<HTMLFormElement>('#nursingServiceForm')!.onsubmit = async e => {
@@ -3219,7 +3334,13 @@ async function openPatient(id: string) {
           <button class="btn ${p.blacklisted ? 'ghost' : 'danger-outline'} small" id="toggleBlacklist">
             ${p.blacklisted ? 'إزالة Black List' : '⛔ Black List'}
           </button>
-          <button class="btn danger-outline small" id="deletePatient">🗑 حذف</button>
+          ${p.archived
+            ? '<button class="btn ghost small archive-action" id="archivePatientFromDetails">↶ استعادة</button>'
+            : '<button class="btn ghost small archive-action" id="archivePatientFromDetails">▣ أرشفة</button>'
+          }
+          <button class="btn ghost small patient-nav-action" id="patientGoToday">◷ حالات اليوم</button>
+          <button class="btn ghost small patient-nav-action" id="patientGoReports">▤ التقارير</button>
+          <button class="btn danger-outline small" id="deletePatient">🗑 حذف المريض نهائيًا</button>
         </div>
 
         <div class="modal-toolbar patient-visits-heading">
@@ -3265,6 +3386,21 @@ async function openPatient(id: string) {
     toast(!p.blacklisted ? 'تمت إضافة المريض إلى Black List' : 'تمت إزالة المريض من Black List');
     close();
     await renderScreen();
+  };
+
+  document.querySelector<HTMLButtonElement>('#archivePatientFromDetails')!.onclick = async () => {
+    await invoke('set_patient_archived', { input: { id, archived: !p.archived } });
+    close();
+    toast(p.archived ? 'تمت استعادة ملف المريض' : 'تم نقل ملف المريض إلى الأرشيف');
+    await renderScreen();
+  };
+
+  document.querySelector<HTMLButtonElement>('#patientGoToday')!.onclick = async () => {
+    close(); await navigate('today');
+  };
+
+  document.querySelector<HTMLButtonElement>('#patientGoReports')!.onclick = async () => {
+    close(); await navigate('reports');
   };
 
   document.querySelector<HTMLButtonElement>('#deletePatient')!.onclick = async () => {

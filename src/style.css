@@ -2502,3 +2502,42 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
     padding:0;
   }
 }
+
+/* V6.4 integrated clinic workflow */
+.service-dock{display:flex;align-items:center;gap:7px;overflow-x:auto;overflow-y:hidden;padding:8px 9px;margin:-5px 0 15px;border:1px solid #dce6ed;border-radius:12px;background:rgba(255,255,255,.94);box-shadow:0 5px 16px rgba(15,48,75,.05);scrollbar-width:thin}
+.service-dock-btn{flex:0 0 auto;min-height:35px;padding:7px 10px;border:1px solid #d9e4eb;border-radius:9px;background:linear-gradient(180deg,#fff,#f0f5f8);color:#28445e;font-size:9px;font-weight:800;cursor:pointer;white-space:nowrap;box-shadow:inset 0 1px 0 #fff,0 3px 8px rgba(20,54,82,.06)}
+.service-dock-btn:hover{transform:translateY(-1px);border-color:#b8ccda}
+.service-dock-btn.primary-service{background:linear-gradient(180deg,#123f6b,#0a2949);border-color:#0a2949;color:#fff}
+.service-dock-btn.active{background:#e2f3f2;border-color:#82c8c1;color:#0c655f}
+
+.page-topbar .top-actions{display:flex;align-items:center;gap:9px}
+.page-back-btn{display:inline-flex!important;visibility:visible!important;opacity:1!important;min-width:92px;height:40px;padding:0 13px;align-items:center;justify-content:center;gap:7px;border:1px solid #09213f!important;border-radius:10px;background:#0a2342!important;color:#fff!important;font-size:12px;font-weight:900;box-shadow:0 6px 15px rgba(10,35,66,.18)!important;position:relative;z-index:50}
+.page-back-btn:hover{background:#123d6a!important;transform:translateY(-1px)}
+.page-back-btn .back-arrow-glyph{font-size:20px;font-weight:900}
+.modal-head{position:relative;padding-left:0!important}
+.modal-head .modal-back-arrow{display:inline-flex!important;visibility:visible!important;opacity:1!important;position:static!important;order:0!important;width:auto!important;min-width:78px!important;height:34px!important;padding:0 10px!important;align-items:center!important;justify-content:center!important;border:1px solid #09213f!important;border-radius:9px!important;background:#0a2342!important;color:#fff!important;font-size:11px!important;font-weight:900!important;box-shadow:0 5px 13px rgba(10,35,66,.18)!important;flex:0 0 auto!important}
+
+.patient-file-actions{display:flex;gap:5px;align-items:center}
+.patient-file-actions .delete-patient-card{color:#b3261e;border-color:#efcaca;background:#fff6f6}
+.patient-file-actions .delete-patient-card:hover{background:#ffe9e9}
+#deletePatient{background:#fff0f0!important;color:#a91d1d!important;border:1px solid #e5aaaa!important;font-weight:900!important}
+
+.patient-labs-selected-head{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:8px}
+.patient-labs-selected-head .lab-add-another{width:auto!important;min-width:130px;padding:7px 10px;background:#0a2342;color:#fff;border-radius:9px;font-size:9px;font-weight:900}
+.lab-multi-hint{margin:7px 0 0;padding:7px 9px;border-radius:8px;background:#eef8f4;color:#22614e;font-size:9px;font-weight:700}
+.patient-labs-selected-list{max-height:200px;overflow:auto}
+.lab-search-shell{scroll-margin-top:14px}
+
+.patient-context-links{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px;margin:0 0 10px;border:1px solid #dfe8ee;border-radius:10px;background:#f8fbfc}
+.patient-context-links .btn{width:auto!important;min-width:0!important;padding:6px 9px!important;font-size:9px!important}
+.patient-profile-actions .patient-nav-action{background:#eef5f8;color:#26445f}
+.patient-profile-actions .archive-action{background:#fff8e8;color:#7b5c15;border:1px solid #e9d59f}
+.order-linked-actions{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 0;padding-top:9px;border-top:1px solid #e7edf1}
+.order-linked-actions .btn{width:auto;min-width:0}
+
+@media(max-width:950px){
+  .service-dock{padding:7px}
+  .service-dock-btn{font-size:8px;padding:6px 8px}
+  .patient-labs-selected-head{grid-template-columns:1fr auto}
+  .patient-labs-selected-head .lab-add-another{grid-column:1/-1}
+}
