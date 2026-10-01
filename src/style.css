@@ -2566,3 +2566,293 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
 .service-hub-btn.active .service-hub-icon{background:#ccebe7;color:#07574f}
 @media(max-width:1250px){.service-hub-group{grid-template-columns:1fr;gap:6px}.service-hub-group-title{display:flex;align-items:baseline;gap:8px}.service-hub-group-title small{margin-top:0}}
 @media(max-width:850px){.service-hub-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.service-hub-btn,.quick-buttons .service-hub-btn,.nav-buttons .service-hub-btn,.system-buttons .service-hub-btn{min-width:0;width:100%}}
+
+/* V6.5 permanent longitudinal patient file */
+.patient-full-file-modal{
+  width:min(1160px,95vw)!important;
+  max-height:92vh!important;
+}
+.patient-file-clinic-banner{
+  display:grid;
+  grid-template-columns:72px 1fr auto;
+  gap:12px;
+  align-items:center;
+  padding:10px 12px;
+  margin-bottom:10px;
+  border:1px solid #d9e6ea;
+  border-radius:12px;
+  background:linear-gradient(135deg,#f9fdfd,#eef7f8);
+}
+.patient-file-clinic-banner img{
+  width:72px;
+  height:72px;
+  object-fit:cover;
+  border-radius:12px;
+  background:#fff;
+}
+.patient-file-clinic-copy strong,
+.patient-file-clinic-copy span,
+.patient-file-clinic-copy small{
+  display:block;
+}
+.patient-file-clinic-copy strong{
+  font-size:15px;
+  color:#0b304d;
+}
+.patient-file-clinic-copy span{
+  margin-top:4px;
+  color:#536b7d;
+  font-size:9px;
+}
+.patient-file-clinic-copy small{
+  margin-top:4px;
+  color:#718495;
+  font-size:8.5px;
+}
+.patient-file-number{
+  min-width:130px;
+  padding:8px 10px;
+  border:1px solid #cbdde4;
+  border-radius:10px;
+  background:#fff;
+  text-align:center;
+}
+.patient-file-number span,
+.patient-file-number strong{
+  display:block;
+}
+.patient-file-number span{
+  color:#7a8d9b;
+  font-size:8px;
+}
+.patient-file-number strong{
+  margin-top:4px;
+  font-size:15px;
+  color:#0a6070;
+}
+
+.patient-file-meta-strip{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:7px;
+  margin-bottom:9px;
+}
+.patient-file-meta-strip>div{
+  padding:8px 10px;
+  border:1px solid #e0e8ed;
+  border-radius:9px;
+  background:#f9fbfc;
+}
+.patient-file-meta-strip span,
+.patient-file-meta-strip strong{
+  display:block;
+}
+.patient-file-meta-strip span{
+  color:#8492a0;
+  font-size:8px;
+}
+.patient-file-meta-strip strong{
+  margin-top:3px;
+  color:#223d55;
+  font-size:10px;
+}
+
+.patient-file-summary{
+  grid-template-columns:90px 90px minmax(220px,1fr) 105px 90px 90px!important;
+  margin-bottom:10px!important;
+}
+.patient-feature-card.visit .patient-feature-card-icon{
+  background:linear-gradient(180deg,#eef8ff,#d8ecfa);
+}
+.patient-file-actions-bar{
+  margin-bottom:10px;
+}
+
+.patient-full-record-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin:6px 0;
+  padding:0 2px;
+}
+.patient-full-record-head h3{
+  margin:0;
+  font-size:15px;
+  color:#173650;
+}
+.patient-full-record-head small{
+  display:block;
+  margin-top:3px;
+  color:#82909f;
+  font-size:8.5px;
+}
+.patient-full-record-head>span{
+  padding:5px 8px;
+  border-radius:999px;
+  background:#eef5f7;
+  color:#3e6077;
+  font-size:8px;
+  font-weight:800;
+}
+
+.patient-full-record-wrap{
+  max-height:360px;
+  overflow:auto;
+  padding:2px 3px 5px;
+}
+.patient-file-timeline{
+  position:relative;
+  display:grid;
+  gap:7px;
+}
+.patient-file-event{
+  display:grid;
+  grid-template-columns:38px minmax(0,1fr) auto;
+  align-items:center;
+  gap:9px;
+  padding:9px 10px;
+  border:1px solid #e0e8ed;
+  border-radius:10px;
+  background:#fff;
+}
+.patient-file-event.created{
+  background:#f4faf8;
+  border-color:#cfe6dd;
+}
+.patient-file-event.visit{
+  border-right:3px solid #4c8eb9;
+}
+.patient-file-event.lab{
+  border-right:3px solid #1ba3ae;
+}
+.patient-file-event.nursing{
+  border-right:3px solid #4aa27b;
+}
+.patient-file-event-icon{
+  width:36px;
+  height:36px;
+  display:grid;
+  place-items:center;
+  border-radius:10px;
+  background:#eef4f7;
+  font-size:17px;
+}
+.patient-file-event-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.patient-file-event-head strong{
+  color:#173650;
+  font-size:10.5px;
+}
+.patient-file-event-head span{
+  color:#7e8d9c;
+  font-size:7.5px;
+  white-space:nowrap;
+}
+.patient-file-event-main>small{
+  display:block;
+  margin-top:2px;
+  color:#687d8f;
+  font-size:8px;
+}
+.patient-file-event-main>p{
+  margin:3px 0 0;
+  color:#83919e;
+  font-size:8px;
+}
+.patient-file-event-money{
+  display:block;
+  margin-top:4px;
+  color:#365e55;
+  font-size:8.5px;
+}
+.patient-file-open-event{
+  width:auto!important;
+  min-width:48px!important;
+}
+
+.patient-file-create-note{
+  margin:10px 0 0;
+  padding:9px 11px;
+  border:1px solid #cfe3dc;
+  border-radius:9px;
+  background:#f0f8f5;
+  color:#416c5e;
+  font-size:9px;
+}
+
+.patient-print-address{
+  margin-top:4px;
+  color:#607888;
+  font-size:11px;
+  max-width:640px;
+}
+.patient-print-footer{
+  flex-wrap:wrap;
+}
+.patient-print-footer-address{
+  width:100%;
+  margin-top:6px;
+  text-align:center;
+  color:#718595;
+  font-size:10px;
+}
+
+.patient-export-document .patient-file-timeline{
+  gap:5px;
+}
+.patient-export-document .patient-file-event{
+  break-inside:avoid;
+  grid-template-columns:34px minmax(0,1fr);
+}
+.patient-export-document .patient-file-event .patient-file-open-event{
+  display:none!important;
+}
+
+.patient-file-archive-badge{
+  display:inline-flex;
+  padding:3px 7px;
+  border-radius:999px;
+  background:#fff3d7;
+  color:#7a5b13;
+  font-size:8px;
+  font-weight:800;
+}
+
+@media(max-width:950px){
+  .patient-file-clinic-banner{
+    grid-template-columns:56px 1fr;
+  }
+  .patient-file-clinic-banner img{
+    width:56px;
+    height:56px;
+  }
+  .patient-file-number{
+    grid-column:1/-1;
+    width:max-content;
+  }
+  .patient-file-meta-strip{
+    grid-template-columns:1fr;
+  }
+  .patient-file-summary{
+    grid-template-columns:repeat(2,1fr)!important;
+  }
+  .patient-file-event{
+    grid-template-columns:34px minmax(0,1fr);
+  }
+  .patient-file-open-event{
+    grid-column:2;
+    justify-self:start;
+  }
+  .patient-file-event-head{
+    display:block;
+  }
+  .patient-file-event-head span{
+    display:block;
+    margin-top:2px;
+  }
+}

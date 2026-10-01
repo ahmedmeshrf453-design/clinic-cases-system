@@ -102,6 +102,163 @@ type LabOrderDetails = {
   items: LabOrderItem[];
 };
 
+type PatientFileSnapshot = {
+  details: PatientDetails;
+  labOrders: LabOrderDetails[];
+  nursingOrders: NursingOrder[];
+};
+
+function displaySavedDateTime(value: string) {
+  const raw = String(value || '').trim();
+  if (!raw) return '—';
+  const [datePart, timePart = ''] = raw.split(' ');
+  const time = timePart ? timePart.slice(0, 5) : '';
+  return `${displayDate(datePart)}${time ? ` • ${time}` : ''}`;
+}
+
+async function loadPatientFile(patientId: string): Promise<PatientFileSnapshot> {
+  const [details, labOrders, nursingOrders] = await Promise.all([
+    invoke<PatientDetails>('get_patient_details', { id: patientId }),
+    invoke<LabOrder[]>('list_patient_lab_orders', { patientId }),
+    invoke<NursingOrder[]>('list_patient_nursing_orders', { patientId })
+  ]);
+
+  const labDetails = await Promise.all(
+    labOrders.map(order => invoke<LabOrderDetails>('get_lab_order', { id: order.id }))
+  );
+
+  return {
+    details,
+    labOrders: labDetails,
+    nursingOrders
+  };
+}
+
+function patientFileTimelineHtml(file: PatientFileSnapshot, interactive = true) {
+  const p = file.details.patient;
+
+  const items: Array<{
+    kind: 'created' | 'visit' | 'lab' | 'nursing';
+    id: string;
+    savedAt: string;
+    serviceAt: string;
+    icon: string;
+    title: string;
+    subtitle: string;
+    detail: string;
+    money: string;
+  }> = [];
+
+  items.push({
+    kind: 'created',
+    id: p.id,
+    savedAt: p.createdAt,
+    serviceAt: p.createdAt,
+    icon: '📁',
+    title: 'إنشاء ملف المريض',
+    subtitle: 'تم حفظ بيانات المريض الأساسية',
+    detail: `رقم الملف: ${p.id.slice(0, 8).toUpperCase()}`,
+    money: ''
+  });
+
+  file.details.visits.forEach(v => {
+    const fee = moneyNumber(v.fee);
+    const clinicAmount = moneyNumber(v.clinicAmount);
+    const doctorAmount = moneyNumber(v.doctorAmount);
+    items.push({
+      kind: 'visit',
+      id: v.id,
+      savedAt: v.createdAt,
+      serviceAt: `${v.visitDate || ''} ${v.visitTime || ''}`.trim(),
+      icon: v.visitType === 'استشارة' ? '↻' : '🩺',
+      title: `${v.visitType || 'زيارة'}${v.doctor ? ` — ${v.doctor}` : ''}`,
+      subtitle: [v.specialty, `مصدر الحجز: ${v.bookingSource || 'عادي'}`].filter(Boolean).join(' • '),
+      detail: `تاريخ الخدمة: ${displayDate(v.visitDate)}${v.visitTime ? ` • ${v.visitTime}` : ''}`,
+      money: [
+        fee ? `الكشف ${fee.toFixed(2)} ج.م` : '',
+        clinicAmount ? `العيادات ${clinicAmount.toFixed(2)} ج.م` : '',
+        doctorAmount ? `الطبيب ${doctorAmount.toFixed(2)} ج.م` : ''
+      ].filter(Boolean).join(' • ')
+    });
+  });
+
+  file.labOrders.forEach(d => {
+    const o = d.order;
+    const names = d.items.map(item => item.testName).filter(Boolean);
+    items.push({
+      kind: 'lab',
+      id: o.id,
+      savedAt: o.createdAt,
+      serviceAt: `${o.orderDate || ''} ${o.orderTime || ''}`.trim(),
+      icon: '🧪',
+      title: `تحاليل — ${d.items.length} تحليل`,
+      subtitle: names.length ? names.join('، ') : 'حالة تحاليل',
+      detail: `تاريخ الخدمة: ${displayDate(o.orderDate)}${o.orderTime ? ` • ${o.orderTime}` : ''}`,
+      money: `الصافي ${moneyNumber(o.netTotal).toFixed(2)} ج.م • المدفوع ${moneyNumber(o.paidAmount).toFixed(2)} ج.م • المتبقي ${moneyNumber(o.remainingAmount).toFixed(2)} ج.م`
+    });
+  });
+
+  file.nursingOrders.forEach(o => {
+    items.push({
+      kind: 'nursing',
+      id: o.id,
+      savedAt: o.createdAt,
+      serviceAt: `${o.orderDate || ''} ${o.orderTime || ''}`.trim(),
+      icon: '✚',
+      title: `خدمة تمريض — ${o.serviceName || 'بدون اسم'}`,
+      subtitle: 'خدمة تمريض مسجلة بملف المريض',
+      detail: `تاريخ الخدمة: ${displayDate(o.orderDate)}${o.orderTime ? ` • ${o.orderTime}` : ''}`,
+      money: `${moneyNumber(o.price).toFixed(2)} ج.م`
+    });
+  });
+
+  items.sort((a, b) => (b.savedAt || b.serviceAt).localeCompare(a.savedAt || a.serviceAt));
+
+  return `
+    <div class="patient-file-timeline">
+      ${items.map(item => `
+        <article class="patient-file-event ${item.kind}">
+          <div class="patient-file-event-icon">${item.icon}</div>
+          <div class="patient-file-event-main">
+            <div class="patient-file-event-head">
+              <strong>${esc(item.title)}</strong>
+              <span>حفظ بالنظام: ${esc(displaySavedDateTime(item.savedAt))}</span>
+            </div>
+            <small>${esc(item.subtitle || '—')}</small>
+            <p>${esc(item.detail || '')}</p>
+            ${item.money ? `<b class="patient-file-event-money ltr">${esc(item.money)}</b>` : ''}
+          </div>
+          ${interactive && item.kind !== 'created' ? `
+            <button
+              class="btn ghost small patient-file-open-event"
+              data-patient-file-kind="${item.kind}"
+              data-patient-file-id="${esc(item.id)}"
+            >فتح</button>
+          ` : ''}
+        </article>
+      `).join('')}
+    </div>`;
+}
+
+function patientFileClinicHeaderHtml(p: Patient) {
+  return `
+    <section class="patient-file-clinic-banner">
+      <img src="/sidebar-clinic-logo.jpg" alt="لوجو عيادات العقاد التخصصية">
+      <div class="patient-file-clinic-copy">
+        <strong>عيادات العقاد التخصصية</strong>
+        <span>${esc(CLINIC_ADDRESS)}</span>
+        <small>
+          واتساب: <span class="ltr">${esc(appSettings.whatsappNumber)}</span>
+          • تليفون: <span class="ltr">${esc(appSettings.phoneNumber)}</span>
+        </small>
+      </div>
+      <div class="patient-file-number">
+        <span>رقم الملف</span>
+        <strong class="ltr">${esc(p.id.slice(0, 8).toUpperCase())}</strong>
+      </div>
+    </section>`;
+}
+
 type Doctor = {
   id: string;
   name: string;
@@ -158,8 +315,10 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.4.1'
+  version: '6.5.0'
 };
+const CLINIC_ADDRESS = '59 شارع فيصل الرئيسي - ناصية شارع الوفاء والأمل - أمام أسماك عروس البحر وعنتر الكبابجي - فيصل - الجيزة';
+
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
 let sidebarPatientsTotal = 0;
@@ -712,7 +871,10 @@ function patientExportSheet(title: string, subtitle: string, body: string) {
     <div class="export-document patient-export-document">
       <div class="patient-print-brand">
         <img src="/patient-print-logo.jpg" alt="لوجو عيادات العقاد التخصصية" />
-        <div class="patient-print-slogan">رعاية تليق بك</div>
+        <div>
+          <div class="patient-print-slogan">رعاية تليق بك</div>
+          <div class="patient-print-address">${esc(CLINIC_ADDRESS)}</div>
+        </div>
       </div>
 
       <div class="export-rule"></div>
@@ -733,6 +895,7 @@ function patientExportSheet(title: string, subtitle: string, body: string) {
           <span class="patient-print-footer-badge phone">☎</span>
           <strong class="ltr">${esc(appSettings.phoneNumber)}</strong>
         </div>
+        <div class="patient-print-footer-address">${esc(CLINIC_ADDRESS)}</div>
       </div>
     </div>`;
 }
@@ -827,7 +990,8 @@ async function captureAndSaveExport(html: string, baseName: string, format: Expo
   }
 }
 
-async function exportPatientFile(details: PatientDetails, format: ExportFormat) {
+async function exportPatientFile(file: PatientFileSnapshot, format: ExportFormat) {
+  const details = file.details;
   const p = details.patient;
   const qrPayload = buildPatientQrPayload(details);
   const qrDataUrl = await QRCode.toDataURL(qrPayload, {
@@ -839,6 +1003,11 @@ async function exportPatientFile(details: PatientDetails, format: ExportFormat) 
     }
   });
 
+  const totalActivities =
+    details.visits.length +
+    file.labOrders.length +
+    file.nursingOrders.length;
+
   const body = `
     <div class="patient-export-top">
       <div class="export-patient-grid patient-export-grid">
@@ -847,22 +1016,34 @@ async function exportPatientFile(details: PatientDetails, format: ExportFormat) 
         <div><span>السن</span><strong>${p.age ?? '—'}</strong></div>
         <div><span>النوع</span><strong>${esc(p.gender || '—')}</strong></div>
         <div class="wide"><span>العنوان</span><strong>${esc(p.address || '—')}</strong></div>
-        <div><span>الحالة</span><strong>${p.blacklisted ? 'Black List' : 'عادي'}</strong></div>
-        <div><span>عدد الزيارات</span><strong>${p.visitsCount}</strong></div>
-        <div><span>الكود</span><strong class="ltr">${esc(p.id)}</strong></div>
+        <div><span>الحالة</span><strong>${p.blacklisted ? 'Black List' : p.archived ? 'مؤرشف' : 'نشط'}</strong></div>
+        <div><span>رقم الملف</span><strong class="ltr">${esc(p.id.slice(0, 8).toUpperCase())}</strong></div>
+        <div><span>تاريخ إنشاء الملف</span><strong>${esc(displaySavedDateTime(p.createdAt))}</strong></div>
+        <div><span>آخر تحديث</span><strong>${esc(displaySavedDateTime(p.updatedAt))}</strong></div>
+        <div><span>كشف / استشارة</span><strong>${details.visits.length}</strong></div>
+        <div><span>حالات تحاليل</span><strong>${file.labOrders.length}</strong></div>
+        <div><span>خدمات تمريض</span><strong>${file.nursingOrders.length}</strong></div>
+        <div><span>إجمالي الأنشطة</span><strong>${totalActivities}</strong></div>
       </div>
+
       <div class="patient-qr-box">
         <img src="${qrDataUrl}" alt="QR Code" />
-        <div class="patient-qr-caption">QR فريد للحالة</div>
+        <div class="patient-qr-caption">QR ملف المريض</div>
         <small class="ltr">${esc(p.id)}</small>
       </div>
     </div>
-    <h3 class="export-section-heading">سجل الزيارات</h3>
-    ${exportVisitRows(details.visits, false)}
+
+    <h3 class="export-section-heading">السجل الكامل للمريض</h3>
+    ${patientFileTimelineHtml(file, false)}
   `;
+
   await captureAndSaveExport(
-    patientExportSheet('ملف المريض', p.fullName || 'بدون اسم', body),
-    `ملف المريض - ${p.fullName || p.phone || p.id}`,
+    patientExportSheet(
+      'ملف المريض الكامل',
+      `${p.fullName || 'بدون اسم'} • ملف رقم ${p.id.slice(0, 8).toUpperCase()}`,
+      body
+    ),
+    `ملف المريض الكامل - ${p.fullName || p.phone || p.id}`,
     format
   );
 }
@@ -918,8 +1099,8 @@ let caseMenuPatientPhone = '';
 let caseMenuBound = false;
 
 async function exportPatientById(id: string, format: ExportFormat) {
-  const details = await invoke<PatientDetails>('get_patient_details', { id });
-  await exportPatientFile(details, format);
+  const file = await loadPatientFile(id);
+  await exportPatientFile(file, format);
 }
 
 function closeCaseContextMenu() {
@@ -2134,7 +2315,7 @@ async function openLabPatientRegistrationModal() {
       close();
       toast(result.existed
         ? 'المريض مسجل بالفعل — تم فتح سجل التحاليل'
-        : 'تم تسجيل بيانات مريض التحاليل بدون كشف');
+        : 'تم إنشاء ملف المريض وفتح التحاليل بدون كشف');
 
       await renderScreen();
       await openPatientFeaturePanel(result.id, 'labs');
@@ -2212,7 +2393,7 @@ async function openNursingPatientRegistrationModal() {
       close();
       toast(result.existed
         ? 'المريض مسجل بالفعل — تم فتح خدمة التمريض'
-        : 'تم تسجيل بيانات مريض خدمة التمريض');
+        : 'تم إنشاء ملف المريض وفتح خدمة التمريض');
 
       await renderScreen();
       await openPatientFeaturePanel(result.id, 'nursing');
@@ -3313,12 +3494,19 @@ const nursingHistory = await invoke<NursingOrder[]>('list_patient_nursing_orders
 }
 
 async function openPatient(id: string) {
-  const details = await invoke<PatientDetails>('get_patient_details', { id });
+  const patientFile = await loadPatientFile(id);
+  const details = patientFile.details;
   const p = details.patient;
+  const totalActivities =
+    details.visits.length +
+    patientFile.labOrders.length +
+    patientFile.nursingOrders.length;
+
   const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+
   root.innerHTML = `
     <div class="modal-backdrop patient-profile-backdrop" id="patientModalBackdrop" data-patient-id="${esc(p.id)}">
-      <section class="modal wide patient-profile-modal">
+      <section class="modal wide patient-profile-modal patient-full-file-modal">
         <div class="modal-head patient-profile-head">
           <div class="patient-profile-identity">
             <div class="patient-profile-avatar">${esc((p.fullName || 'م').trim().charAt(0) || 'م')}</div>
@@ -3326,6 +3514,7 @@ async function openPatient(id: string) {
               <div class="patient-profile-name-row">
                 <h2>${esc(p.fullName || "بدون اسم")}</h2>
                 ${p.blacklisted ? '<span class="blacklist-badge">Black List</span>' : ''}
+                ${p.archived ? '<span class="patient-file-archive-badge">مؤرشف</span>' : ''}
               </div>
               <p class="ltr patient-phone">📞 ${esc(p.phone || "بدون رقم تليفون")}</p>
             </div>
@@ -3333,19 +3522,29 @@ async function openPatient(id: string) {
           <button class="modal-close" id="closePatient">×</button>
         </div>
 
-        <div class="patient-summary patient-summary-compact">
+        ${patientFileClinicHeaderHtml(p)}
+
+        <div class="patient-file-meta-strip">
+          <div><span>تاريخ إنشاء الملف</span><strong>${esc(displaySavedDateTime(p.createdAt))}</strong></div>
+          <div><span>آخر تحديث</span><strong>${esc(displaySavedDateTime(p.updatedAt))}</strong></div>
+          <div><span>إجمالي الأنشطة</span><strong>${totalActivities}</strong></div>
+        </div>
+
+        <div class="patient-summary patient-summary-compact patient-file-summary">
           <div><span>السن</span><strong>${p.age ?? '—'}</strong></div>
           <div><span>النوع</span><strong>${esc(p.gender || '—')}</strong></div>
-          <div class="patient-summary-address"><span>العنوان</span><strong>${esc(p.address || '—')}</strong></div>
-          <div><span>عدد الزيارات</span><strong>${p.visitsCount}</strong></div>
+          <div class="patient-summary-address"><span>عنوان المريض</span><strong>${esc(p.address || '—')}</strong></div>
+          <div><span>كشف / استشارة</span><strong>${details.visits.length}</strong></div>
+          <div><span>تحاليل</span><strong>${patientFile.labOrders.length}</strong></div>
+          <div><span>تمريض</span><strong>${patientFile.nursingOrders.length}</strong></div>
         </div>
 
         <div class="patient-feature-grid patient-feature-grid-compact">
-          <button class="patient-feature-card nursing" id="patientNursingServices">
-            <span class="patient-feature-card-icon">✚</span>
+          <button class="patient-feature-card visit" id="addVisitToPatient">
+            <span class="patient-feature-card-icon">🩺</span>
             <span class="patient-feature-card-copy">
-              <strong>خدمات تمريض</strong>
-              <small>فتح سجل خدمات التمريض</small>
+              <strong>كشف / استشارة</strong>
+              <small>إضافة زيارة جديدة للملف</small>
             </span>
             <span class="patient-feature-card-arrow">‹</span>
           </button>
@@ -3354,18 +3553,25 @@ async function openPatient(id: string) {
             <span class="patient-feature-card-icon">🧪</span>
             <span class="patient-feature-card-copy">
               <strong>تحاليل</strong>
-              <small>فتح سجل التحاليل</small>
+              <small>إضافة أو فتح سجل التحاليل</small>
+            </span>
+            <span class="patient-feature-card-arrow">‹</span>
+          </button>
+
+          <button class="patient-feature-card nursing" id="patientNursingServices">
+            <span class="patient-feature-card-icon">✚</span>
+            <span class="patient-feature-card-copy">
+              <strong>خدمات تمريض</strong>
+              <small>إضافة أو فتح سجل التمريض</small>
             </span>
             <span class="patient-feature-card-arrow">‹</span>
           </button>
         </div>
 
-        <div class="profile-actions patient-profile-actions">
-          <button class="btn primary small patient-primary-action" id="addVisitToPatient">＋ إضافة زيارة</button>
-          <span class="patient-action-divider"></span>
-          <button class="btn ghost small" id="editPatientFromDetails">✎ تعديل</button>
-          <button class="btn ghost small" id="patientExportPdf">PDF</button>
-          <button class="btn ghost small" id="patientExportImage">صورة</button>
+        <div class="profile-actions patient-profile-actions patient-file-actions-bar">
+          <button class="btn ghost small" id="editPatientFromDetails">✎ تعديل البيانات</button>
+          <button class="btn primary small" id="patientExportPdf">PDF الملف الكامل</button>
+          <button class="btn ghost small" id="patientExportImage">صورة الملف</button>
           <button class="btn ${p.blacklisted ? 'ghost' : 'danger-outline'} small" id="toggleBlacklist">
             ${p.blacklisted ? 'إزالة Black List' : '⛔ Black List'}
           </button>
@@ -3378,19 +3584,22 @@ async function openPatient(id: string) {
           <button class="btn danger-outline small" id="deletePatient">🗑 حذف المريض نهائيًا</button>
         </div>
 
-        <div class="modal-toolbar patient-visits-heading">
+        <div class="patient-full-record-head">
           <div>
-            <h3>سجل الزيارات</h3>
-            <small>${details.visits.length ? `${details.visits.length} زيارة مسجلة` : 'لا توجد زيارات مسجلة'}</small>
+            <h3>السجل الكامل للمريض</h3>
+            <small>كل كشف أو استشارة أو تحليل أو خدمة تمريض محفوظة بتاريخ وتوقيت الحفظ</small>
           </div>
+          <span>${totalActivities + 1} سجل شامل إنشاء الملف</span>
         </div>
-        <div class="patient-visits-table-wrap">
-          ${visitTable(details.visits)}
+
+        <div class="patient-full-record-wrap">
+          ${patientFileTimelineHtml(patientFile, true)}
         </div>
       </section>
     </div>`;
 
-  const close = () => root.innerHTML='';
+  const close = () => root.innerHTML = '';
+
   document.querySelector<HTMLButtonElement>('#closePatient')!.onclick = close;
   document.querySelector<HTMLDivElement>('#patientModalBackdrop')!.onclick = e => {
     if (e.target === e.currentTarget) close();
@@ -3407,9 +3616,10 @@ async function openPatient(id: string) {
   };
 
   document.querySelector<HTMLButtonElement>('#patientExportImage')!.onclick = () =>
-    exportPatientFile(details, 'png');
+    exportPatientFile(patientFile, 'png');
+
   document.querySelector<HTMLButtonElement>('#patientExportPdf')!.onclick = () =>
-    exportPatientFile(details, 'pdf');
+    exportPatientFile(patientFile, 'pdf');
 
   document.querySelector<HTMLButtonElement>('#editPatientFromDetails')!.onclick = () => {
     close();
@@ -3431,16 +3641,18 @@ async function openPatient(id: string) {
   };
 
   document.querySelector<HTMLButtonElement>('#patientGoToday')!.onclick = async () => {
-    close(); await navigate('today');
+    close();
+    await navigate('today');
   };
 
   document.querySelector<HTMLButtonElement>('#patientGoReports')!.onclick = async () => {
-    close(); await navigate('reports');
+    close();
+    await navigate('reports');
   };
 
   document.querySelector<HTMLButtonElement>('#deletePatient')!.onclick = async () => {
-    if (!confirm(`حذف ملف ${p.fullName || 'المريض'} نهائيًا بكل زياراته؟`)) return;
-    if (!confirm('تأكيد أخير: الحذف نهائي ولا يمكن التراجع عنه إلا من نسخة احتياطية.')) return;
+    if (!confirm(`حذف ملف ${p.fullName || 'المريض'} نهائيًا بكل بياناته وسجله؟`)) return;
+    if (!confirm('تأكيد أخير: سيتم حذف الكشوفات والاستشارات والتحاليل وخدمات التمريض الخاصة بالمريض.')) return;
     await invoke('delete_patient', { id });
     close();
     toast('تم حذف ملف المريض');
@@ -3452,6 +3664,23 @@ async function openPatient(id: string) {
     close();
     openVisitModal(p);
   };
+
+  document.querySelectorAll<HTMLButtonElement>('[data-patient-file-kind][data-patient-file-id]').forEach(button => {
+    button.onclick = async () => {
+      const kind = button.dataset.patientFileKind || '';
+      const itemId = button.dataset.patientFileId || '';
+      if (!itemId) return;
+      close();
+
+      if (kind === 'visit') {
+        await openEditVisitModal(itemId);
+      } else if (kind === 'lab') {
+        await openLabOrderDetails(itemId);
+      } else if (kind === 'nursing') {
+        await openNursingOrderDetails(itemId);
+      }
+    };
+  });
 }
 
 function doctorOptions(selected = '') {
@@ -3467,57 +3696,99 @@ async function openCaseModal(existing?: Patient) {
 
 async function openPatientRegistrationModal() {
   const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+
   root.innerHTML = `
     <div class="modal-backdrop" id="caseBackdrop">
       <section class="modal form-modal">
         <div class="modal-head">
-          <div><h2>تسجيل حالة جديدة</h2><p>الخطوة 1 من 2 — بيانات المريض، وبعد الحفظ يتم فتح تسجيل الزيارة تلقائيًا</p></div>
+          <div>
+            <h2>إنشاء ملف مريض</h2>
+            <p>يتم إنشاء ملف دائم للمريض أولًا، وبعدها يمكن إضافة كشف أو استشارة أو تحاليل أو تمريض في أي وقت</p>
+          </div>
           <button class="modal-close" id="closeCase">×</button>
         </div>
+
         <form id="patientRegisterForm">
           <div class="section-title">بيانات المريض</div>
+
           <div class="patient-register-grid">
             <label class="field-name">الاسم بالكامل<input name="fullName"></label>
             <label class="field-phone">رقم التليفون<input class="ltr" name="phone" inputmode="tel"></label>
             <label class="field-age">السن<input name="age" type="number" min="0" max="130"></label>
-            <label class="field-gender">النوع<select name="gender"><option value="">—</option><option>ذكر</option><option>أنثى</option></select></label>
+            <label class="field-gender">النوع
+              <select name="gender">
+                <option value="">—</option>
+                <option>ذكر</option>
+                <option>أنثى</option>
+              </select>
+            </label>
             <label class="field-address">العنوان (اختياري)<input name="address"></label>
           </div>
+
+          <div class="patient-file-create-note">
+            بمجرد الحفظ يتم إنشاء رقم ملف وتسجيل تاريخ ووقت إنشاء الملف تلقائيًا.
+          </div>
+
           <div class="form-actions">
             <button type="button" class="btn ghost" id="cancelCase">إلغاء</button>
-            <button type="submit" class="btn primary">التالي: بيانات الزيارة</button>
+            <button type="button" class="btn ghost" id="savePatientFileOnly">💾 حفظ ملف المريض فقط</button>
+            <button type="submit" class="btn primary">💾 حفظ الملف + إضافة كشف / استشارة</button>
           </div>
         </form>
       </section>
     </div>`;
 
-  const close = () => root.innerHTML='';
+  const close = () => root.innerHTML = '';
+  const form = document.querySelector<HTMLFormElement>('#patientRegisterForm')!;
+
   document.querySelector<HTMLButtonElement>('#closeCase')!.onclick = close;
   document.querySelector<HTMLButtonElement>('#cancelCase')!.onclick = close;
 
-  document.querySelector<HTMLFormElement>('#patientRegisterForm')!.onsubmit = async e => {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget as HTMLFormElement);
-    const rawAge = String(fd.get('age')||'').trim();
+  const registerFromForm = async () => {
+    const fd = new FormData(form);
+    const rawAge = String(fd.get('age') || '').trim();
 
-    try {
-      const result = await invoke<{id:string, existed:boolean}>('register_patient', { input: {
-        fullName: String(fd.get('fullName')||'').trim(),
-        phone: String(fd.get('phone')||'').trim(),
+    return invoke<{id:string, existed:boolean}>('register_patient', {
+      input: {
+        fullName: String(fd.get('fullName') || '').trim(),
+        phone: String(fd.get('phone') || '').trim(),
         age: rawAge ? Number(rawAge) : null,
-        gender: String(fd.get('gender')||''),
-        address: String(fd.get('address')||'').trim()
-      }});
+        gender: String(fd.get('gender') || ''),
+        address: String(fd.get('address') || '').trim()
+      }
+    });
+  };
 
-      const details = await invoke<PatientDetails>('get_patient_details', { id: result.id });
+  document.querySelector<HTMLButtonElement>('#savePatientFileOnly')!.onclick = async () => {
+    try {
+      const result = await registerFromForm();
       close();
       toast(result.existed
-        ? 'المريض موجود بالفعل — أكمل بيانات الزيارة لتسجيل الحالة'
-        : 'تم حفظ بيانات المريض — أكمل بيانات الزيارة لتسجيل الحالة');
+        ? 'ملف المريض موجود بالفعل — تم فتح الملف'
+        : 'تم إنشاء ملف المريض وتسجيل تاريخ ووقت الحفظ تلقائيًا');
+      await renderScreen();
+      await openPatient(result.id);
+    } catch (err) {
+      toast(`تعذر حفظ ملف المريض: ${String(err)}`, 'error');
+    }
+  };
+
+  form.onsubmit = async e => {
+    e.preventDefault();
+
+    try {
+      const result = await registerFromForm();
+      const details = await invoke<PatientDetails>('get_patient_details', { id: result.id });
+
+      close();
+      toast(result.existed
+        ? 'تم فتح ملف المريض الموجود — أكمل تسجيل الكشف أو الاستشارة'
+        : 'تم إنشاء ملف المريض — أكمل تسجيل الكشف أو الاستشارة');
+
       await renderScreen();
       await openVisitModal(details.patient);
     } catch (err) {
-      toast(`تعذر الحفظ: ${String(err)}`, 'error');
+      toast(`تعذر حفظ ملف المريض: ${String(err)}`, 'error');
     }
   };
 }

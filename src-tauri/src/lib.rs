@@ -1586,8 +1586,7 @@ fn list_patient_lab_orders(
              FROM lab_orders o
              JOIN patients p ON p.id=o.patient_id
              WHERE o.patient_id=?1
-             ORDER BY o.order_date DESC,o.order_time DESC,o.created_at DESC
-             LIMIT 50",
+             ORDER BY o.order_date DESC,o.order_time DESC,o.created_at DESC",
         )
         .map_err(|e| e.to_string())?;
 
@@ -1760,8 +1759,7 @@ fn list_patient_nursing_orders(
              FROM nursing_orders n
              JOIN patients p ON p.id=n.patient_id
              WHERE n.patient_id=?1
-             ORDER BY n.order_date DESC,n.order_time DESC,n.created_at DESC
-             LIMIT 50",
+             ORDER BY n.order_date DESC,n.order_time DESC,n.created_at DESC",
         )
         .map_err(|e| e.to_string())?;
 
