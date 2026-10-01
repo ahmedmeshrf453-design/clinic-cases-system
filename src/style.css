@@ -2541,3 +2541,28 @@ input,textarea,select{width:100%;border:1px solid #d6dee7;border-radius:8px;padd
   .patient-labs-selected-head{grid-template-columns:1fr auto}
   .patient-labs-selected-head .lab-add-another{grid-column:1/-1}
 }
+
+/* V6.4.1 clear integrated service hub */
+.service-hub{display:grid;gap:10px;margin:-3px 0 16px;padding:10px;border:1px solid #dce6ed;border-radius:14px;background:rgba(255,255,255,.96);box-shadow:0 7px 20px rgba(15,48,75,.06)}
+.service-hub-group{display:grid;grid-template-columns:150px minmax(0,1fr);gap:10px;align-items:center}
+.service-hub-group + .service-hub-group{padding-top:9px;border-top:1px solid #edf2f5}
+.service-hub-group-title span,.service-hub-group-title small{display:block}
+.service-hub-group-title span{color:#173650;font-size:11px;font-weight:900}
+.service-hub-group-title small{margin-top:2px;color:#8b98a7;font-size:8px}
+.service-hub-buttons{display:flex;flex-wrap:wrap;align-items:stretch;gap:7px}
+.service-hub-btn{border:1px solid #d8e3ea;border-radius:10px;background:linear-gradient(180deg,#fff 0%,#f2f6f8 100%);color:#28445e;min-height:44px;padding:6px 9px;display:flex;align-items:center;gap:8px;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 4px 10px rgba(20,54,82,.06)}
+.service-hub-btn:hover{transform:translateY(-1px);border-color:#aac3d4}
+.service-hub-icon{width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;border-radius:9px;background:#eaf3f7;color:#123c5c;font-size:16px;font-weight:900}
+.service-hub-copy{min-width:0;text-align:right}
+.service-hub-copy strong,.service-hub-copy small{display:block;white-space:nowrap}
+.service-hub-copy strong{font-size:9.5px;font-weight:900}
+.service-hub-copy small{margin-top:2px;font-size:7.5px;color:#8492a2}
+.quick-buttons .service-hub-btn{min-width:150px;background:linear-gradient(180deg,#123f6b 0%,#0a2949 100%);color:#fff;border-color:#0a2949}
+.quick-buttons .service-hub-icon{background:rgba(255,255,255,.13);color:#fff}
+.quick-buttons .service-hub-copy small{color:#c6d9e8}
+.nav-buttons .service-hub-btn{min-width:112px}
+.system-buttons .service-hub-btn{min-width:135px}
+.service-hub-btn.active{border-color:#6cbfb7;background:linear-gradient(180deg,#edfafa 0%,#dff4f1 100%);color:#0b625c}
+.service-hub-btn.active .service-hub-icon{background:#ccebe7;color:#07574f}
+@media(max-width:1250px){.service-hub-group{grid-template-columns:1fr;gap:6px}.service-hub-group-title{display:flex;align-items:baseline;gap:8px}.service-hub-group-title small{margin-top:0}}
+@media(max-width:850px){.service-hub-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.service-hub-btn,.quick-buttons .service-hub-btn,.nav-buttons .service-hub-btn,.system-buttons .service-hub-btn{min-width:0;width:100%}}

@@ -158,7 +158,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.4.0'
+  version: '6.4.1'
 };
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -1019,24 +1019,59 @@ async function loadSidebarPatientsTotal() {
 }
 
 function serviceDockHtml() {
+  const action = (key: string, icon: string, label: string, hint: string) =>
+    `<button class="service-hub-btn service-action-btn" data-service-action="${key}" title="${esc(hint)}">
+      <span class="service-hub-icon">${icon}</span>
+      <span class="service-hub-copy"><strong>${label}</strong><small>${hint}</small></span>
+    </button>`;
+
   const nav = (target: Screen, icon: string, label: string) =>
-    `<button class="service-dock-btn ${screen === target ? 'active' : ''}" data-service-screen="${target}">${icon} ${label}</button>`;
+    `<button class="service-hub-btn service-nav-btn ${screen === target ? 'active' : ''}" data-service-screen="${target}" title="فتح ${label}">
+      <span class="service-hub-icon">${icon}</span>
+      <span class="service-hub-copy"><strong>${label}</strong></span>
+    </button>`;
 
   return `
-    <section class="service-dock" aria-label="روابط الخدمات">
-      <button class="service-dock-btn primary-service" data-service-action="visit">＋ كشف / استشارة</button>
-      <button class="service-dock-btn primary-service" data-service-action="lab-case">🧪 تسجيل تحاليل</button>
-      <button class="service-dock-btn primary-service" data-service-action="nursing-case">✚ تسجيل تمريض</button>
-      ${nav('dashboard','⌂','الرئيسية')}
-      ${nav('patients','👥','المرضى')}
-      ${nav('today','◷','حالات اليوم')}
-      ${nav('doctors','⚕','الأطباء')}
-      ${nav('labs','🧪','أسعار التحاليل')}
-      ${nav('nursing','✚','خدمات التمريض')}
-      ${nav('reports','▤','التقارير')}
-      ${nav('archive','▣','الأرشيف')}
-      ${nav('backups','⟳','النسخ')}
-      ${nav('settings','⚙','الإعدادات')}
+    <section class="service-hub" aria-label="مركز الوصول السريع">
+      <div class="service-hub-group quick">
+        <div class="service-hub-group-title">
+          <span>تسجيل سريع</span>
+          <small>إنشاء حالة جديدة مباشرة</small>
+        </div>
+        <div class="service-hub-buttons quick-buttons">
+          ${action('visit','🩺','كشف / استشارة','تسجيل حالة عيادة')}
+          ${action('lab-case','🧪','تحاليل','تسجيل مريض تحاليل')}
+          ${action('nursing-case','✚','تمريض','تسجيل خدمة تمريض')}
+        </div>
+      </div>
+
+      <div class="service-hub-group navigation">
+        <div class="service-hub-group-title">
+          <span>التنقل بين الأقسام</span>
+          <small>كل الخدمات مرتبطة ببعض</small>
+        </div>
+        <div class="service-hub-buttons nav-buttons">
+          ${nav('dashboard','⌂','الرئيسية')}
+          ${nav('patients','👥','المرضى')}
+          ${nav('today','◷','حالات اليوم')}
+          ${nav('doctors','⚕','الأطباء')}
+          ${nav('labs','🧪','التحاليل')}
+          ${nav('nursing','✚','خدمات التمريض')}
+          ${nav('reports','▤','التقارير')}
+        </div>
+      </div>
+
+      <div class="service-hub-group system">
+        <div class="service-hub-group-title">
+          <span>إدارة النظام</span>
+          <small>الحفظ والإعدادات</small>
+        </div>
+        <div class="service-hub-buttons system-buttons">
+          ${nav('archive','▣','الأرشيف')}
+          ${nav('backups','⟳','النسخ الاحتياطية')}
+          ${nav('settings','⚙','الإعدادات')}
+        </div>
+      </div>
     </section>`;
 }
 
