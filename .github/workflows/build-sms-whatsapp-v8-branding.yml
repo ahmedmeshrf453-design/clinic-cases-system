@@ -1,0 +1,202 @@
+name: Build SMS WhatsApp APK - V8 Branding
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Restore V1.6 project
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=".github/workflows/build-sms-whatsapp-v7-ui-filters.yml"
+          test -f "$SRC"
+          mkdir -p "$RUNNER_TEMP/smsapp"
+          sed -n "/<<'PROJECT_B64'/,/^[[:space:]]*PROJECT_B64[[:space:]]*$/p" "$SRC" \
+            | sed '1d;$d;s/^[[:space:]]*//' \
+            > "$RUNNER_TEMP/project.b64"
+          test -s "$RUNNER_TEMP/project.b64"
+          base64 -d "$RUNNER_TEMP/project.b64" > "$RUNNER_TEMP/project.zip"
+          unzip -q "$RUNNER_TEMP/project.zip" -d "$RUNNER_TEMP/smsapp"
+
+      - name: Set app name and version
+        shell: bash
+        working-directory: ${{ runner.temp }}/smsapp
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          gradle = Path('app/build.gradle.kts')
+          s = gradle.read_text(encoding='utf-8')
+          s = re.sub(r'versionCode\s*=\s*\d+', 'versionCode = 7', s, count=1)
+          s = re.sub(r'versionName\s*=\s*"[^"]+"', 'versionName = "1.7.0"', s, count=1)
+          gradle.write_text(s, encoding='utf-8')
+
+          strings = Path('app/src/main/res/values/strings.xml')
+          if strings.exists():
+              t = strings.read_text(encoding='utf-8')
+              if re.search(r'<string\s+name="app_name">.*?</string>', t, flags=re.S):
+                  t = re.sub(r'<string\s+name="app_name">.*?</string>', '<string name="app_name">حجز الحالات</string>', t, count=1, flags=re.S)
+              else:
+                  t = t.replace('</resources>', '    <string name="app_name">حجز الحالات</string>\n</resources>')
+          else:
+              strings.parent.mkdir(parents=True, exist_ok=True)
+              t = '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="app_name">حجز الحالات</string>\n</resources>\n'
+          strings.write_text(t, encoding='utf-8')
+
+          manifest = Path('app/src/main/AndroidManifest.xml')
+          m = manifest.read_text(encoding='utf-8')
+          app_match = re.search(r'<application\b', m)
+          if not app_match:
+              raise SystemExit('application tag not found')
+
+          if re.search(r'android:label="[^"]*"', m):
+              m = re.sub(r'android:label="[^"]*"', 'android:label="@string/app_name"', m, count=1)
+          else:
+              m = m[:app_match.end()] + '\n        android:label="@string/app_name"' + m[app_match.end():]
+
+          if re.search(r'android:icon="[^"]*"', m):
+              m = re.sub(r'android:icon="[^"]*"', 'android:icon="@mipmap/ic_launcher"', m, count=1)
+          else:
+              m = m[:app_match.end()] + '\n        android:icon="@mipmap/ic_launcher"' + m[app_match.end():]
+
+          if re.search(r'android:roundIcon="[^"]*"', m):
+              m = re.sub(r'android:roundIcon="[^"]*"', 'android:roundIcon="@mipmap/ic_launcher_round"', m, count=1)
+          else:
+              m = m[:app_match.end()] + '\n        android:roundIcon="@mipmap/ic_launcher_round"' + m[app_match.end():]
+
+          manifest.write_text(m, encoding='utf-8')
+
+          # Keep the in-app header consistent with the launcher name.
+          for root in [Path('app/src/main/res'), Path('app/src/main/java')]:
+              for p in root.rglob('*'):
+                  if p.is_file() and p.suffix in {'.xml', '.kt', '.java'}:
+                      try:
+                          x = p.read_text(encoding='utf-8')
+                      except UnicodeDecodeError:
+                          continue
+                      x2 = x.replace('رسائل الحجز', 'حجز الحالات')
+                      if x2 != x:
+                          p.write_text(x2, encoding='utf-8')
+          PY
+
+      - name: Create sprayed HAGZ launcher icon
+        shell: bash
+        working-directory: ${{ runner.temp }}/smsapp
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check pillow arabic-reshaper python-bidi
+          python3 - <<'PY'
+          from pathlib import Path
+          import random, subprocess
+          from PIL import Image, ImageDraw, ImageFont
+          import arabic_reshaper
+          from bidi.algorithm import get_display
+
+          res = Path('app/src/main/res')
+          for p in res.rglob('ic_launcher*'):
+              if p.is_file():
+                  p.unlink()
+
+          S = 1024
+          img = Image.new('RGBA', (S, S), (10, 28, 54, 255))
+          d = ImageDraw.Draw(img)
+          random.seed(1707)
+
+          # Paint-splash look around the word without extra symbols/text.
+          for _ in range(165):
+              angle_x = random.gauss(512, 245)
+              angle_y = random.gauss(520, 180)
+              r = random.randint(3, 18)
+              alpha = random.randint(90, 235)
+              d.ellipse((angle_x-r, angle_y-r, angle_x+r, angle_y+r), fill=(255,255,255,alpha))
+          for _ in range(35):
+              x = random.randint(170, 850)
+              y = random.randint(330, 700)
+              w = random.randint(35, 105)
+              h = random.randint(4, 13)
+              d.rounded_rectangle((x, y, x+w, y+h), radius=max(2,h//2), fill=(255,255,255,random.randint(100,210)))
+
+          font_path = subprocess.check_output(['fc-match','-f','%{file}', 'DejaVu Sans:style=Bold'], text=True).strip()
+          word = get_display(arabic_reshaper.reshape('حجز'))
+          font = ImageFont.truetype(font_path, 330)
+          box = d.textbbox((0,0), word, font=font, stroke_width=6)
+          tw, th = box[2]-box[0], box[3]-box[1]
+          x = (S-tw)//2
+          y = (S-th)//2 - 20
+          d.text((x,y), word, font=font, fill=(255,255,255,255), stroke_width=8, stroke_fill=(10,28,54,255))
+
+          # Add small ink specks close to the lettering for the 'مطرطش' treatment.
+          for _ in range(85):
+              sx = random.randint(max(0,x-70), min(S-1,x+tw+70))
+              sy = random.randint(max(0,y-60), min(S-1,y+th+90))
+              rr = random.randint(2,9)
+              d.ellipse((sx-rr,sy-rr,sx+rr,sy+rr), fill=(255,255,255,random.randint(110,235)))
+
+          densities = {'mdpi':48,'hdpi':72,'xhdpi':96,'xxhdpi':144,'xxxhdpi':192}
+          for density, size in densities.items():
+              out = res / f'mipmap-{density}'
+              out.mkdir(parents=True, exist_ok=True)
+              scaled = img.resize((size,size), Image.Resampling.LANCZOS)
+              scaled.save(out/'ic_launcher.png')
+              scaled.save(out/'ic_launcher_round.png')
+          PY
+
+      - name: Verify V1.7 branding and locked features
+        shell: bash
+        working-directory: ${{ runner.temp }}/smsapp
+        run: |
+          set -euo pipefail
+          grep -q 'applicationId = "com.alakad.smsforwarder.business.history"' app/build.gradle.kts
+          grep -q 'versionName = "1.7.0"' app/build.gradle.kts
+          grep -q 'حجز الحالات' app/src/main/res/values/strings.xml
+          grep -q 'android:icon="@mipmap/ic_launcher"' app/src/main/AndroidManifest.xml
+          grep -q 'android:roundIcon="@mipmap/ic_launcher_round"' app/src/main/AndroidManifest.xml
+          test -s app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          grep -q 'sourceSpinner' app/src/main/res/layout/activity_main.xml
+          grep -q 'daySpinner' app/src/main/res/layout/activity_main.xml
+          grep -q 'android.permission.READ_SMS' app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.RECEIVE_SMS' app/src/main/AndroidManifest.xml
+          grep -q 'com.whatsapp.w4b' app/src/main/java/com/alakad/smsforwarder/MainActivity.kt
+          test -s app/stable-release.jks
+
+      - name: Build installable APK
+        shell: bash
+        working-directory: ${{ runner.temp }}/smsapp
+        run: |
+          set -euo pipefail
+          gradle :app:assembleDebug --stacktrace
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          cp "$APK" "$GITHUB_WORKSPACE/Hagz-AlHalat-v1.7.apk"
+          sha256sum "$GITHUB_WORKSPACE/Hagz-AlHalat-v1.7.apk" > "$GITHUB_WORKSPACE/Hagz-AlHalat-v1.7.sha256"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hagz-AlHalat-v1.7
+          path: |
+            Hagz-AlHalat-v1.7.apk
+            Hagz-AlHalat-v1.7.sha256
+          retention-days: 30
