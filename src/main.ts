@@ -3686,7 +3686,7 @@ async function openPatientFeaturePanel(
             </div>
           </section>
 
-          <section class="lab-payment-panel">
+          <section class="lab-payment-panel" id="labPaymentPanel">
             <div class="lab-payment-grid">
               <label>إجمالي التحاليل
                 <div class="lab-payment-money ltr" id="labSubtotal">0.00 ج.م</div>
@@ -3713,7 +3713,7 @@ async function openPatientFeaturePanel(
             </div>
 
             <div class="lab-finish-actions">
-              <button class="btn primary" id="finishLabOrder">✓ حفظ وإنهاء الحالة</button>
+              <button class="btn primary" id="finishLabOrder">✓ حفظ حالة التحاليل وإنهاء</button>
               <button class="btn ghost" id="backToPatientProfile">← رجوع لملف المريض</button>
             </div>
           </section>
@@ -3768,8 +3768,8 @@ async function openPatientFeaturePanel(
     const close = () => root.innerHTML = '';
 
     const labSearchShell = document.querySelector<HTMLElement>('.lab-search-shell')!;
-    const selectedPanel = document.querySelector<HTMLElement>('.patient-labs-selected-panel')!;
-    if (labSearchShell && selectedPanel) selectedPanel.insertAdjacentElement('afterend', labSearchShell);
+    const paymentPanel = document.querySelector<HTMLElement>('#labPaymentPanel')!;
+    if (labSearchShell && paymentPanel) paymentPanel.insertAdjacentElement('afterend', labSearchShell);
 
     const input = document.querySelector<HTMLInputElement>('#labSearchInput')!;
     const resultHost = document.querySelector<HTMLDivElement>('#labResults')!;
@@ -4005,7 +4005,7 @@ const nursingHistory = await invoke<NursingOrder[]>('list_patient_nursing_orders
           </div>
 
           <div class="form-actions nursing-finish-actions">
-            <button class="btn primary" type="submit">✓ حفظ وإنهاء الحالة</button>
+            <button class="btn primary" type="submit">✓ حفظ خدمة التمريض وإنهاء</button>
             <button class="btn ghost" type="button" id="backToPatientProfile">← رجوع لملف المريض</button>
           </div>
         </form>

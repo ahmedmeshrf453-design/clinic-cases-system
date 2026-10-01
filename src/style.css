@@ -3415,3 +3415,66 @@ table th{background:#f3f7f9!important}
 
 /* ===== V6.8 independent Lab 2 Lab price vault ===== */
 .lab2lab-lock-card,.lab2lab-card{max-width:980px;margin:0 auto}.lab2lab-lock-card{padding:26px}.lab2lab-lock-hero{display:flex;align-items:center;gap:16px;padding-bottom:18px;margin-bottom:18px;border-bottom:1px solid #e4ebf0}.lab2lab-lock-icon,.lab2lab-badge{display:grid;place-items:center;background:linear-gradient(135deg,#0b6170,#15958d);color:#fff;font-weight:950;letter-spacing:.5px;box-shadow:0 8px 20px rgba(11,97,112,.18)}.lab2lab-lock-icon{width:68px;height:68px;border-radius:18px;font-size:19px}.lab2lab-badge{width:48px;height:48px;border-radius:14px;font-size:14px}.lab2lab-lock-hero h2,.lab2lab-head h2{margin:0;color:#17394f}.lab2lab-lock-hero p,.lab2lab-head p{margin:5px 0 0;color:#7c8d99;font-size:12px}.lab2lab-pin-form{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end}.lab2lab-pin-form.compact{grid-template-columns:minmax(220px,420px) auto;justify-content:center}.lab2lab-pin-form label{display:grid;gap:6px;font-size:12px;font-weight:800;color:#516b7d}.lab2lab-pin-form input{height:44px;border:1px solid #d7e2e8;border-radius:11px;padding:0 12px;background:#fff;font-size:16px;letter-spacing:3px}.lab2lab-head{display:flex;justify-content:space-between;align-items:center;gap:14px}.lab2lab-title-wrap{display:flex;align-items:center;gap:12px}.lab2lab-head-actions{display:flex;gap:8px;flex-wrap:wrap}.lab2lab-search-wrap{position:relative;margin:18px 0 10px}.lab2lab-search-box{height:52px;border:1px solid #cadce4;border-radius:14px;background:#fbfdfe;display:flex;align-items:center;gap:10px;padding:0 14px;box-shadow:0 6px 18px rgba(14,62,85,.05)}.lab2lab-search-box>span{font-size:22px;color:#0c7481}.lab2lab-search-box input{flex:1;border:0;outline:0;background:transparent;font-size:16px;min-width:0}.lab2lab-dropdown{position:absolute;z-index:80;top:58px;right:0;left:0;display:none;max-height:380px;overflow:auto;border:1px solid #d4e2e8;border-radius:14px;background:#fff;box-shadow:0 18px 38px rgba(21,52,78,.18);padding:6px}.lab2lab-dropdown.show{display:block}.lab2lab-option{width:100%;border:0;background:#fff;display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:11px 12px;border-radius:10px;text-align:left;cursor:pointer}.lab2lab-option:hover{background:#eef8f7}.lab2lab-option span{font-size:13px;color:#294c61;overflow:hidden;text-overflow:ellipsis}.lab2lab-option strong{min-width:92px;text-align:center;padding:6px 9px;border-radius:9px;background:#e8f7f4;color:#0b6d67;font-size:12px}.lab2lab-no-result{padding:18px;text-align:center;color:#8796a0}.lab2lab-help{margin:0 0 16px;color:#82929d;font-size:11px}.lab2lab-selected{display:grid;grid-template-columns:minmax(0,1fr) 220px 48px;align-items:center;gap:14px;min-height:118px;padding:18px;border:1px solid #dbe7eb;border-radius:16px;background:linear-gradient(135deg,#fff,#f4fbfa)}.lab2lab-selected.empty{display:block}.lab2lab-selected-placeholder{text-align:center;padding:10px;color:#80919c}.lab2lab-selected-placeholder strong,.lab2lab-selected-placeholder small{display:block}.lab2lab-selected-placeholder strong{margin-top:7px;color:#39586b}.lab2lab-selected-placeholder small{margin-top:5px}.lab2lab-selected-icon{display:inline-grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#e7f6f3;color:#0b6d67;font-weight:950}.lab2lab-selected-main span,.lab2lab-price-main span{display:block;font-size:10px;color:#83929d;margin-bottom:6px}.lab2lab-selected-main strong{display:block;font-size:17px;color:#163a50}.lab2lab-price-main{padding:12px 14px;border-radius:13px;background:#e9f8f5;text-align:center}.lab2lab-price-main strong{display:block;font-size:22px;color:#096a63}.lab2lab-edit-btn{width:46px;height:46px;border:1px solid #c9ddd9;border-radius:12px;background:#fff;color:#0b706a;font-size:20px;cursor:pointer}.lab2lab-edit-btn:hover{background:#eaf7f5}.lab2lab-edit-modal{max-width:520px}.lab2lab-edit-modal form>label{display:grid;gap:7px;font-weight:800;color:#536b7b}.lab2lab-edit-modal input{height:45px;border:1px solid #d5e1e7;border-radius:10px;padding:0 12px;font-size:16px}@media(max-width:800px){.lab2lab-pin-form,.lab2lab-pin-form.compact{grid-template-columns:1fr}.lab2lab-head{align-items:flex-start;flex-direction:column}.lab2lab-selected{grid-template-columns:1fr}.lab2lab-edit-btn{width:100%}}
+
+/* ===== V6.8.3 always-visible save actions ===== */
+.lab-catalog-modal{
+  overflow:auto !important;
+}
+.lab-catalog-modal #labPaymentPanel{
+  flex:0 0 auto;
+  margin:8px 0 10px;
+  border:2px solid #c7dfd6;
+  background:#f6fbf9;
+  box-shadow:0 8px 20px rgba(16,90,67,.09);
+}
+.lab-catalog-modal .lab-finish-actions{
+  margin-top:8px;
+  padding-top:8px;
+  border-top:1px solid #dce9e4;
+}
+.lab-catalog-modal #finishLabOrder{
+  min-height:44px;
+  padding:9px 18px;
+  font-size:12px;
+  font-weight:900;
+  box-shadow:0 7px 16px rgba(17,104,79,.18);
+}
+.lab-catalog-modal .lab-search-shell{
+  flex:1 1 auto;
+  min-height:220px;
+}
+.lab-catalog-modal .lab-results{
+  max-height:calc(100vh - 500px);
+  min-height:160px;
+}
+.nursing-service-modal{
+  max-height:calc(100vh - 30px);
+  overflow:auto;
+  padding-bottom:12px;
+}
+.nursing-service-modal .nursing-finish-actions{
+  position:sticky;
+  bottom:0;
+  z-index:25;
+  justify-content:flex-start;
+  gap:8px;
+  margin:12px -2px 0;
+  padding:10px 2px 7px;
+  background:linear-gradient(180deg,rgba(255,255,255,.94),#fff 36%);
+  border-top:1px solid #dce8e3;
+  box-shadow:0 -8px 18px rgba(22,61,50,.08);
+}
+.nursing-service-modal .nursing-finish-actions .btn.primary{
+  min-height:44px;
+  padding:9px 18px;
+  font-size:12px;
+  font-weight:900;
+  box-shadow:0 7px 16px rgba(17,104,79,.16);
+}
+@media(max-height:760px){
+  .lab-catalog-modal .lab-results{
+    max-height:calc(100vh - 455px);
+    min-height:125px;
+  }
+}
+
