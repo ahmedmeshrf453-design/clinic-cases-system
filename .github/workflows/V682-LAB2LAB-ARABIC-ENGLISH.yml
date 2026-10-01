@@ -1,0 +1,431 @@
+name: Clinic Cases V6.8.2 Lab2Lab Arabic Names
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Protect main clinic lab catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum src/labCatalog.ts > "$RUNNER_TEMP/labCatalog.sha256"
+
+      - name: Add Arabic names for all 331 Lab2Lab tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/lab2labArabic.b64" <<'DATA'
+ZXhwb3J0IGNvbnN0IExBQjJMQUJfQVJBQklDOiBSZWNvcmQ8bnVtYmVyLCBzdHJpbmc+ID0gewogIDE6ICLYs9mD2LEg2KfZhNiv
+2YUg2KjYudivINiz2KfYudipIiwKICAyOiAi2YfYsdmF2YjZhiAxNyDZh9mK2K/YsdmI2YPYs9mKINio2LHZiNis2LPYqtmK2LHZ
+iNmGIiwKICAzOiAi2YbYs9io2Kkg2KfZhNij2YTYqNmI2YXZitmGINil2YTZiSDYp9mE2KzZhNmI2KjZitmI2YTZitmGIiwKICA0
+OiAi2YHYtdmK2YTYqSDYp9mE2K/ZhSBBQk8iLAogIDU6ICLYpdmG2LLZitmFIEFDRSDYp9mE2YXYrdmI2YQg2YTZhNij2YbYrNmK
+2YjYqtmG2LPZitmGIiwKICA2OiAi2YfYsdmF2YjZhiBBQ1RIINi12KjYp9it2YvYpyIsCiAgNzogItmH2LHZhdmI2YYgQUNUSCDZ
+hdiz2KfYodmLIiwKICA4OiAi2K/ZhNin2YTYqSDYo9mI2LHYp9mFINin2YTZg9io2K8gQUZQIiwKICA5OiAi2KXZhtiy2YrZhSDY
+p9mE2YPYqNivIEFMVCIsCiAgMTA6ICLYp9mE2KPYrNiz2KfZhSDYp9mE2YXYttin2K/YqSDZhNmE2YXZitiq2YjZg9mI2YbYr9ix
+2YrYpyBBTUEiLAogIDExOiAi2YfYsdmF2YjZhiDZhdiu2LLZiNmGINin2YTZhdio2YrYtiBBTUgiLAogIDEyOiAi2KfZhNij2KzY
+s9in2YUg2KfZhNmF2LbYp9iv2Kkg2YTZhNmG2YjYp9ipIEFOQSDYqNi32LHZitmC2KkgRUxJU0EiLAogIDEzOiAi2KfZhNij2KzY
+s9in2YUg2KfZhNmF2LbYp9iv2Kkg2YTZhNmG2YjYp9ipIEFOQSDYqNi32LHZitmC2Kkg2KfZhNmF2YbYp9i52Kkg2KfZhNmB2YTZ
+iNix2YrYqSIsCiAgMTQ6ICLYp9mE2KPYrNiz2KfZhSDYp9mE2YXYttin2K/YqSBBTkNBLUMiLAogIDE1OiAi2KfZhNij2KzYs9in
+2YUg2KfZhNmF2LbYp9iv2KkgQU5DQS1QIiwKICAxNjogItij2KzYs9in2YUgQVNDQSDYp9mE2YXYttin2K/YqSBJZ0EiLAogIDE3
+OiAi2KPYrNiz2KfZhSBBU0NBINin2YTZhdi22KfYr9ipIElnRyIsCiAgMTg6ICLZhdi22KfYryDYp9mE2LPYqtix2KjYqtmI2YTZ
+itiy2YrZhiBPIC0gQVNPVCIsCiAgMTk6ICLYpdmG2LLZitmFINin2YTZg9io2K8gQVNUIiwKICAyMDogItij2LPZitiq2YjZhiDZ
+gdmKINin2YTYqNmI2YQiLAogIDIxOiAi2KPYrNiz2KfZhSDZhdi22KfYr9ipINmE2YXYs9iq2YLYqNmEINin2YTYo9iz2KrZitmE
+INmD2YjZhNmK2YYiLAogIDIyOiAi2YHYrdi1INin2YTYqNmD2KrZitix2YrYpyDYp9mE2YXZgtin2YjZhdipINmE2YTYrdmF2LYg
+2YHZiiDYp9mE2KjZhNi62YUiLAogIDIzOiAi2YHYrdi1INin2YTYqNmD2KrZitix2YrYpyDYp9mE2YXZgtin2YjZhdipINmE2YTY
+rdmF2LYg2YHZiiDYs9in2KbZhCDYp9mE2KfYs9iq2LPZgtin2KEiLAogIDI0OiAi2KXZhtiy2YrZhSBBREEg2KPYr9mK2YbZiNiy
+2YrZhiDYr9mKINij2YXZitmG2KfYsiIsCiAgMjU6ICLZhdiy2LHYudipINmI2K3Ys9in2LPZitipINmH2YjYp9im2YrYqSIsCiAg
+MjY6ICLYo9mE2KjZiNmF2YrZhiDYqNmI2YQgMjQg2LPYp9i52KkiLAogIDI3OiAi2KPZhNio2YjZhdmK2YYg2YHZiiDYp9mE2LPY
+p9im2YQg2KfZhNmG2K7Yp9i52YoiLAogIDI4OiAi2KPZhNio2YjZhdmK2YYg2KfZhNiv2YUiLAogIDI5OiAi2YbYs9io2Kkg2KfZ
+hNij2YTYqNmI2YXZitmGINil2YTZiSDYp9mE2YPYsdmK2KfYqtmK2YbZitmGIiwKICAzMDogItmD2K3ZiNmEINmB2Yog2KfZhNiv
+2YUiLAogIDMxOiAi2YPYrdmI2YQg2YHZiiDYp9mE2KjZiNmEIiwKICAzMjogItil2YbYstmK2YUg2KPZhNiv2YjZhNin2LIiLAog
+IDMzOiAi2YfYsdmF2YjZhiDYp9mE2KPZhNiv2YjYs9iq2YrYsdmI2YYiLAogIDM0OiAi2YbYs9io2Kkg2KfZhNij2YTYr9mI2LPY
+qtmK2LHZiNmGINil2YTZiSDYp9mE2LHZitmG2YrZhiIsCiAgMzU6ICLYpdmG2LLZitmFINin2YTZgdmI2LPZgdin2KrYp9iyINin
+2YTZgtmE2YjZiiIsCiAgMzY6ICLYpdmG2LLZitmFINij2YTZgdinINis2YTZiNmD2YjYstmK2K/Yp9iyIiwKICAzNzogItij2YTZ
+gdinIDEg2KPZhtiq2Yog2KrYsdio2LPZitmGINmB2Yog2KfZhNio2LHYp9iyIiwKICAzODogItij2YXZiNmG2YrYpyDYp9mE2K/Z
+hSIsCiAgMzk6ICLYo9mF2YHZitiq2KfZhdmK2YYiLAogIDQwOiAi2KXZhtiy2YrZhSDYp9mE2KPZhdmK2YTZitiyIiwKICA0MTog
+Itij2YXZitmE2YrYsiDZgdmKINin2YTYqNmI2YQiLAogIDQyOiAi2YXYstix2LnYqSDZiNit2LPYp9iz2YrYqSDZhNin2YfZiNin
+2KbZitipIiwKICA0MzogItmH2LHZhdmI2YYg2KPZhtiv2LHZiNiz2KrZitmG2K/ZitmI2YYiLAogIDQ0OiAi2KPYrNiz2KfZhSDZ
+hdi22KfYr9ipIENDUCIsCiAgNDU6ICLYo9is2LPYp9mFINmF2LbYp9iv2Kkg2YTZhNmD2KfYsdiv2YrZiNmE2YrYqNmK2YYgSWdH
+IiwKICA0NjogItij2KzYs9in2YUg2YXYttin2K/YqSDZhNmE2YPYp9ix2K/ZitmI2YTZitio2YrZhiBJZ00iLAogIDQ3OiAi2KPY
+rNiz2KfZhSDZhdi22KfYr9ipINmE2YTYs9mG2KrYsdmI2YXZitixIiwKICA0ODogItij2KzYs9in2YUg2YXYttin2K/YqSDZhNiu
+2YTYp9mK2Kcg2KzYstixINin2YTYqNmG2YPYsdmK2KfYsyIsCiAgNDk6ICLYo9is2LPYp9mFINmF2LbYp9iv2KkgTGEvU1NCIiwK
+ICA1MDogIti52YrYp9ixINin2YTYo9is2LPYp9mFINin2YTZhdi22KfYr9ipINmE2LnYp9mF2YQgUmggLSBBbnRpLUQiLAogIDUx
+OiAi2KPYrNiz2KfZhSDZhdi22KfYr9ipIFJvL1NTQSIsCiAgNTI6ICLYo9is2LPYp9mFINmF2LbYp9iv2KkgU2NsLTcwIiwKICA1
+MzogItij2KzYs9in2YUg2YXYttin2K/YqSBTbWl0aCIsCiAgNTQ6ICLYo9is2LPYp9mFINmF2LbYp9iv2Kkg2YTZhNit2YrZiNin
+2YbYp9iqINin2YTZhdmG2YjZitipIElnTSIsCiAgNTU6ICLYo9is2LPYp9mFINmF2LbYp9iv2Kkg2YTZhNir2YrYsdmI2KzZhNmI
+2KjZiNmE2YrZhiIsCiAgNTY6ICLYo9is2LPYp9mFINmF2LbYp9iv2Kkg2YTZhNil2YbYr9mI2YXZitiz2YrZiNmFIElnQSIsCiAg
+NTc6ICLYo9is2LPYp9mFINmF2LbYp9iv2Kkg2YTZhNil2YbYr9mI2YXZitiz2YrZiNmFIElnRyIsCiAgNTg6ICLYo9is2LPYp9mF
+INmF2LbYp9iv2Kkg2YTZhNit2YrZiNin2YbYp9iqINin2YTZhdmG2YjZitipINmB2Yog2KfZhNiz2KfYptmEINin2YTZhdmG2YjZ
+iiIsCiAgNTk6ICLZhdi22KfYryDYp9mE2KvYsdmI2YXYqNmK2YYg2KfZhNir2KfZhNirIiwKICA2MDogItij2KzYs9in2YUg2YXY
+ttin2K/YqSDZhNmE2YHZiNiz2YHZiNmE2YrYqNmK2K8gSWdHIiwKICA2MTogItij2KzYs9in2YUg2YXYttin2K/YqSDZhNmE2YHZ
+iNiz2YHZiNmE2YrYqNmK2K8gSWdNIiwKICA2MjogItij2KzYs9in2YUg2YXYttin2K/YqSDZhNmE2LnYttmE2KfYqiDYp9mE2YXZ
+hNiz2KfYoSBBU01BIiwKICA2MzogItij2KzYs9in2YUg2YXYttin2K/YqSBHQUQiLAogIDY0OiAi2KPYrNiz2KfZhSDZhdi22KfY
+r9ipINmE2YTYrNmE2YrYp9iv2YrZhiBJZ0EiLAogIDY1OiAi2KPYrNiz2KfZhSDZhdi22KfYr9ipINmE2YTYrNmE2YrYp9iv2YrZ
+hiBJZ0ciLAogIDY2OiAi2KPYrNiz2KfZhSDZhdi22KfYr9ipINmE2YTYrdmK2YjYp9mG2KfYqiDYp9mE2YXZhtmI2YrYqSBJZ0ci
+LAogIDY3OiAi2KfZhNmH2LHZhdmI2YYg2KfZhNmF2LbYp9ivINmE2KXYr9ix2KfYsSDYp9mE2KjZiNmEIEFESCIsCiAgNjg6ICLZ
+hdiy2LHYudipINiz2KfYptmEINin2YTYp9iz2KrYs9mC2KfYoSIsCiAgNjk6ICLYqNmK2KrYpyBIQ0cg2YPYr9mE2KfZhNipINij
+2YjYsdin2YUiLAogIDcwOiAi2KjZitiq2KcgMiDYrNmE2KfZitmD2YjYqNix2YjYqtmK2YYgSWdHIiwKICA3MTogItio2YrYqtin
+IDIg2KzZhNin2YrZg9mI2KjYsdmI2KrZitmGIElnTSIsCiAgNzI6ICLZhtmK2KrYsdmI2KzZitmGINmK2YjYsdmK2Kcg2KfZhNiv
+2YUgQlVOIiwKICA3MzogItio2KfYsdio2YrYqtmI2LHYp9iqIiwKICA3NDogItio2LHZiNiq2YrZhiDYqNmG2LMg2KzZiNmG2LIi
+LAogIDc1OiAi2KjZhtiy2YjYr9mK2KfYstmK2KjZitmGIiwKICA3NjogItio2YrYqtinIDIg2YXZitmD2LHZiNis2YTZiNio2YjZ
+hNmK2YYiLAogIDc3OiAi2KrYrdmE2YrZhCDYp9mE2K3ZhdmEINin2YTYsdmC2YXZiiBCZXRhIEhDRyIsCiAgNzg6ICLYqNmK2YPY
+sdio2YjZhtin2KoiLAogIDc5OiAi2KPYrNiz2KfZhSDZhdi22KfYr9ipINmE2YTYqNmE2YfYp9ix2LPZitinIiwKICA4MDogItmF
+2LPYqti22K8g2KfZhNio2YTZh9in2LHYs9mK2Kcg2YHZiiDYp9mE2KjZiNmEIiwKICA4MTogItmF2LPYqti22K8g2KfZhNio2YTZ
+h9in2LHYs9mK2KciLAogIDgyOiAi2KjZitmE2YrYsdmI2KjZitmGINmF2KjYp9i02LEiLAogIDgzOiAi2KjZitmE2YrYsdmI2KjZ
+itmGINmD2YTZiiIsCiAgODQ6ICLZhdiy2LHYudipINiv2YUiLAogIDg1OiAi2LPZg9ixINin2YTYr9mFINio2LnYryDYs9in2LnY
+qtmK2YYg2YXZhiDYp9mE2KPZg9mEIiwKICA4NjogItiz2YPYsSDYtdin2KbZhSIsCiAgODc6ICLZitmI2LHZitinINin2YTYr9mF
+IiwKICA4ODogItmF2LLYsdi52Kkg2YjYrdiz2KfYs9mK2Kkg2LLYrNin2KzYqSDZg9io2YrYsdipIiwKICA4OTogItmF2LLYsdi5
+2Kkg2YjYrdiz2KfYs9mK2Kkg2LLYrNin2KzYqSDYtdi62YrYsdipIiwKICA5MDogItio2LHZiNiz2YrZhNinINmE2KfYqtmD2LMi
+LAogIDkxOiAi2KjYsdmI2LPZitmE2KcgSWdHIiwKICA5MjogItio2LHZiNiz2YrZhNinIElnTSIsCiAgOTM6ICLYs9mKINio2KjY
+qtin2YrYryDYtdin2KbZhSIsCiAgOTQ6ICLYs9mKINio2KjYqtin2YrYryDYqNi52K8g2KfZhNij2YPZhCIsCiAgOTU6ICLYs9mK
+INio2KjYqtin2YrYryDYudi02YjYp9im2YoiLAogIDk2OiAi2KfZhNmF2KrZhdmFINin2YTZhdmG2KfYudmKIEMzIiwKICA5Nzog
+Itin2YTZhdiq2YXZhSDYp9mE2YXZhtin2LnZiiBDNCIsCiAgOTg6ICLYr9mE2KfZhNipINij2YjYsdin2YUgQ0EgMTI1IiwKICA5
+OTogItiv2YTYp9mE2Kkg2KPZiNix2KfZhSBDQSAxNS4zIiwKICAxMDA6ICLYr9mE2KfZhNipINij2YjYsdin2YUgQ0EgMTkuOSIs
+CiAgMTAxOiAi2LXZiNix2Kkg2K/ZhSDZg9in2YXZhNipIENCQyIsCiAgMTAyOiAi2K7ZhNin2YrYpyBDRDQiLAogIDEwMzogItmG
+2LPYqNipIENENCDYpdmE2YkgQ0Q4IiwKICAxMDQ6ICLYrtmE2KfZitinIENEOCIsCiAgMTA1OiAi2K/ZhNin2YTYqSDYo9mI2LHY
+p9mFIENFQSIsCiAgMTA2OiAi2KXZhtiy2YrZhSDYp9mE2YLZhNioIENLLU1CIiwKICAxMDc6ICLYpdmG2LLZitmFIENLINin2YTZ
+g9mE2YoiLAogIDEwODogItmB2YrYsdmI2LMgQ01WINij2KzYs9in2YUg2YXYttin2K/YqSBJZ0ciLAogIDEwOTogItmB2YrYsdmI
+2LMgQ01WINij2KzYs9in2YUg2YXYttin2K/YqSBJZ00iLAogIDExMDogItmB2YrYsdmI2LMgQ01WIEROQSDYqNin2YTZgFBDUiDZ
+htmI2LnZiiIsCiAgMTExOiAi2KjYsdmI2KrZitmGINiz2Yog2KfZhNiq2YHYp9i52YTZiiBDUlAiLAogIDExMjogItmH2LHZhdmI
+2YYg2KfZhNmD2KfZhNiz2YrYqtmI2YbZitmGIiwKICAxMTM6ICLZg9in2YTYs9mK2YjZhSDZhdiq2KPZitmGIiwKICAxMTQ6ICLZ
+g9in2YTYs9mK2YjZhSDZg9mE2YoiLAogIDExNTogItmD2KfZhNio2LHZiNiq2YPYqtmK2YYg2YHZiiDYp9mE2KjYsdin2LIiLAog
+IDExNjogItiz2YrYsdmI2YTZiNio2YTYp9iy2YXZitmGIiwKICAxMTc6ICLZhdiy2LHYudipINmF2LPYrdipINi52YbZgiDYp9mE
+2LHYrdmFIiwKICAxMTg6ICLZg9mE2YjYsdmK2K8g2KfZhNiv2YUiLAogIDExOTogItmD2YTZiNix2YrYryDYp9mE2KjZiNmEIiwK
+ICAxMjA6ICLZhtiz2KjYqSDYp9mE2YPZhNmI2LHZitivINil2YTZiSDYp9mE2YPYsdmK2KfYqtmK2YbZitmGIiwKICAxMjE6ICLZ
+g9mI2YTZitiz2KrYsdmI2YQg2YPZhNmKIiwKICAxMjI6ICLYp9iu2KrYqNin2LEg2YPZiNmF2KjYsyDYp9mE2YXYqNin2LTYsSIs
+CiAgMTIzOiAi2KfYrtiq2KjYp9ixINmD2YjZhdio2LMg2LrZitixINin2YTZhdio2KfYtNixIiwKICAxMjQ6ICLZhtit2KfYsyDZ
+gdmKINin2YTYqNmI2YQiLAogIDEyNTogItmG2K3Yp9izINin2YTYr9mFIiwKICAxMjY6ICLZg9mI2LHYqtmK2LLZiNmEINi12KjY
+p9it2YoiLAogIDEyNzogItmD2YjYsdiq2YrYstmI2YQg2YXYs9in2KbZiiIsCiAgMTI4OiAi2YPZiNix2KrZitiy2YjZhCDYudi0
+2YjYp9im2YoiLAogIDEyOTogItij2KzYs9in2YUg2YXYttin2K/YqSDZhNio2LHZiNiq2YrZhiDYs9io2KfZitmDINmB2YrYsdmI
+2LMg2YPZiNix2YjZhtinIC0g2YPZhdmKIiwKICAxMzA6ICLZg9ix2YrYp9iq2YrZhtmK2YYg2KfZhNiv2YUiLAogIDEzMTogItiq
+2LXZgdmK2Kkg2KfZhNmD2LHZitin2KrZitmG2YrZhiIsCiAgMTMyOiAi2YPYsdmK2KfYqtmK2YbZitmGINio2YjZhCAyNCDYs9in
+2LnYqSIsCiAgMTMzOiAi2YPYsdmK2KfYqtmK2YbZitmGINio2YjZhCDYudi02YjYp9im2YoiLAogIDEzNDogItiv2Yog2K/Yp9mK
+2YXYsSBELURpbWVyIiwKICAxMzU6ICLZh9ix2YXZiNmGIERIRUEiLAogIDEzNjogItmH2LHZhdmI2YYgREhFQS1TIiwKICAxMzc6
+ICLYo9is2LPYp9mFINmF2LbYp9iv2Kkg2YTZhNmARE5BINmF2LLYr9mI2Kwg2KfZhNiz2YTYs9mE2KkgRUxJU0EiLAogIDEzODog
+Itij2KzYs9in2YUg2YXYttin2K/YqSDZhNmE2YBETkEg2YXYstiv2YjYrCDYp9mE2LPZhNiz2YTYqSBJRiIsCiAgMTM5OiAi2YXY
+pNi02LEg2KrZgdiq2Kog2KfZhNit2YXYtiDYp9mE2YbZiNmI2Yog2YTZhNit2YrZiNin2YbYp9iqINin2YTZhdmG2YjZitipIiwK
+ICAxNDA6ICLZhdiz2KrZiNmJINiv2YrYqNin2YPZitmGIC0g2K3Zhdi2INin2YTZgdin2YTYqNix2YjZitmDIiwKICAxNDE6ICLZ
+hdiz2KrZiNmJINiv2YrYrNmI2YPYs9mK2YYiLAogIDE0MjogItmB2YrYsdmI2LMg2KXYqNi02KrYp9mK2YYg2KjYp9ixIEVCViBJ
+Z0ciLAogIDE0MzogItmB2YrYsdmI2LMg2KXYqNi02KrYp9mK2YYg2KjYp9ixIEVCViBJZ00iLAogIDE0NDogIkVCVi1FQk5BIEln
+RyIsCiAgMTQ1OiAiRUJWLUVCTkEgSWdNIiwKICAxNDY6ICLYs9ix2LnYqSDYp9mE2KrYsdiz2YrYqCBFU1IiLAogIDE0NzogItmF
+2LPYqtmI2Ykg2KfZhNmB2YrZhtmK2KrZiNmK2YYiLAogIDE0ODogItmH2LHZhdmI2YYg2KXYs9iq2LHYp9iv2YrZiNmEIEUyIiwK
+ICAxNDk6ICLYqNix2YjZgdin2YrZhCDYp9mE2KPZiti2INin2YTZhdmI2LPYuSIsCiAgMTUwOiAi2KfZhNij2KzYs9in2YUg2KfZ
+hNmF2LbYp9iv2Kkg2KfZhNmG2YjZiNmK2Kkg2KfZhNmC2KfYqNmE2Kkg2YTZhNin2LPYqtiu2YTYp9i1IEVOQSAtIDYg2KPZhtmI
+2KfYuSIsCiAgMTUxOiAi2YbZiNin2KrYrCDYqtit2YTZhCDYp9mE2YHZitio2LHZitmGIEZEUHMiLAogIDE1MjogItiq2K3ZhNmK
+2YQg2K3ZhdmJINin2YTYqNit2LEg2KfZhNmF2KrZiNiz2LcgRk1GINio2KfZhNmAUENSIiwKICAxNTM6ICLZh9ix2YXZiNmGIEZT
+SCIsCiAgMTU0OiAi2LnYp9mF2YQg2KfZhNiq2KzZhNi3INin2YTYrtin2YXYsyIsCiAgMTU1OiAi2LfZgdix2KkgRmFjdG9yIFYg
+TGVpZGVuINio2KfZhNmAUENSIiwKICAxNTY6ICLYudin2YXZhCDYp9mE2KrYrNmE2Lcg2KfZhNiz2KfYqNi5IiwKICAxNTc6ICLY
+udin2YXZhCDYp9mE2KrYrNmE2Lcg2KfZhNir2KfZhdmGIiwKICAxNTg6ICLYs9mD2LEg2LXYp9im2YUgR1RDIiwKICAxNTk6ICLZ
+hdiu2LLZiNmGINin2YTYrdiv2YrYryBGZXJyaXRpbiIsCiAgMTYwOiAi2YHZitio2LHZitmG2YjYrNmK2YYiLAogIDE2MTogItmH
+2LHZhdmI2YYgVDMg2KfZhNit2LEiLAogIDE2MjogItmH2LHZhdmI2YYgVDQg2KfZhNit2LEiLAogIDE2MzogItmB2LHZg9iq2YjY
+stin2YXZitmGIiwKICAxNjQ6ICLZgdix2YPYqtmI2LIg2YHZiiDYp9mE2LPYp9im2YQg2KfZhNmF2YbZiNmKIiwKICAxNjU6ICLZ
+hdiy2LHYudipINmB2LfYsdmK2KfYqiIsCiAgMTY2OiAi2KXZhtiy2YrZhSBHNlBEIiwKICAxNjc6ICLYpdmG2LLZitmFIEdHVCIs
+CiAgMTY4OiAi2YfYsdmF2YjZhiDYp9mE2KzYp9iz2KrYsdmK2YYiLAogIDE2OTogItiz2YPYsSDYudi02YjYp9im2YoiLAogIDE3
+MDogItin2YTYs9mD2LEg2KfZhNiq2LHYp9mD2YXZiiBIYkExYyIsCiAgMTcxOiAi2YfYsdmF2YjZhiDYp9mE2YbZhdmIINin2YTY
+o9iz2KfYs9mKIiwKICAxNzI6ICLYrNix2KvZiNmF2Kkg2KfZhNmF2LnYr9ipIEguIHB5bG9yaSBJZ0ciLAogIDE3MzogItis2LHY
+q9mI2YXYqSDYp9mE2YXYudiv2KkgSC4gcHlsb3JpIElnTSIsCiAgMTc0OiAi2YXYs9iq2LbYryDYrNix2KvZiNmF2Kkg2KfZhNmF
+2LnYr9ipINmB2Yog2KfZhNio2LHYp9iyIiwKICAxNzU6ICLZgdmK2LHZiNizINin2YTYqtmH2KfYqCDYp9mE2YPYqNivIEEgLSBJ
+Z00iLAogIDE3NjogItmB2YrYsdmI2LMg2KfZhNiq2YfYp9ioINin2YTZg9io2K8gQSAtIElnRyIsCiAgMTc3OiAi2YHYtdmEINin
+2YTZh9mK2YXZiNis2YTZiNio2YrZhiDYp9mE2YPZh9ix2KjYp9im2YoiLAogIDE3ODogItmB2YrYsdmI2LMg2KfZhNiq2YfYp9io
+INin2YTZg9io2K8gQiBETkEg2KjYp9mE2YBQQ1Ig2YbZiNi52YoiLAogIDE3OTogItmB2YrYsdmI2LMg2KfZhNiq2YfYp9ioINin
+2YTZg9io2K8gQiBETkEg2KjYp9mE2YBQQ1Ig2YPZhdmKIiwKICAxODA6ICLYo9is2LPYp9mFINmF2LbYp9iv2KkgSEJjIElnTSIs
+CiAgMTgxOiAi2KPYrNiz2KfZhSDZhdi22KfYr9ipIEhCYyDZg9mE2YrYqSIsCiAgMTgyOiAi2YXYs9iq2LbYryBIQmUiLAogIDE4
+MzogItij2KzYs9in2YUg2YXYttin2K/YqSBIQmUiLAogIDE4NDogItij2KzYs9in2YUg2YXYttin2K/YqSBIQnMiLAogIDE4NTog
+ItmF2LPYqti22K8gSEJzIiwKICAxODY6ICLYo9is2LPYp9mFINmF2LbYp9iv2Kkg2YTZgdmK2LHZiNizIEMiLAogIDE4NzogItmB
+2YrYsdmI2LMgQyBSTkEg2KjYp9mE2YBQQ1Ig2YbZiNi52YoiLAogIDE4ODogItmB2YrYsdmI2LMgQyBSTkEg2KjYp9mE2YBQQ1Ig
+2YPZhdmKIiwKICAxODk6ICLYp9mE2YPZiNmE2YrYs9iq2LHZiNmEINin2YTZhtin2YHYuSBIREwiLAogIDE5MDogItij2KzYs9in
+2YUg2YXYttin2K/YqSDZhNmB2YrYsdmI2LMgSElWIiwKICAxOTE6ICLYqtij2YPZitivINmB2YrYsdmI2LMgSElWINio2LfYsdmK
+2YLYqSBXZXN0ZXJuIEJsb3QiLAogIDE5MjogItmB2YrYsdmI2LMgSElWIFJOQSDYqNin2YTZgFBDUiDZg9mF2YoiLAogIDE5Mzog
+IkhMQS1CMjcg2KjYp9mE2YBQQ1IiLAogIDE5NDogItmH2LHYqNizINin2YTZhtmI2Lkg2KfZhNij2YjZhCBJZ0ciLAogIDE5NTog
+ItmH2LHYqNizINin2YTZhtmI2Lkg2KfZhNij2YjZhCBJZ00iLAogIDE5NjogItmH2LHYqNizINin2YTZhtmI2Lkg2KfZhNir2KfZ
+htmKIElnRyIsCiAgMTk3OiAi2YfYsdio2LMg2KfZhNmG2YjYuSDYp9mE2KvYp9mG2YogSWdNIiwKICAxOTg6ICLZh9mK2YXZiNis
+2YTZiNio2YrZhiBIYiIsCiAgMTk5OiAi2YXZgtin2YjZhdipINin2YTYpdmG2LPZiNmE2YrZhiBIT01BLUlSIiwKICAyMDA6ICLZ
+h9mI2YXZiNiz2YrYs9iq2YrZhiIsCiAgMjAxOiAi2KfZhNis2YTZiNio2YjZhNmK2YYg2KfZhNmF2YbYp9i52YogSWdHIiwKICAy
+MDI6ICLYpdmG2KrYsdmE2YjZg9mK2YYgNiAtIElMLTYiLAogIDIwMzogItin2YTYrNmE2YjYqNmI2YTZitmGINin2YTZhdmG2KfY
+udmKIElnQSIsCiAgMjA0OiAi2K3Ys9in2LPZitipINin2YTYp9iz2KrZhti02KfZgiBJZ0Ug2KfZhNmG2YjYudmKIFJBU1QiLAog
+IDIwNTogItit2LPYp9iz2YrYqSDYp9mE2LfYudin2YUgSWdFINin2YTZhtmI2LnZiiBSQVNUIiwKICAyMDY6ICJJZ0Ug2KfZhNmD
+2YTZiiIsCiAgMjA3OiAi2KfZhNis2YTZiNio2YjZhNmK2YYg2KfZhNmF2YbYp9i52YogSWdHIiwKICAyMDg6ICLYp9mE2KzZhNmI
+2KjZiNmE2YrZhiDYp9mE2YXZhtin2LnZiiBJZ00iLAogIDIwOTogItil2YbYs9mI2YTZitmGINi52LTZiNin2KbZiiIsCiAgMjEw
+OiAi2KPYrNiz2KfZhSDZhdi22KfYr9ipINmE2YTYpdmG2LPZiNmE2YrZhiIsCiAgMjExOiAi2KXZhtiz2YjZhNmK2YYg2LXYp9im
+2YUiLAogIDIxMjogItil2YbYs9mI2YTZitmGINio2LnYryDYp9mE2KPZg9mEIiwKICAyMTM6ICLYudin2YXZhCDYp9mE2YbZhdmI
+INin2YTYtNio2YrZhyDYqNin2YTYpdmG2LPZiNmE2YrZhiBJR0YtMSIsCiAgMjE0OiAi2K3Yr9mK2K8g2KfZhNiv2YUiLAogIDIx
+NTogItiq2K3ZhNmK2YQg2KfZhNmD2LHZiNmF2YjYs9mI2YXYp9iqIEthcnlvdHlwaW5nIiwKICAyMTY6ICLYrtmE2KfZitinINin
+2YTYsNim2KjYqSDYp9mE2K3Zhdix2KfYoSBMRSBDZWxscyIsCiAgMjE3OiAi2KXZhtiy2YrZhSBMREgiLAogIDIxODogItin2YTZ
+g9mI2YTZitiz2KrYsdmI2YQg2KfZhNi22KfYsSBMREwg2YXYqNin2LTYsSIsCiAgMjE5OiAi2KfZhNmD2YjZhNmK2LPYqtix2YjZ
+hCDYp9mE2LbYp9ixIExETCIsCiAgMjIwOiAi2YfYsdmF2YjZhiBMSCIsCiAgMjIxOiAi2KPYrNiz2KfZhSDZhdi22KfYr9ipINmF
+2YrZg9ix2YjYstmI2YXZitipINmE2YTZg9io2K8g2YjYp9mE2YPZhNmJIExLTSIsCiAgMjIyOiAi2YTYp9mD2KrYp9iqIiwKICAy
+MjM6ICLZh9ix2YXZiNmGINin2YTZhNio2KrZitmGIiwKICAyMjQ6ICLYpdmG2LLZitmFINin2YTZhNmK2KjYp9iyIiwKICAyMjU6
+ICLZhdiz2KrZiNmJINin2YTZhNmK2KvZitmI2YUiLAogIDIyNjogItmF2LbYp9ivINin2YTYqtis2YTYtyDYp9mE2LDYptio2Yog
+THVwdXMgQW50aWNvYWd1bGFudCIsCiAgMjI3OiAi2LfZgdix2KkgTVRIRlIg2KjYp9mE2YBQQ1IiLAogIDIyODogItmF2KfYutmG
+2LPZitmI2YUiLAogIDIyOTogItmB2YrZhNmFINmF2YTYp9ix2YrYpyIsCiAgMjMwOiAi2YXZitmD2LHZiNij2YTYqNmI2YXZitmG
+INio2YjZhCAyNCDYs9in2LnYqSIsCiAgMjMxOiAi2YXZitmD2LHZiNij2YTYqNmI2YXZitmGINio2YjZhCDYudi02YjYp9im2Yoi
+LAogIDIzMjogItmG2YrZg9mI2KrZitmGINmB2Yog2KfZhNiz2YrYsdmFIiwKICAyMzM6ICLZhtmK2YPZiNiq2YrZhiIsCiAgMjM0
+OiAi2K/ZhSDYrtmB2Yog2YHZiiDYp9mE2KjYsdin2LIiLAogIDIzNTogItij2YHZitmI2YbYp9iqIC0g2YXZiNix2YHZitmGINmI
+2YfZitix2YjZitmGIiwKICAyMzY6ICLYt9mB2LHYqSDYrNmK2YYg2KfZhNio2LHZiNir2LHZiNmF2KjZitmGINio2KfZhNmAUENS
+IiwKICAyMzc6ICLYr9ix2KzYqSDYrdmF2YjYttipINin2YTYqNix2KfYsiBwSCIsCiAgMjM4OiAi2YfYsdmF2YjZhiDYp9mE2KjY
+sdmI2YTYp9mD2KrZitmGIFBSTCIsCiAgMjM5OiAiUFNBINin2YTYrdixIiwKICAyNDA6ICJQU0Eg2KfZhNmD2YTZiiIsCiAgMjQx
+OiAi2YfYsdmF2YjZhiDYrNin2LEg2KfZhNiv2LHZgtmK2KkgUFRIIiwKICAyNDI6ICLYstmF2YYg2KfZhNir2LHZiNmF2KjZiNio
+2YTYp9iz2KrZitmGINin2YTYrNiy2KbZiiBQVFQiLAogIDI0MzogItmB2YjYs9mB2YjYsSIsCiAgMjQ0OiAi2LnYr9ivINin2YTY
+tdmB2KfYptitINin2YTYr9mF2YjZitipIiwKICAyNDU6ICLYqNmI2KrYp9iz2YrZiNmFINin2YTYr9mFIiwKICAyNDY6ICLYqNmI
+2KrYp9iz2YrZiNmFINin2YTYqNmI2YQiLAogIDI0NzogItin2K7Yqtio2KfYsSDYrdmF2YQiLAogIDI0ODogItio2LHZiNmD2KfZ
+hNiz2YrYqtmI2YbZitmGIiwKICAyNDk6ICLZh9ix2YXZiNmGINin2YTYqNix2YjYrNiz2KrZitix2YjZhiIsCiAgMjUwOiAi2KjY
+sdmI2KrZitmGIEMiLAogIDI1MTogItmB2LXZhCDYqNix2YjYqtmK2YbYp9iqINin2YTYr9mFINin2YTZg9mH2LHYqNin2KbZiiIs
+CiAgMjUyOiAi2KjYsdmI2KrZitmGIFMiLAogIDI1MzogItiy2YXZhiDZiNiq2LHZg9mK2LIg2KfZhNio2LHZiNir2LHZiNmF2KjZ
+itmGIFBUIiwKICAyNTQ6ICLZhdiy2LHYudipINi12K/ZitivIiwKICAyNTU6ICLYqNmK2LHZiNmB2KfYqiIsCiAgMjU2OiAi2KjY
+sdmI2KrZitmGINmB2Yog2KjZiNmEINi52LTZiNin2KbZiiIsCiAgMjU3OiAi2LnYp9mF2YQg2KfZhNix2YjZhdin2KrZiNmK2K8g
+UkYg2YPZhdmKIiwKICAyNTg6ICLZhdiz2K3YqSDYtNix2KzZitipIiwKICAyNTk6ICLYs9mD2LHZitin2Kog2YXYrtiq2LLZhNip
+INmB2Yog2KfZhNio2LHYp9iyIiwKICAyNjA6ICLYs9mD2LHZitin2Kog2YXYrtiq2LLZhNipINmB2Yog2KfZhNio2YjZhCIsCiAg
+MjYxOiAi2LnYr9ivINin2YTYrtmE2KfZitinINin2YTYtNio2YPZitipIiwKICAyNjI6ICLYudin2YXZhCDYsdmK2LPYsyBSaCIs
+CiAgMjYzOiAi2KfYrtiq2KjYp9ixIFJvc2UgV2FhbGVyINmE2YTYsdmI2YXYp9iq2YjZitivIiwKICAyNjQ6ICLZhdiz2KrYttiv
+INmB2YrYsdmI2LMg2KfZhNix2YjYqtinINmB2Yog2KfZhNio2LHYp9iyIiwKICAyNjU6ICLYp9mE2K3Ytdio2Kkg2KfZhNij2YTZ
+hdin2YbZitipIFJ1YmVsbGEgSWdHIiwKICAyNjY6ICLYp9mE2K3Ytdio2Kkg2KfZhNij2YTZhdin2YbZitipIFJ1YmVsbGEgSWdN
+IiwKICAyNjc6ICLZhdiz2KrYttivINin2YTZg9io2K8g2KfZhNiw2KfYptioIFNMQSIsCiAgMjY4OiAi2YXYstix2LnYqSDYs9in
+2KbZhCDZhdmG2YjZiiIsCiAgMjY5OiAi2KrYrdmE2YrZhCDYs9in2KbZhCDZhdmG2YjZiiIsCiAgMjcwOiAi2KrYrdmE2YrZhCDY
+s9in2KbZhCDZhdmG2YjZiiDYqNin2YTZg9mF2KjZitmI2KrYsSBDQVNBIiwKICAyNzE6ICLYp9iu2KrYqNin2LEg2KfZhNio2YrY
+sdmI2YPYs9mK2K/Yp9iyINmB2Yog2KfZhNiz2KfYptmEINin2YTZhdmG2YjZiiIsCiAgMjcyOiAi2KjYsdmI2KrZitmGINin2YTY
+o9mF2YrZhNmI2YrYryBBINmB2Yog2KfZhNiz2YrYsdmFIiwKICAyNzM6ICLYtdmI2K/ZitmI2YUg2KfZhNiv2YUiLAogIDI3NDog
+Itit2LPYp9iz2YrYqSDYp9mE2YTYqNmGIElnRSDYp9mE2YbZiNi52YoiLAogIDI3NTogItmF2LLYsdi52Kkg2KjZhNi62YUiLAog
+IDI3NjogItiq2K3ZhNmK2YQg2K3YtdmI2KfYqiIsCiAgMjc3OiAi2KrYrdmE2YrZhCDYqNix2KfYsiDZg9in2YXZhCIsCiAgMjc4
+OiAi2YXYstix2LnYqSDYqNix2KfYsiIsCiAgMjc5OiAi2KrYrdmE2YrZhCBTdHJveCIsCiAgMjgwOiAi2YXYstix2LnYqSDZhdiz
+2K3YqSIsCiAgMjgxOiAi2YXYstix2LnYqSDYs9in2KbZhCDYstmE2KfZhNmKIiwKICAyODI6ICLZhdiy2LHYudipINin2YTYr9ix
+2YYgVEIiLAogIDI4MzogItin2K7Yqtio2KfYsSDZg9mI2KfZhtiq2YrZgdmK2LHZiNmGINmE2YTYr9ix2YYgVEIgR29sZCIsCiAg
+Mjg0OiAiRE5BINmE2YTYr9ix2YYg2KjYp9mE2YBQQ1Ig2YbZiNi52YoiLAogIDI4NTogItmH2LHZhdmI2YYgVDMiLAogIDI4Njog
+ItmH2LHZhdmI2YYgVDQiLAogIDI4NzogItmB2K3YtSDYr9ix2YYg2LnZitmG2Kkg2YjYp9it2K/YqSDYqNi12KjYutipINiy2YrZ
+h9mEINmG2YrZhNiz2YYiLAogIDI4ODogItmB2K3YtSDYr9ix2YYg2LnZitmG2KrZitmGINio2LXYqNi62Kkg2LLZitmH2YQg2YbZ
+itmE2LPZhiIsCiAgMjg5OiAi2YHYrdi1INiv2LHZhiAzINi52YrZhtin2Kog2KjYtdio2LrYqSDYstmK2YfZhCDZhtmK2YTYs9mG
+IiwKICAyOTA6ICLYp9mE2LPYudipINin2YTZg9mE2YrYqSDZhNin2LHYqtio2KfYtyDYp9mE2K3Yr9mK2K8gVElCQyIsCiAgMjkx
+OiAi2KrYrdin2YTZitmEIFRPUkNIIElnTSDZiElnRyIsCiAgMjkyOiAi2YfYsdmF2YjZhiDYp9mE2LrYr9ipINin2YTYr9ix2YLZ
+itipIFRTSCIsCiAgMjkzOiAi2YXYs9iq2YjZiSDYqtin2YPYsdmI2YTZitmF2LMiLAogIDI5NDogItmF2LPYqtmI2Ykg2KrZitis
+2LHZitiq2YjZhCAtINmD2KfYsdio2KfZhdin2LLZitio2YrZhiIsCiAgMjk1OiAi2KrYs9iq2YjYs9iq2YrYsdmI2YYg2K3YsSIs
+CiAgMjk2OiAi2KrYs9iq2YjYs9iq2YrYsdmI2YYg2YPZhNmKIiwKICAyOTc6ICLZgdit2LUg2KzZitmG2KfYqiDZgtin2KjZhNmK
+2Kkg2KfZhNiq2KzZhNi3IiwKICAyOTg6ICLYq9mK2LHZiNis2YTZiNio2YjZhNmK2YYiLAogIDI5OTogItij2KzYs9in2YUg2YXY
+ttin2K/YqSDZhNmE2KrYsdin2YbYs9is2YTZiNiq2KfZhdmK2YbYp9iyINin2YTZhtiz2YrYrNmKIElnQSIsCiAgMzAwOiAi2KPY
+rNiz2KfZhSDZhdi22KfYr9ipINmE2YTYqtix2KfZhtiz2KzZhNmI2KrYp9mF2YrZhtin2LIg2KfZhNmG2LPZitis2YogSWdHIiwK
+ICAzMDE6ICLYp9mE2LnYr9ivINin2YTZg9mE2Yog2YTZg9ix2KfYqiDYp9mE2K/ZhSDYp9mE2KjZiti22KfYoSBUTEMiLAogIDMw
+MjogItin2YTYqNix2YjYqtmK2YYg2KfZhNmD2YTZiiIsCiAgMzAzOiAi2KrZiNmD2LPZiNio2YTYp9iy2YXYpyBJZ0ciLAogIDMw
+NDogItiq2YjZg9iz2YjYqNmE2KfYstmF2KcgSWdNIiwKICAzMDU6ICLYqtix2KfZhdin2K/ZiNmEIiwKICAzMDY6ICLYqti02KjY
+uSDYp9mE2KrYsdin2YbYs9mB2YrYsdmK2YYiLAogIDMwNzogItiq2LHYp9mG2LPZgdmK2LHZitmGIiwKICAzMDg6ICLYp9mE2K/Z
+h9mI2YYg2KfZhNir2YTYp9ir2YrYqSBUcmlnbHljZXJpZGVzIiwKICAzMDk6ICLYqtix2YjYqNmI2YbZitmGIEkg2YbZiNi52Yoi
+LAogIDMxMDogItiq2LHZiNio2YjZhtmK2YYgSSDZg9mF2YoiLAogIDMxMTogItij2KzYs9in2YUg2YXYttin2K/YqSDZhNmE2LrY
+r9ipINin2YTYr9ix2YLZitipIEFudGktVFBPIiwKICAzMTI6ICLYrdmF2LYg2KfZhNmK2YjYsdmK2YMgVXJpYyBBY2lkIiwKICAz
+MTM6ICLYqtit2YTZitmEINio2YjZhCDZg9in2YXZhCIsCiAgMzE0OiAi2YXYstix2LnYqSDYqNmI2YQiLAogIDMxNTogItiq2K3Z
+hNmK2YQg2KfZhNiy2YfYsdmKIFZEUkwiLAogIDMxNjogItmB2YrYqtin2YXZitmGIEIxMiIsCiAgMzE3OiAi2K3Zhdi2IFZNQSDZ
+gdmKINin2YTYqNmI2YQiLAogIDMxODogItmF2LLYsdi52Kkg2KXZgdix2KfYstin2Kog2YXZh9io2YTZitipIiwKICAzMTk6ICLZ
+hti02KfYtyDYudin2YXZhCDZgdmI2YYg2YjZitmE2KjYsdin2YbYryIsCiAgMzIwOiAi2KrYsdmD2YrYsiDYudin2YXZhCDZgdmI
+2YYg2YjZitmE2KjYsdin2YbYryIsCiAgMzIxOiAi2KfYrtiq2KjYp9ixINmB2YrYr9in2YQg2YTZhNiq2YrZgdmI2K8iLAogIDMy
+MjogItmF2LLYsdi52Kkg2KzYsditIiwKICAzMjM6ICLYstmG2YMiLAogIDMyNDogItij2YTZgdinIDEg2KPZhtiq2Yog2KrYsdio
+2LPZitmGINmB2Yog2KfZhNiv2YUiLAogIDMyNTogItio2YrZhNmK2LHZiNio2YrZhiDYutmK2LEg2YXYqNin2LTYsSIsCiAgMzI2
+OiAi2YXYudiv2YQg2KfZhNiq2LHYtNmK2K0g2KfZhNmD2KjZitio2Yog2KfZhNmF2YLYr9ixIGVHRlIiLAogIDMyNzogItmF2LLY
+sdi52Kkg2KPYsNmGIiwKICAzMjg6ICLZhdiy2LHYudipINi52YrZhiIsCiAgMzI5OiAi2KrYrdmE2YrZhCDYr9mH2YjZhiDZg9in
+2YXZhCBMaXBpZCBQcm9maWxlIiwKICAzMzA6ICLYudmK2YbYqSDZhdiy2LHYudipINiv2YUiLAogIDMzMTogItmB2YrYqtin2YXZ
+itmGINivIDI1INmH2YrYr9ix2YjZg9iz2YogRDMiCn07Cg==
+          DATA
+          tr -d '\r\n ' < "$RUNNER_TEMP/lab2labArabic.b64" > "$RUNNER_TEMP/lab2labArabic.clean.b64"
+          python -c "import base64; open('src/lab2labArabic.ts','wb').write(base64.b64decode(open(r'$RUNNER_TEMP/lab2labArabic.clean.b64','rb').read()))"
+
+      - name: Patch Lab2Lab UI and bilingual search
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          p = Path("src/main.ts")
+          s = p.read_text(encoding="utf-8")
+
+          import_old = "import { LAB2LAB_SOURCE } from './lab2labCatalog';"
+          import_new = "import { LAB2LAB_SOURCE } from './lab2labCatalog';\nimport { LAB2LAB_ARABIC } from './lab2labArabic';"
+          if "from './lab2labArabic'" not in s:
+              if import_old not in s:
+                  raise RuntimeError("Lab2Lab import marker not found")
+              s = s.replace(import_old, import_new, 1)
+
+          selected_marker = "  let selected: Lab2LabPriceRow | null = null;\n\n  const norm = (value: string) => value.trim().toLocaleLowerCase();"
+          selected_new = "  let selected: Lab2LabPriceRow | null = null;\n  const arabicNameFor = (id: number) => LAB2LAB_ARABIC[id] || '';\n\n  const norm = (value: string) => value.trim().toLocaleLowerCase();"
+          if "const arabicNameFor" not in s:
+              if selected_marker not in s:
+                  raise RuntimeError("Lab2Lab selected marker not found")
+              s = s.replace(selected_marker, selected_new, 1)
+
+          search_old = "    return rows.filter(row => norm(row.testName).includes(q));"
+          search_new = "    return rows.filter(row => norm(row.testName).includes(q) || norm(arabicNameFor(row.id)).includes(q));"
+          if search_new not in s:
+              if search_old not in s:
+                  raise RuntimeError("Lab2Lab search marker not found")
+              s = s.replace(search_old, search_new, 1)
+
+          selected_old = '''      <div class="lab2lab-selected-main">
+        <span>اسم التحليل</span>
+        <strong class="ltr">${esc(selected.testName)}</strong>
+      </div>'''
+          selected_new_html = '''      <div class="lab2lab-selected-main">
+        <span>اسم التحليل</span>
+        <strong class="ltr">${esc(selected.testName)}</strong>
+        <small dir="rtl" style="display:block;margin-top:6px;font-size:14px;color:#526b7a;font-weight:800">${esc(arabicNameFor(selected.id))}</small>
+      </div>'''
+          if 'arabicNameFor(selected.id)' not in s:
+              if selected_old not in s:
+                  raise RuntimeError("Selected Lab2Lab card marker not found")
+              s = s.replace(selected_old, selected_new_html, 1)
+
+          option_old = '''      <button type="button" class="lab2lab-option" data-lab2lab-id="${row.id}">
+        <span class="ltr">${esc(row.testName)}</span>
+        <strong class="ltr">${esc(row.price)}</strong>
+      </button>'''
+          option_new = '''      <button type="button" class="lab2lab-option" data-lab2lab-id="${row.id}">
+        <span>
+          <b class="ltr" style="display:block">${esc(row.testName)}</b>
+          <small dir="rtl" style="display:block;margin-top:4px;font-size:12px;color:#627786;font-weight:700">${esc(arabicNameFor(row.id))}</small>
+        </span>
+        <strong class="ltr">${esc(row.price)}</strong>
+      </button>'''
+          if 'arabicNameFor(row.id)' not in s:
+              if option_old not in s:
+                  raise RuntimeError("Lab2Lab dropdown option marker not found")
+              s = s.replace(option_old, option_new, 1)
+
+          placeholder_old = 'placeholder="اختر من القائمة أو اكتب اسم التحليل..."'
+          placeholder_new = 'placeholder="اكتب بالعربي أو الإنجليزي، أو اختر من القائمة..."'
+          s = s.replace(placeholder_old, placeholder_new, 1)
+
+          help_old = '<div class="lab2lab-help">اضغط لعرض كل التحاليل، أو اكتب لتصفية القائمة ثم اختر التحليل.</div>'
+          help_new = '<div class="lab2lab-help">كل تحليل يظهر بالعربي والإنجليزي • البحث يعمل بالاسمين.</div>'
+          s = s.replace(help_old, help_new, 1)
+
+          p.write_text(s, encoding="utf-8")
+
+          pkg_path = Path("package.json")
+          pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+          pkg["version"] = "6.8.2"
+          pkg_path.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          conf_path = Path("src-tauri/tauri.conf.json")
+          conf = json.loads(conf_path.read_text(encoding="utf-8"))
+          conf["version"] = "6.8.2"
+          conf_path.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          cargo_path = Path("src-tauri/Cargo.toml")
+          cargo = cargo_path.read_text(encoding="utf-8")
+          cargo = re.sub(r'(?m)^version\s*=\s*"6\.8\.1"\s*$', 'version = "6.8.2"', cargo, count=1)
+          cargo_path.write_text(cargo, encoding="utf-8")
+          PY
+
+      - name: Verify main clinic lab catalog untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c "$RUNNER_TEMP/labCatalog.sha256"
+
+      - name: Verify Arabic catalog completeness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          a = Path("src/lab2labArabic.ts").read_text(encoding="utf-8")
+          ids = {int(x) for x in re.findall(r'^\s*(\d+):', a, flags=re.M)}
+          assert ids == set(range(1, 332)), (len(ids), min(ids), max(ids))
+          assert any('\u0600' <= ch <= '\u06ff' for ch in a)
+          print("331 Arabic Lab2Lab names verified")
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: V6.8.2 bilingual gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          main = Path("src/main.ts").read_text(encoding="utf-8")
+          arabic = Path("src/lab2labArabic.ts").read_text(encoding="utf-8")
+          pkg = json.loads(Path("package.json").read_text(encoding="utf-8"))
+          conf = json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+
+          assert pkg["version"] == "6.8.2"
+          assert conf["version"] == "6.8.2"
+          assert "LAB2LAB_ARABIC" in main
+          assert "arabicNameFor(row.id)" in main
+          assert "arabicNameFor(selected.id)" in main
+          assert "اكتب بالعربي أو الإنجليزي" in main
+          assert "صورة دم كاملة CBC" in arabic
+          assert "السكر التراكمي HbA1c" in arabic
+          assert "هرمون الغدة الدرقية TSH" in arabic
+          assert "فيتامين د 25 هيدروكسي D3" in arabic
+          print("V6.8.2 bilingual Lab2Lab gate passed")
+          PY
+
+      - name: Build V6.8.2 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify self-contained installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          Write-Host "Installer: $($installer.FullName)"
+          Write-Host "Size: $($installer.Length) bytes"
+          if ($installer.Length -lt 80000000) { throw "Offline WebView2 installer missing or setup too small" }
+
+      - name: Upload V6.8.2 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V6.8.2-Lab2Lab-Arabic-English
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated V6.8.2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add src/main.ts src/lab2labArabic.ts package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V6.8.2: Arabic names and bilingual Lab2Lab search"
+          fi
+
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
