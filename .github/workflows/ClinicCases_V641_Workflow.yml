@@ -1,0 +1,134 @@
+name: Clinic Cases V6.4.1 Clear Service Hub
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply V6.4.1 clear service hub
+        shell: bash
+        run: |
+          cat > _v641_patch.py <<'PY'
+          from pathlib import Path
+          import json
+
+          main_path = Path("src/main.ts")
+          s = main_path.read_text(encoding="utf-8")
+          service_helper = 'function serviceDockHtml() {\n  const action = (key: string, icon: string, label: string, hint: string) =>\n    `<button class="service-hub-btn service-action-btn" data-service-action="${key}" title="${esc(hint)}">\n      <span class="service-hub-icon">${icon}</span>\n      <span class="service-hub-copy"><strong>${label}</strong><small>${hint}</small></span>\n    </button>`;\n\n  const nav = (target: Screen, icon: string, label: string) =>\n    `<button class="service-hub-btn service-nav-btn ${screen === target ? \'active\' : \'\'}" data-service-screen="${target}" title="فتح ${label}">\n      <span class="service-hub-icon">${icon}</span>\n      <span class="service-hub-copy"><strong>${label}</strong></span>\n    </button>`;\n\n  return `\n    <section class="service-hub" aria-label="مركز الوصول السريع">\n      <div class="service-hub-group quick">\n        <div class="service-hub-group-title">\n          <span>تسجيل سريع</span>\n          <small>إنشاء حالة جديدة مباشرة</small>\n        </div>\n        <div class="service-hub-buttons quick-buttons">\n          ${action(\'visit\',\'🩺\',\'كشف / استشارة\',\'تسجيل حالة عيادة\')}\n          ${action(\'lab-case\',\'🧪\',\'تحاليل\',\'تسجيل مريض تحاليل\')}\n          ${action(\'nursing-case\',\'✚\',\'تمريض\',\'تسجيل خدمة تمريض\')}\n        </div>\n      </div>\n\n      <div class="service-hub-group navigation">\n        <div class="service-hub-group-title">\n          <span>التنقل بين الأقسام</span>\n          <small>كل الخدمات مرتبطة ببعض</small>\n        </div>\n        <div class="service-hub-buttons nav-buttons">\n          ${nav(\'dashboard\',\'⌂\',\'الرئيسية\')}\n          ${nav(\'patients\',\'👥\',\'المرضى\')}\n          ${nav(\'today\',\'◷\',\'حالات اليوم\')}\n          ${nav(\'doctors\',\'⚕\',\'الأطباء\')}\n          ${nav(\'labs\',\'🧪\',\'التحاليل\')}\n          ${nav(\'nursing\',\'✚\',\'خدمات التمريض\')}\n          ${nav(\'reports\',\'▤\',\'التقارير\')}\n        </div>\n      </div>\n\n      <div class="service-hub-group system">\n        <div class="service-hub-group-title">\n          <span>إدارة النظام</span>\n          <small>الحفظ والإعدادات</small>\n        </div>\n        <div class="service-hub-buttons system-buttons">\n          ${nav(\'archive\',\'▣\',\'الأرشيف\')}\n          ${nav(\'backups\',\'⟳\',\'النسخ الاحتياطية\')}\n          ${nav(\'settings\',\'⚙\',\'الإعدادات\')}\n        </div>\n      </div>\n    </section>`;\n}'
+
+          start = s.find("function serviceDockHtml() {")
+          end = s.find("\nfunction shell(", start)
+          if start < 0 or end < 0:
+              raise RuntimeError("serviceDockHtml bounds not found")
+          s = s[:start] + service_helper.strip() + "\n\n" + s[end+1:]
+          s = s.replace("version: '6.4.0'", "version: '6.4.1'", 1)
+          main_path.write_text(s, encoding="utf-8")
+
+          style_path = Path("src/style.css")
+          style = style_path.read_text(encoding="utf-8")
+          css = '/* V6.4.1 clear integrated service hub */\n.service-hub{display:grid;gap:10px;margin:-3px 0 16px;padding:10px;border:1px solid #dce6ed;border-radius:14px;background:rgba(255,255,255,.96);box-shadow:0 7px 20px rgba(15,48,75,.06)}\n.service-hub-group{display:grid;grid-template-columns:150px minmax(0,1fr);gap:10px;align-items:center}\n.service-hub-group + .service-hub-group{padding-top:9px;border-top:1px solid #edf2f5}\n.service-hub-group-title span,.service-hub-group-title small{display:block}\n.service-hub-group-title span{color:#173650;font-size:11px;font-weight:900}\n.service-hub-group-title small{margin-top:2px;color:#8b98a7;font-size:8px}\n.service-hub-buttons{display:flex;flex-wrap:wrap;align-items:stretch;gap:7px}\n.service-hub-btn{border:1px solid #d8e3ea;border-radius:10px;background:linear-gradient(180deg,#fff 0%,#f2f6f8 100%);color:#28445e;min-height:44px;padding:6px 9px;display:flex;align-items:center;gap:8px;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 4px 10px rgba(20,54,82,.06)}\n.service-hub-btn:hover{transform:translateY(-1px);border-color:#aac3d4}\n.service-hub-icon{width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;border-radius:9px;background:#eaf3f7;color:#123c5c;font-size:16px;font-weight:900}\n.service-hub-copy{min-width:0;text-align:right}\n.service-hub-copy strong,.service-hub-copy small{display:block;white-space:nowrap}\n.service-hub-copy strong{font-size:9.5px;font-weight:900}\n.service-hub-copy small{margin-top:2px;font-size:7.5px;color:#8492a2}\n.quick-buttons .service-hub-btn{min-width:150px;background:linear-gradient(180deg,#123f6b 0%,#0a2949 100%);color:#fff;border-color:#0a2949}\n.quick-buttons .service-hub-icon{background:rgba(255,255,255,.13);color:#fff}\n.quick-buttons .service-hub-copy small{color:#c6d9e8}\n.nav-buttons .service-hub-btn{min-width:112px}\n.system-buttons .service-hub-btn{min-width:135px}\n.service-hub-btn.active{border-color:#6cbfb7;background:linear-gradient(180deg,#edfafa 0%,#dff4f1 100%);color:#0b625c}\n.service-hub-btn.active .service-hub-icon{background:#ccebe7;color:#07574f}\n@media(max-width:1250px){.service-hub-group{grid-template-columns:1fr;gap:6px}.service-hub-group-title{display:flex;align-items:baseline;gap:8px}.service-hub-group-title small{margin-top:0}}\n@media(max-width:850px){.service-hub-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.service-hub-btn,.quick-buttons .service-hub-btn,.nav-buttons .service-hub-btn,.system-buttons .service-hub-btn{min-width:0;width:100%}}'
+          if "/* V6.4.1 clear integrated service hub */" not in style:
+              style += "\n" + css.strip() + "\n"
+          style_path.write_text(style, encoding="utf-8")
+
+          pkg_path = Path("package.json")
+          pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+          pkg["version"] = "6.4.1"
+          pkg_path.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          conf_path = Path("src-tauri/tauri.conf.json")
+          conf = json.loads(conf_path.read_text(encoding="utf-8"))
+          conf["version"] = "6.4.1"
+          assert conf.get("bundle", {}).get("windows", {}).get("webviewInstallMode", {}).get("type") == "offlineInstaller"
+          conf_path.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          cargo_path = Path("src-tauri/Cargo.toml")
+          lines = cargo_path.read_text(encoding="utf-8").splitlines()
+          for i, line in enumerate(lines):
+              if line.startswith('version = "'):
+                  lines[i] = 'version = "6.4.1"'
+                  break
+          cargo_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+          print("V6.4.1 clear service hub applied")
+
+          PY
+          python _v641_patch.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: V6.4.1 UI gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          main=Path("src/main.ts").read_text(encoding="utf-8")
+          css=Path("src/style.css").read_text(encoding="utf-8")
+          conf=json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+          for term in ["تسجيل سريع","التنقل بين الأقسام","إدارة النظام","service-hub-icon","data-service-action","data-service-screen"]:
+              assert term in main, term
+          for term in ["/* V6.4.1 clear integrated service hub */",".service-hub-group",".quick-buttons",".service-hub-btn.active"]:
+              assert term in css, term
+          assert "version: '6.4.1'" in main
+          assert conf["version"]=="6.4.1"
+          print("V6.4.1 gate passed")
+          PY
+
+      - name: Build V6.4.1 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          if ($installer.Length -lt 80000000) { throw "Offline WebView2 installer missing or setup too small" }
+
+      - name: Commit validated V6.4.1 source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src/style.css src-tauri/tauri.conf.json package.json src-tauri/Cargo.toml
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+          if ! git diff --cached --quiet; then
+            git commit -m "V6.4.1: organize service hub and clarify icons"
+            git push
+          fi
+
+      - name: Upload V6.4.1 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V6.4.1-Clear-Service-Hub
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
