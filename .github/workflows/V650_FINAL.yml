@@ -1,0 +1,178 @@
+name: Clinic Cases V6.5 FINAL Patient File
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply V6.5 patient file patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re, base64
+
+          workflow_path = Path(".github/workflows/ClinicCases_V650_FIX(1).yml")
+          if not workflow_path.exists():
+              raise RuntimeError("Base V6.5 workflow file not found")
+
+          text = workflow_path.read_text(encoding="utf-8")
+          m = re.search(r"cat > _patch\.b64 <<'PATCH'\n(.*?)\n          PATCH", text, re.S)
+          if not m:
+              raise RuntimeError("Embedded V6.5 patch not found")
+
+          encoded = "".join(line.strip() for line in m.group(1).splitlines())
+          Path("_v650_final_patch.py").write_bytes(base64.b64decode(encoded))
+          PY
+          python _v650_final_patch.py
+
+      - name: Fix complete nursing history
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("src-tauri/src/lib.rs")
+          s = p.read_text(encoding="utf-8")
+
+          start = s.index("fn list_patient_nursing_orders(")
+          end = s.index("fn delete_patient(", start)
+          block = s[start:end]
+
+          # Remove the nursing-history row cap only inside this function.
+          block2, count = re.subn(r"\n\s*LIMIT 50\b", "", block, count=1)
+          if count != 1:
+              raise RuntimeError("Expected nursing LIMIT 50 was not found exactly once")
+
+          s = s[:start] + block2 + s[end:]
+          p.write_text(s, encoding="utf-8")
+
+          check = p.read_text(encoding="utf-8")
+          start2 = check.index("fn list_patient_nursing_orders(")
+          end2 = check.index("fn delete_patient(", start2)
+          assert "LIMIT 50" not in check[start2:end2]
+          print("Full nursing history enabled")
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: V6.5 final gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          main = Path("src/main.ts").read_text(encoding="utf-8")
+          rust = Path("src-tauri/src/lib.rs").read_text(encoding="utf-8")
+          css = Path("src/style.css").read_text(encoding="utf-8")
+          conf = json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+
+          required_main = [
+              "const CLINIC_ADDRESS =",
+              "type PatientFileSnapshot =",
+              "async function loadPatientFile(",
+              "function patientFileTimelineHtml(",
+              "إنشاء ملف المريض",
+              "حفظ بالنظام:",
+              "تاريخ إنشاء الملف",
+              "آخر تحديث",
+              "السجل الكامل للمريض",
+              "حفظ ملف المريض فقط",
+              "حفظ الملف + إضافة كشف / استشارة",
+              "PDF الملف الكامل",
+              "عيادات العقاد التخصصية",
+              "version: '6.5.0'",
+          ]
+          for item in required_main:
+              assert item in main, f"Missing main feature: {item}"
+
+          required_css = [
+              "/* V6.5 permanent longitudinal patient file */",
+              ".patient-file-clinic-banner",
+              ".patient-file-timeline",
+              ".patient-file-event",
+              ".patient-full-record-wrap",
+              ".patient-print-footer-address",
+          ]
+          for item in required_css:
+              assert item in css, f"Missing CSS feature: {item}"
+
+          ns = rust.index("fn list_patient_nursing_orders(")
+          ne = rust.index("fn delete_patient(", ns)
+          assert "LIMIT 50" not in rust[ns:ne], "Nursing history is still capped"
+
+          assert conf["version"] == "6.5.0"
+          assert conf["bundle"]["windows"]["webviewInstallMode"]["type"] == "offlineInstaller"
+
+          print("V6.5 FINAL gate passed")
+          PY
+
+      - name: Build V6.5 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify self-contained installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          Write-Host "Installer: $($installer.FullName)"
+          Write-Host "Size: $($installer.Length) bytes"
+          if ($installer.Length -lt 80000000) { throw "Offline WebView2 installer missing or setup too small" }
+
+      - name: Commit validated V6.5 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add src/main.ts src/style.css src-tauri/src/lib.rs src-tauri/tauri.conf.json package.json src-tauri/Cargo.toml
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V6.5: permanent longitudinal patient file FINAL"
+            git push
+          fi
+
+      - name: Upload V6.5 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V6.5-Permanent-Patient-File-FINAL
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
