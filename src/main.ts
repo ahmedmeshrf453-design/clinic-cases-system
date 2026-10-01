@@ -6,6 +6,7 @@ import { jsPDF } from 'jspdf';
 import './style.css';
 import { LAB_TESTS, type LabTestItem } from './labCatalog';
 import { LAB2LAB_SOURCE } from './lab2labCatalog';
+import { LAB2LAB_ARABIC } from './lab2labArabic';
 
 type Patient = {
   id: string;
@@ -2832,12 +2833,12 @@ async function renderLab2Lab() {
       <div class="lab2lab-search-wrap">
         <label class="lab2lab-search-box">
           <span>⌕</span>
-          <input id="lab2labSearch" type="search" autocomplete="off" spellcheck="false" placeholder="اختر من القائمة أو اكتب اسم التحليل...">
+          <input id="lab2labSearch" type="search" autocomplete="off" spellcheck="false" placeholder="اكتب بالعربي أو الإنجليزي، أو اختر من القائمة...">
         </label>
         <div class="lab2lab-dropdown" id="lab2labDropdown"></div>
       </div>
 
-      <div class="lab2lab-help">اضغط لعرض كل التحاليل، أو اكتب لتصفية القائمة ثم اختر التحليل.</div>
+      <div class="lab2lab-help">كل تحليل يظهر بالعربي والإنجليزي • البحث يعمل بالاسمين.</div>
 
       <section class="lab2lab-selected empty" id="lab2labSelected">
         <div class="lab2lab-selected-placeholder">
@@ -2853,12 +2854,13 @@ async function renderLab2Lab() {
   const dropdown = document.querySelector<HTMLDivElement>('#lab2labDropdown')!;
   const selectedHost = document.querySelector<HTMLElement>('#lab2labSelected')!;
   let selected: Lab2LabPriceRow | null = null;
+  const arabicNameFor = (id: number) => LAB2LAB_ARABIC[id] || '';
 
   const norm = (value: string) => value.trim().toLocaleLowerCase();
   const matchingRows = () => {
     const q = norm(searchInput.value);
     if (!q) return rows;
-    return rows.filter(row => norm(row.testName).includes(q));
+    return rows.filter(row => norm(row.testName).includes(q) || norm(arabicNameFor(row.id)).includes(q));
   };
 
   const closeDropdown = () => {
@@ -2873,6 +2875,7 @@ async function renderLab2Lab() {
       <div class="lab2lab-selected-main">
         <span>اسم التحليل</span>
         <strong class="ltr">${esc(selected.testName)}</strong>
+        <small dir="rtl" style="display:block;margin-top:6px;font-size:14px;color:#526b7a;font-weight:800">${esc(arabicNameFor(selected.id))}</small>
       </div>
       <div class="lab2lab-price-main">
         <span>سعر Lab 2 Lab</span>
