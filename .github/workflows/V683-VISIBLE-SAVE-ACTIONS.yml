@@ -1,0 +1,187 @@
+name: Clinic Cases V6.8.3 Visible Save Actions
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Protect lab catalogs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum src/labCatalog.ts > "$RUNNER_TEMP/labCatalog.sha256"
+          sha256sum src/lab2labCatalog.ts > "$RUNNER_TEMP/lab2labCatalog.sha256"
+          sha256sum src/lab2labArabic.ts > "$RUNNER_TEMP/lab2labArabic.sha256"
+
+      - name: Apply visible save fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/v683.b64" <<'PATCH'
+          ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmltcG9ydCBqc29uLCByZQoKbWFpbl9wYXRoID0gUGF0aCgic3JjL21haW4udHMiKQpt
+          YWluID0gbWFpbl9wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQoKb2xkID0gJzxzZWN0aW9uIGNsYXNzPSJsYWItcGF5
+          bWVudC1wYW5lbCI+JwpuZXcgPSAnPHNlY3Rpb24gY2xhc3M9ImxhYi1wYXltZW50LXBhbmVsIiBpZD0ibGFiUGF5bWVudFBhbmVs
+          Ij4nCmlmICdpZD0ibGFiUGF5bWVudFBhbmVsIicgbm90IGluIG1haW46CiAgICBpZiBvbGQgbm90IGluIG1haW46CiAgICAgICAg
+          cmFpc2UgUnVudGltZUVycm9yKCJMYWIgcGF5bWVudCBwYW5lbCBtYXJrZXIgbm90IGZvdW5kIikKICAgIG1haW4gPSBtYWluLnJl
+          cGxhY2Uob2xkLCBuZXcsIDEpCgpvbGRfbW92ZSA9ICIgICAgY29uc3QgbGFiU2VhcmNoU2hlbGwgPSBkb2N1bWVudC5xdWVyeVNl
+          bGVjdG9yPEhUTUxFbGVtZW50PignLmxhYi1zZWFyY2gtc2hlbGwnKSE7XG4gICAgY29uc3Qgc2VsZWN0ZWRQYW5lbCA9IGRvY3Vt
+          ZW50LnF1ZXJ5U2VsZWN0b3I8SFRNTEVsZW1lbnQ+KCcucGF0aWVudC1sYWJzLXNlbGVjdGVkLXBhbmVsJykhO1xuICAgIGlmIChs
+          YWJTZWFyY2hTaGVsbCAmJiBzZWxlY3RlZFBhbmVsKSBzZWxlY3RlZFBhbmVsLmluc2VydEFkamFjZW50RWxlbWVudCgnYWZ0ZXJl
+          bmQnLCBsYWJTZWFyY2hTaGVsbCk7IgpuZXdfbW92ZSA9ICIgICAgY29uc3QgbGFiU2VhcmNoU2hlbGwgPSBkb2N1bWVudC5xdWVy
+          eVNlbGVjdG9yPEhUTUxFbGVtZW50PignLmxhYi1zZWFyY2gtc2hlbGwnKSE7XG4gICAgY29uc3QgcGF5bWVudFBhbmVsID0gZG9j
+          dW1lbnQucXVlcnlTZWxlY3RvcjxIVE1MRWxlbWVudD4oJyNsYWJQYXltZW50UGFuZWwnKSE7XG4gICAgaWYgKGxhYlNlYXJjaFNo
+          ZWxsICYmIHBheW1lbnRQYW5lbCkgcGF5bWVudFBhbmVsLmluc2VydEFkamFjZW50RWxlbWVudCgnYWZ0ZXJlbmQnLCBsYWJTZWFy
+          Y2hTaGVsbCk7IgppZiBuZXdfbW92ZSBub3QgaW4gbWFpbjoKICAgIGlmIG9sZF9tb3ZlIG5vdCBpbiBtYWluOgogICAgICAgIHJh
+          aXNlIFJ1bnRpbWVFcnJvcigiTGFiIHNlYXJjaCBwb3NpdGlvbmluZyBibG9jayBub3QgZm91bmQiKQogICAgbWFpbiA9IG1haW4u
+          cmVwbGFjZShvbGRfbW92ZSwgbmV3X21vdmUsIDEpCgptYWluID0gbWFpbi5yZXBsYWNlKAogICAgJzxidXR0b24gY2xhc3M9ImJ0
+          biBwcmltYXJ5IiBpZD0iZmluaXNoTGFiT3JkZXIiPuKckyDYrdmB2Lgg2YjYpdmG2YfYp9ihINin2YTYrdin2YTYqTwvYnV0dG9u
+          PicsCiAgICAnPGJ1dHRvbiBjbGFzcz0iYnRuIHByaW1hcnkiIGlkPSJmaW5pc2hMYWJPcmRlciI+4pyTINit2YHYuCDYrdin2YTY
+          qSDYp9mE2KrYrdin2YTZitmEINmI2KXZhtmH2KfYoTwvYnV0dG9uPicsCiAgICAxCikKbWFpbiA9IG1haW4ucmVwbGFjZSgKICAg
+          ICc8YnV0dG9uIGNsYXNzPSJidG4gcHJpbWFyeSIgdHlwZT0ic3VibWl0Ij7inJMg2K3Zgdi4INmI2KXZhtmH2KfYoSDYp9mE2K3Y
+          p9mE2Kk8L2J1dHRvbj4nLAogICAgJzxidXR0b24gY2xhc3M9ImJ0biBwcmltYXJ5IiB0eXBlPSJzdWJtaXQiPuKckyDYrdmB2Lgg
+          2K7Yr9mF2Kkg2KfZhNiq2YXYsdmK2LYg2YjYpdmG2YfYp9ihPC9idXR0b24+JywKICAgIDEKKQptYWluX3BhdGgud3JpdGVfdGV4
+          dChtYWluLCBlbmNvZGluZz0idXRmLTgiKQoKc3R5bGVfcGF0aCA9IFBhdGgoInNyYy9zdHlsZS5jc3MiKQpzdHlsZSA9IHN0eWxl
+          X3BhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCmNzcyA9ICcvKiA9PT09PSBWNi44LjMgYWx3YXlzLXZpc2libGUgc2F2
+          ZSBhY3Rpb25zID09PT09ICovXG4ubGFiLWNhdGFsb2ctbW9kYWx7XG4gIG92ZXJmbG93OmF1dG8gIWltcG9ydGFudDtcbn1cbi5s
+          YWItY2F0YWxvZy1tb2RhbCAjbGFiUGF5bWVudFBhbmVse1xuICBmbGV4OjAgMCBhdXRvO1xuICBtYXJnaW46OHB4IDAgMTBweDtc
+          biAgYm9yZGVyOjJweCBzb2xpZCAjYzdkZmQ2O1xuICBiYWNrZ3JvdW5kOiNmNmZiZjk7XG4gIGJveC1zaGFkb3c6MCA4cHggMjBw
+          eCByZ2JhKDE2LDkwLDY3LC4wOSk7XG59XG4ubGFiLWNhdGFsb2ctbW9kYWwgLmxhYi1maW5pc2gtYWN0aW9uc3tcbiAgbWFyZ2lu
+          LXRvcDo4cHg7XG4gIHBhZGRpbmctdG9wOjhweDtcbiAgYm9yZGVyLXRvcDoxcHggc29saWQgI2RjZTllNDtcbn1cbi5sYWItY2F0
+          YWxvZy1tb2RhbCAjZmluaXNoTGFiT3JkZXJ7XG4gIG1pbi1oZWlnaHQ6NDRweDtcbiAgcGFkZGluZzo5cHggMThweDtcbiAgZm9u
+          dC1zaXplOjEycHg7XG4gIGZvbnQtd2VpZ2h0OjkwMDtcbiAgYm94LXNoYWRvdzowIDdweCAxNnB4IHJnYmEoMTcsMTA0LDc5LC4x
+          OCk7XG59XG4ubGFiLWNhdGFsb2ctbW9kYWwgLmxhYi1zZWFyY2gtc2hlbGx7XG4gIGZsZXg6MSAxIGF1dG87XG4gIG1pbi1oZWln
+          aHQ6MjIwcHg7XG59XG4ubGFiLWNhdGFsb2ctbW9kYWwgLmxhYi1yZXN1bHRze1xuICBtYXgtaGVpZ2h0OmNhbGMoMTAwdmggLSA1
+          MDBweCk7XG4gIG1pbi1oZWlnaHQ6MTYwcHg7XG59XG4ubnVyc2luZy1zZXJ2aWNlLW1vZGFse1xuICBtYXgtaGVpZ2h0OmNhbGMo
+          MTAwdmggLSAzMHB4KTtcbiAgb3ZlcmZsb3c6YXV0bztcbiAgcGFkZGluZy1ib3R0b206MTJweDtcbn1cbi5udXJzaW5nLXNlcnZp
+          Y2UtbW9kYWwgLm51cnNpbmctZmluaXNoLWFjdGlvbnN7XG4gIHBvc2l0aW9uOnN0aWNreTtcbiAgYm90dG9tOjA7XG4gIHotaW5k
+          ZXg6MjU7XG4gIGp1c3RpZnktY29udGVudDpmbGV4LXN0YXJ0O1xuICBnYXA6OHB4O1xuICBtYXJnaW46MTJweCAtMnB4IDA7XG4g
+          IHBhZGRpbmc6MTBweCAycHggN3B4O1xuICBiYWNrZ3JvdW5kOmxpbmVhci1ncmFkaWVudCgxODBkZWcscmdiYSgyNTUsMjU1LDI1
+          NSwuOTQpLCNmZmYgMzYlKTtcbiAgYm9yZGVyLXRvcDoxcHggc29saWQgI2RjZThlMztcbiAgYm94LXNoYWRvdzowIC04cHggMThw
+          eCByZ2JhKDIyLDYxLDUwLC4wOCk7XG59XG4ubnVyc2luZy1zZXJ2aWNlLW1vZGFsIC5udXJzaW5nLWZpbmlzaC1hY3Rpb25zIC5i
+          dG4ucHJpbWFyeXtcbiAgbWluLWhlaWdodDo0NHB4O1xuICBwYWRkaW5nOjlweCAxOHB4O1xuICBmb250LXNpemU6MTJweDtcbiAg
+          Zm9udC13ZWlnaHQ6OTAwO1xuICBib3gtc2hhZG93OjAgN3B4IDE2cHggcmdiYSgxNywxMDQsNzksLjE2KTtcbn1cbkBtZWRpYSht
+          YXgtaGVpZ2h0Ojc2MHB4KXtcbiAgLmxhYi1jYXRhbG9nLW1vZGFsIC5sYWItcmVzdWx0c3tcbiAgICBtYXgtaGVpZ2h0OmNhbGMo
+          MTAwdmggLSA0NTVweCk7XG4gICAgbWluLWhlaWdodDoxMjVweDtcbiAgfVxufVxuJwppZiAiLyogPT09PT0gVjYuOC4zIGFsd2F5
+          cy12aXNpYmxlIHNhdmUgYWN0aW9ucyA9PT09PSAqLyIgbm90IGluIHN0eWxlOgogICAgc3R5bGUgKz0gIlxuIiArIGNzcyArICJc
+          biIKc3R5bGVfcGF0aC53cml0ZV90ZXh0KHN0eWxlLCBlbmNvZGluZz0idXRmLTgiKQoKcGtnX3BhdGggPSBQYXRoKCJwYWNrYWdl
+          Lmpzb24iKQpwa2cgPSBqc29uLmxvYWRzKHBrZ19wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKSkKcGtnWyJ2ZXJzaW9u
+          Il0gPSAiNi44LjMiCnBrZ19wYXRoLndyaXRlX3RleHQoanNvbi5kdW1wcyhwa2csIGVuc3VyZV9hc2NpaT1GYWxzZSwgaW5kZW50
+          PTIpICsgIlxuIiwgZW5jb2Rpbmc9InV0Zi04IikKCmNvbmZfcGF0aCA9IFBhdGgoInNyYy10YXVyaS90YXVyaS5jb25mLmpzb24i
+          KQpjb25mID0ganNvbi5sb2Fkcyhjb25mX3BhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpKQpjb25mWyJ2ZXJzaW9uIl0g
+          PSAiNi44LjMiCmNvbmZfcGF0aC53cml0ZV90ZXh0KGpzb24uZHVtcHMoY29uZiwgZW5zdXJlX2FzY2lpPUZhbHNlLCBpbmRlbnQ9
+          MikgKyAiXG4iLCBlbmNvZGluZz0idXRmLTgiKQoKY2FyZ29fcGF0aCA9IFBhdGgoInNyYy10YXVyaS9DYXJnby50b21sIikKY2Fy
+          Z28gPSBjYXJnb19wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQpjYXJnbyA9IHJlLnN1YihyJyg/bSledmVyc2lvblxz
+          Kj1ccyoiNlwuOFwuMiJccyokJywgJ3ZlcnNpb24gPSAiNi44LjMiJywgY2FyZ28sIGNvdW50PTEpCmNhcmdvX3BhdGgud3JpdGVf
+          dGV4dChjYXJnbywgZW5jb2Rpbmc9InV0Zi04IikKCnByaW50KCJWNi44LjMgcGF0Y2ggYXBwbGllZCIpCg==
+          PATCH
+          tr -d '\r\n ' < "$RUNNER_TEMP/v683.b64" > "$RUNNER_TEMP/v683.clean.b64"
+          python -c "import base64; open('_v683_patch.py','wb').write(base64.b64decode(open(r'$RUNNER_TEMP/v683.clean.b64','rb').read()))"
+          python _v683_patch.py
+
+      - name: Verify catalogs untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c "$RUNNER_TEMP/labCatalog.sha256"
+          sha256sum -c "$RUNNER_TEMP/lab2labCatalog.sha256"
+          sha256sum -c "$RUNNER_TEMP/lab2labArabic.sha256"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: V6.8.3 save actions gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          main = Path("src/main.ts").read_text(encoding="utf-8")
+          css = Path("src/style.css").read_text(encoding="utf-8")
+          pkg = json.loads(Path("package.json").read_text(encoding="utf-8"))
+          conf = json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+
+          assert pkg["version"] == "6.8.3"
+          assert conf["version"] == "6.8.3"
+          assert 'id="labPaymentPanel"' in main
+          assert "paymentPanel.insertAdjacentElement('afterend', labSearchShell)" in main
+          assert "حفظ حالة التحاليل وإنهاء" in main
+          assert "حفظ خدمة التمريض وإنهاء" in main
+          assert "finalize_lab_order" in main
+          assert "add_nursing_order" in main
+          assert "V6.8.3 always-visible save actions" in css
+          assert ".nursing-service-modal .nursing-finish-actions" in css
+          assert ".lab-catalog-modal #finishLabOrder" in css
+          print("V6.8.3 save-actions gate passed")
+          PY
+
+      - name: Build V6.8.3 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify self-contained installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          Write-Host "Installer: $($installer.FullName)"
+          Write-Host "Size: $($installer.Length) bytes"
+          if ($installer.Length -lt 80000000) { throw "Offline WebView2 installer missing or setup too small" }
+
+      - name: Upload V6.8.3 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V6.8.3-Visible-Save-Actions
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated V6.8.3 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add src/main.ts src/style.css package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V6.8.3: keep lab and nursing save actions visible"
+          fi
+
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
