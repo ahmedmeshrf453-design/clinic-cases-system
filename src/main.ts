@@ -2832,12 +2832,12 @@ async function renderLab2Lab() {
       <div class="lab2lab-search-wrap">
         <label class="lab2lab-search-box">
           <span>⌕</span>
-          <input id="lab2labSearch" type="search" autocomplete="off" spellcheck="false" placeholder="اكتب اسم التحليل للبحث...">
+          <input id="lab2labSearch" type="search" autocomplete="off" spellcheck="false" placeholder="اختر من القائمة أو اكتب اسم التحليل...">
         </label>
         <div class="lab2lab-dropdown" id="lab2labDropdown"></div>
       </div>
 
-      <div class="lab2lab-help">اكتب جزءًا من اسم التحليل، ثم اختره من القائمة المنسدلة.</div>
+      <div class="lab2lab-help">اضغط لعرض كل التحاليل، أو اكتب لتصفية القائمة ثم اختر التحليل.</div>
 
       <section class="lab2lab-selected empty" id="lab2labSelected">
         <div class="lab2lab-selected-placeholder">
@@ -2857,8 +2857,8 @@ async function renderLab2Lab() {
   const norm = (value: string) => value.trim().toLocaleLowerCase();
   const matchingRows = () => {
     const q = norm(searchInput.value);
-    if (!q) return [];
-    return rows.filter(row => norm(row.testName).includes(q)).slice(0, 15);
+    if (!q) return rows;
+    return rows.filter(row => norm(row.testName).includes(q));
   };
 
   const closeDropdown = () => {
@@ -2937,10 +2937,6 @@ async function renderLab2Lab() {
 
   const renderDropdown = () => {
     const matches = matchingRows();
-    if (!searchInput.value.trim()) {
-      closeDropdown();
-      return;
-    }
     dropdown.innerHTML = matches.length ? matches.map(row => `
       <button type="button" class="lab2lab-option" data-lab2lab-id="${row.id}">
         <span class="ltr">${esc(row.testName)}</span>
@@ -2958,6 +2954,7 @@ async function renderLab2Lab() {
 
   searchInput.oninput = renderDropdown;
   searchInput.onfocus = renderDropdown;
+  searchInput.onclick = renderDropdown;
   searchInput.onblur = () => window.setTimeout(closeDropdown, 180);
   document.addEventListener('click', event => {
     if (!(event.target as HTMLElement).closest('.lab2lab-search-wrap')) closeDropdown();
