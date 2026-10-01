@@ -1,0 +1,187 @@
+name: Clinic Cases V6.8.1 Lab2Lab Full Dropdown
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply full Lab2Lab dropdown
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          main_path = Path("src/main.ts")
+          main = main_path.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  '<input id="lab2labSearch" type="search" autocomplete="off" spellcheck="false" placeholder="اكتب اسم التحليل للبحث...">',
+                  '<input id="lab2labSearch" type="search" autocomplete="off" spellcheck="false" placeholder="اختر من القائمة أو اكتب اسم التحليل...">'
+              ),
+              (
+                  '<div class="lab2lab-help">اكتب جزءًا من اسم التحليل، ثم اختره من القائمة المنسدلة.</div>',
+                  '<div class="lab2lab-help">اضغط لعرض كل التحاليل، أو اكتب لتصفية القائمة ثم اختر التحليل.</div>'
+              ),
+              (
+                  '''  const matchingRows = () => {
+    const q = norm(searchInput.value);
+    if (!q) return [];
+    return rows.filter(row => norm(row.testName).includes(q)).slice(0, 15);
+  };''',
+                  '''  const matchingRows = () => {
+    const q = norm(searchInput.value);
+    if (!q) return rows;
+    return rows.filter(row => norm(row.testName).includes(q));
+  };'''
+              ),
+              (
+                  '''  const renderDropdown = () => {
+    const matches = matchingRows();
+    if (!searchInput.value.trim()) {
+      closeDropdown();
+      return;
+    }
+    dropdown.innerHTML = matches.length ? matches.map(row => `''',
+                  '''  const renderDropdown = () => {
+    const matches = matchingRows();
+    dropdown.innerHTML = matches.length ? matches.map(row => `'''
+              ),
+          ]
+
+          for old, new in replacements:
+              if old in main:
+                  main = main.replace(old, new, 1)
+              elif new not in main:
+                  raise RuntimeError("Expected Lab2Lab UI block not found; source changed unexpectedly.")
+
+          old_bind = '''  searchInput.oninput = renderDropdown;
+  searchInput.onfocus = renderDropdown;
+  searchInput.onblur = () => window.setTimeout(closeDropdown, 180);'''
+          new_bind = '''  searchInput.oninput = renderDropdown;
+  searchInput.onfocus = renderDropdown;
+  searchInput.onclick = renderDropdown;
+  searchInput.onblur = () => window.setTimeout(closeDropdown, 180);'''
+          if old_bind in main:
+              main = main.replace(old_bind, new_bind, 1)
+          elif new_bind not in main:
+              raise RuntimeError("Lab2Lab input binding block not found.")
+
+          main_path.write_text(main, encoding="utf-8")
+
+          pkg_path = Path("package.json")
+          pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+          pkg["version"] = "6.8.1"
+          pkg_path.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          conf_path = Path("src-tauri/tauri.conf.json")
+          conf = json.loads(conf_path.read_text(encoding="utf-8"))
+          conf["version"] = "6.8.1"
+          conf_path.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          cargo_path = Path("src-tauri/Cargo.toml")
+          cargo = cargo_path.read_text(encoding="utf-8")
+          cargo = re.sub(r'(?m)^version\s*=\s*"6\.8\.0"\s*$', 'version = "6.8.1"', cargo, count=1)
+          cargo_path.write_text(cargo, encoding="utf-8")
+
+          print("V6.8.1 full Lab2Lab dropdown patch applied")
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: V6.8.1 dropdown gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          main = Path("src/main.ts").read_text(encoding="utf-8")
+          pkg = json.loads(Path("package.json").read_text(encoding="utf-8"))
+          conf = json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+
+          assert pkg["version"] == "6.8.1"
+          assert conf["version"] == "6.8.1"
+          assert 'if (!q) return rows;' in main
+          assert '.slice(0, 15)' not in main
+          assert 'searchInput.onclick = renderDropdown;' in main
+          assert 'اختر من القائمة أو اكتب اسم التحليل' in main
+          assert 'renderLab2Lab' in main
+          assert 'LAB2LAB_SOURCE' in main
+
+          print("V6.8.1 Lab2Lab full dropdown gate passed")
+          PY
+
+      - name: Build V6.8.1 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify self-contained installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          Write-Host "Installer: $($installer.FullName)"
+          Write-Host "Size: $($installer.Length) bytes"
+          if ($installer.Length -lt 80000000) { throw "Offline WebView2 installer missing or setup too small" }
+
+      - name: Upload V6.8.1 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V6.8.1-Lab2Lab-Full-Dropdown
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated V6.8.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add src/main.ts package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V6.8.1: full Lab2Lab dropdown with typing filter"
+          fi
+
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
