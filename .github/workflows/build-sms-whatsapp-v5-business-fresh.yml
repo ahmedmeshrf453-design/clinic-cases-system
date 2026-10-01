@@ -1,0 +1,115 @@
+name: Build SMS WhatsApp APK - V5 Business Fresh
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Restore Android project from V2 payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=".github/workflows/build-sms-whatsapp-v2.yml"
+          test -f "$SRC"
+          mkdir -p "$RUNNER_TEMP/smsapp"
+          sed -n "/<<'PROJECT_B64'/,/^[[:space:]]*PROJECT_B64[[:space:]]*$/p" "$SRC" \
+            | sed '1d;$d;s/^[[:space:]]*//' \
+            > "$RUNNER_TEMP/project.b64"
+          test -s "$RUNNER_TEMP/project.b64"
+          base64 -d "$RUNNER_TEMP/project.b64" > "$RUNNER_TEMP/project.zip"
+          unzip -q "$RUNNER_TEMP/project.zip" -d "$RUNNER_TEMP/smsapp"
+
+      - name: Set unique Business package and V1.4
+        shell: bash
+        working-directory: ${{ runner.temp }}/smsapp
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/build.gradle.kts')
+          s = p.read_text(encoding='utf-8')
+
+          if 'sourceCompatibility = JavaVersion.VERSION_17' not in s:
+              marker = 'android {'
+              if marker not in s:
+                  raise SystemExit('android block not found')
+              replacement = 'android {\n    compileOptions {\n        sourceCompatibility = JavaVersion.VERSION_17\n        targetCompatibility = JavaVersion.VERSION_17\n    }\n'
+              s = s.replace(marker, replacement, 1)
+
+          # Fresh package id so it installs beside the previous build without signature conflict.
+          s = s.replace('applicationId = "com.alakad.smsforwarder"', 'applicationId = "com.alakad.smsforwarder.business"')
+          s = s.replace('versionCode = 2', 'versionCode = 4')
+          s = s.replace('versionName = "1.1.0"', 'versionName = "1.4.0"')
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Force WhatsApp Business only
+        shell: bash
+        working-directory: ${{ runner.temp }}/smsapp
+        run: |
+          set -euo pipefail
+          FILE="app/src/main/java/com/alakad/smsforwarder/MainActivity.kt"
+
+          perl -0pi -e 's/val whatsappPackage = when \{\s*isInstalled\("com\.whatsapp"\) -> "com\.whatsapp"\s*isInstalled\("com\.whatsapp\.w4b"\) -> "com\.whatsapp\.w4b"\s*else -> null\s*\}/val whatsappPackage = if (isInstalled("com.whatsapp.w4b")) "com.whatsapp.w4b" else null/s' "$FILE"
+
+          perl -0pi -e 's/val pkg = when \{\s*isInstalled\("com\.whatsapp"\) -> "com\.whatsapp"\s*isInstalled\("com\.whatsapp\.w4b"\) -> "com\.whatsapp\.w4b"\s*else -> null\s*\}/val pkg = if (isInstalled("com.whatsapp.w4b")) "com.whatsapp.w4b" else null/s' "$FILE"
+
+          sed -i 's/واتساب غير مثبت — تم نسخ الرسالة/واتساب بيزنس غير مثبت — تم نسخ الرسالة/' "$FILE"
+          sed -i 's/اختر جروب حجز مواعيد العقاد واضغط إرسال — الرسالة منسوخة أيضًا/اختر جروب حجز مواعيد العقاد داخل واتساب بيزنس واضغط إرسال — الرسالة منسوخة أيضًا/' "$FILE"
+          sed -i 's/فتح جروب واتساب/فتح الجروب على واتساب بيزنس/' app/src/main/res/layout/activity_main.xml
+          sed -i '/<package android:name="com.whatsapp" \/>/d' app/src/main/AndroidManifest.xml
+
+      - name: Verify configuration
+        shell: bash
+        working-directory: ${{ runner.temp }}/smsapp
+        run: |
+          set -euo pipefail
+          grep -q 'applicationId = "com.alakad.smsforwarder.business"' app/build.gradle.kts
+          ! grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          ! grep -q 'android.permission.READ_SMS' app/src/main/AndroidManifest.xml
+          grep -q 'Vezeeta.com' README.md
+          grep -q 'CliniDo' README.md
+          grep -q 'ekshef' README.md
+          grep -q 'CUORi0rtfVU2QlujljCzEg' app/src/main/java/com/alakad/smsforwarder/MainActivity.kt
+          grep -q 'if (isInstalled("com.whatsapp.w4b")) "com.whatsapp.w4b" else null' app/src/main/java/com/alakad/smsforwarder/MainActivity.kt
+          ! grep -q 'isInstalled("com.whatsapp")' app/src/main/java/com/alakad/smsforwarder/MainActivity.kt
+          grep -q '<package android:name="com.whatsapp.w4b" />' app/src/main/AndroidManifest.xml
+          ! grep -q '<package android:name="com.whatsapp" />' app/src/main/AndroidManifest.xml
+
+      - name: Build installable APK
+        shell: bash
+        working-directory: ${{ runner.temp }}/smsapp
+        run: |
+          set -euo pipefail
+          gradle :app:assembleDebug --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/SMS-WhatsApp-Forwarder-v1.4-Business-Fresh.apk"
+          sha256sum "$GITHUB_WORKSPACE/SMS-WhatsApp-Forwarder-v1.4-Business-Fresh.apk" > "$GITHUB_WORKSPACE/SMS-WhatsApp-Forwarder-v1.4-Business-Fresh.sha256"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SMS-WhatsApp-Forwarder-v1.4-Business-Fresh
+          path: |
+            SMS-WhatsApp-Forwarder-v1.4-Business-Fresh.apk
+            SMS-WhatsApp-Forwarder-v1.4-Business-Fresh.sha256
+          retention-days: 30
