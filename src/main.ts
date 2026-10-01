@@ -315,7 +315,7 @@ let appSettings: AppSettings = {
   operationalStartHour: 11,
   backupPath: '',
   databasePath: '',
-  version: '6.5.0'
+  version: '6.6.0'
 };
 const CLINIC_ADDRESS = '59 شارع فيصل الرئيسي - ناصية شارع الوفاء والأمل - أمام أسماك عروس البحر وعنتر الكبابجي - فيصل - الجيزة';
 
@@ -1258,21 +1258,19 @@ function serviceDockHtml() {
 
 function shell(content: string, title: string, subtitle: string) {
   app.innerHTML = `
-    <div class="app-shell">
-      <aside class="sidebar">
-        <div class="brand">
-          <div class="brand-mark">
-            <img src="/sidebar-clinic-logo.jpg" alt="لوجو عيادات العقاد التخصصية">
-          </div>
+    <div class="app-shell modern-shell-v66">
+      <aside class="sidebar modern-sidebar">
+        <div class="modern-sidebar-brand">
+          <img src="/sidebar-clinic-logo.jpg" alt="لوجو عيادات العقاد التخصصية">
           <div>
             <strong>نظام الحالات</strong>
             <small>عيادات العقاد التخصصية</small>
           </div>
         </div>
 
-        <nav>
+        <nav class="modern-sidebar-nav">
           ${navButton('dashboard','⌂','الرئيسية')}
-          ${navButton('patients','◉','المرضى', sidebarPatientsTotal)}
+          ${navButton('patients','👥','المرضى', sidebarPatientsTotal)}
           ${navButton('today','◷','حالات اليوم')}
           ${navButton('doctors','⚕','الأطباء')}
           ${navButton('labs','🧪','التحاليل')}
@@ -1283,34 +1281,40 @@ function shell(content: string, title: string, subtitle: string) {
           ${navButton('settings','⚙','الإعدادات')}
         </nav>
 
-        <div class="sidebar-footer">
-          <span class="online-dot"></span>
-          يعمل أوفلاين بالكامل
+        <div class="sidebar-footer modern-sidebar-footer">
+          <div><span class="online-dot"></span> يعمل أوفلاين بالكامل</div>
           <small>SQLite محلي على هذا الكمبيوتر</small>
         </div>
       </aside>
 
-      <main class="main">
+      <main class="main modern-main">
         <div class="system-watermark" aria-hidden="true"></div>
-        <section class="clinic-header">
-          <div class="clinic-identity">
-            <img class="clinic-logo" src="/clinic-logo-emblem.png" alt="لوجو عيادات العقاد التخصصية" />
+
+        <section class="clinic-header modern-app-header">
+          <div class="clinic-identity modern-header-brand">
+            <img class="clinic-logo" src="/sidebar-clinic-logo.jpg" alt="لوجو عيادات العقاد التخصصية" />
             <div class="clinic-copy">
               <strong class="clinic-name">عيادات العقاد التخصصية</strong>
               <span class="clinic-slogan">رعاية تليق بك</span>
             </div>
           </div>
 
-          <div class="system-meta">
-            <div class="connection-panel">
+          <div class="modern-header-tools">
+            <div class="global-patient-search-wrap">
+              <span class="global-search-icon">⌕</span>
+              <input id="globalPatientSearch" type="search" autocomplete="off" placeholder="البحث عن مريض بالاسم أو الهاتف..." />
+              <div class="global-patient-search-results" id="globalPatientSearchResults"></div>
+            </div>
+
+            <div class="connection-panel modern-connection-panel">
               <div class="connection-badge" id="connectionBadge">
                 <span class="connection-dot"></span>
                 <strong id="connectionText">فحص الاتصال...</strong>
               </div>
-              <small>النظام يعمل محليًا على هذا الجهاز</small>
+              <small>البيانات محفوظة محليًا</small>
             </div>
 
-            <div class="live-clock-panel">
+            <div class="live-clock-panel modern-clock-panel">
               <div class="clock-main" id="clockTime">--:--:--</div>
               <div class="clock-date" id="clockDate"></div>
               <div class="clock-day" id="clockDay"></div>
@@ -1319,9 +1323,7 @@ function shell(content: string, title: string, subtitle: string) {
           </div>
         </section>
 
-        <div class="clinic-divider"></div>
-
-        <header class="topbar page-topbar">
+        <header class="topbar page-topbar modern-page-topbar">
           <div>
             <h1>${title}</h1>
             <p>${subtitle}</p>
@@ -1335,8 +1337,6 @@ function shell(content: string, title: string, subtitle: string) {
             ` : ''}
           </div>
         </header>
-
-        ${serviceDockHtml()}
 
         <section id="screenContent">${content}</section>
       </main>
@@ -1353,18 +1353,59 @@ function shell(content: string, title: string, subtitle: string) {
   const pageBackBtn = document.querySelector<HTMLButtonElement>('#pageBackBtn');
   if (pageBackBtn) pageBackBtn.onclick = () => goBackScreen();
 
-  document.querySelectorAll<HTMLButtonElement>('[data-service-screen]').forEach(button => {
-    button.onclick = () => navigate(button.dataset.serviceScreen as Screen);
-  });
+  const globalSearch = document.querySelector<HTMLInputElement>('#globalPatientSearch')!;
+  const globalResults = document.querySelector<HTMLDivElement>('#globalPatientSearchResults')!;
+  let globalSearchTimer: number | undefined;
 
-  document.querySelectorAll<HTMLButtonElement>('[data-service-action]').forEach(button => {
-    button.onclick = () => {
-      const action = button.dataset.serviceAction || '';
-      if (action === 'visit') openCaseModal();
-      else if (action === 'lab-case') openLabPatientRegistrationModal();
-      else if (action === 'nursing-case') openNursingPatientRegistrationModal();
-    };
-  });
+  const closeGlobalSearch = () => {
+    globalResults.innerHTML = '';
+    globalResults.classList.remove('show');
+  };
+
+  globalSearch.oninput = () => {
+    window.clearTimeout(globalSearchTimer);
+    globalSearchTimer = window.setTimeout(async () => {
+      const q = globalSearch.value.trim();
+      if (!q) {
+        closeGlobalSearch();
+        return;
+      }
+
+      try {
+        const rows = await invoke<Patient[]>('list_patients', {
+          query: { search: q, archivedOnly: false, limit: 8 }
+        });
+
+        globalResults.innerHTML = rows.length ? rows.map(p => `
+          <button type="button" class="global-patient-result" data-global-patient="${esc(p.id)}">
+            <span class="global-patient-result-avatar">${esc((p.fullName || 'م').trim().charAt(0) || 'م')}</span>
+            <span>
+              <strong>${esc(p.fullName || 'بدون اسم')}</strong>
+              <small class="ltr">${esc(p.phone || 'بدون رقم')}</small>
+            </span>
+          </button>
+        `).join('') : `<div class="global-search-empty">لا يوجد مريض مطابق</div>`;
+
+        globalResults.classList.add('show');
+
+        globalResults.querySelectorAll<HTMLButtonElement>('[data-global-patient]').forEach(button => {
+          button.onclick = async () => {
+            const patientId = button.dataset.globalPatient || '';
+            closeGlobalSearch();
+            globalSearch.value = '';
+            if (patientId) await openPatient(patientId);
+          };
+        });
+      } catch {
+        closeGlobalSearch();
+      }
+    }, 180);
+  };
+
+  document.addEventListener('click', event => {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.global-patient-search-wrap')) closeGlobalSearch();
+  }, { once: true });
 
   window.ononline = updateConnectionStatus;
   window.onoffline = updateConnectionStatus;
@@ -1619,102 +1660,235 @@ async function renderDashboard() {
     invoke<NursingOrder[]>('list_nursing_orders', { query: { from: dayKey, to: dayKey } })
   ]);
 
-  const newVisits = todayReport.rows.filter(v => v.visitType === 'كشف جديد').length;
-  const consultations = todayReport.rows.filter(v => v.visitType === 'استشارة').length;
+  const clinicToday = todayReport.rows.length;
   const labPatientsToday = todayLabOrders.length;
   const nursingPatientsToday = todayNursingOrders.length;
-  const totalToday = newVisits + consultations + labPatientsToday + nursingPatientsToday;
+  const totalToday = clinicToday + labPatientsToday + nursingPatientsToday;
 
-  const doctorMap = new Map<string, number>();
-  for (const visit of todayReport.rows) {
-    const doctor = (visit.doctor || '').trim() || 'بدون طبيب';
-    doctorMap.set(doctor, (doctorMap.get(doctor) || 0) + 1);
-  }
-
-  const doctorRows = [...doctorMap.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ar'));
+  const unifiedRows = [
+    ...todayReport.rows.map(v => ({
+      kind: 'clinic',
+      kindLabel: v.visitType || 'كشف / استشارة',
+      icon: '🩺',
+      sortKey: `${v.visitDate || ''} ${v.visitTime || ''} ${v.createdAt || ''}`,
+      time: v.visitTime || '—',
+      patientId: v.patientId,
+      patientName: v.patientName || '—',
+      patientPhone: v.patientPhone || '',
+      provider: v.doctor || '—',
+      status: 'محفوظ',
+      action: `<button class="dash-row-action" data-dash-open-patient="${esc(v.patientId)}">فتح الملف</button>`
+    })),
+    ...todayLabOrders.map(o => ({
+      kind: 'lab',
+      kindLabel: 'تحاليل',
+      icon: '🧪',
+      sortKey: `${o.orderDate || ''} ${o.orderTime || ''} ${o.createdAt || ''}`,
+      time: o.orderTime || '—',
+      patientId: o.patientId,
+      patientName: o.patientName || '—',
+      patientPhone: o.patientPhone || '',
+      provider: `${o.itemsCount} تحليل`,
+      status: labOrderStatus(o),
+      action: `<button class="dash-row-action" data-dash-open-lab="${esc(o.id)}">فتح الحالة</button>`
+    })),
+    ...todayNursingOrders.map(o => ({
+      kind: 'nursing',
+      kindLabel: 'خدمة تمريض',
+      icon: '✚',
+      sortKey: `${o.orderDate || ''} ${o.orderTime || ''} ${o.createdAt || ''}`,
+      time: o.orderTime || '—',
+      patientId: o.patientId,
+      patientName: o.patientName || '—',
+      patientPhone: o.patientPhone || '',
+      provider: o.serviceName || '—',
+      status: 'محفوظ',
+      action: `<button class="dash-row-action" data-dash-open-nursing="${esc(o.id)}">فتح الحالة</button>`
+    }))
+  ].sort((a, b) => b.sortKey.localeCompare(a.sortKey));
 
   shell(`
-    <section class="dashboard-overview-card">
-      <div class="dashboard-overview-head">
-        <div>
-          <h2>تسجيلات اليوم</h2>
-          <p>${displayDate(dayKey)} • الحالات المسجلة اليوم فقط</p>
-        </div>
-      </div>
-
-      <div class="stats-grid dashboard-stats-v631">
-        <article class="stat dashboard-clickable dashboard-total-today" role="button" tabindex="0" data-dashboard-target="today" title="فتح كل حالات اليوم">
-          <div class="stat-icon">◷</div>
-          <div><span>إجمالي تسجيلات اليوم</span><strong>${totalToday}</strong></div>
-        </article>
-
-        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات الكشف الجديد">
-          <div class="stat-icon">＋</div>
-          <div><span>كشف جديد</span><strong>${newVisits}</strong></div>
-        </article>
-
-        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات الاستشارة">
-          <div class="stat-icon">↻</div>
-          <div><span>استشارة</span><strong>${consultations}</strong></div>
-        </article>
-
-        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات التحاليل اليوم">
-          <div class="stat-icon">🧪</div>
-          <div><span>تحاليل</span><strong>${labPatientsToday}</strong></div>
-        </article>
-
-        <article class="stat dashboard-clickable" role="button" tabindex="0" data-dashboard-target="nursing" title="فتح خدمات التمريض اليوم">
-          <div class="stat-icon">✚</div>
-          <div><span>خدمات تمريض</span><strong>${nursingPatientsToday}</strong></div>
-        </article>
-      </div>
-    </section>
-
-    <div class="dashboard-grid dashboard-grid-v632">
-      <section class="card">
-        <div class="card-head">
+    <section class="v66-dashboard">
+      <div class="v66-dashboard-topline">
+        <div class="v66-business-day-card">
+          <span class="v66-date-icon">▣</span>
           <div>
-            <h2>كشوفات الأطباء اليوم</h2>
-            <p>${displayDate(dayKey)} • توزيع الكشوفات والاستشارات على الأطباء</p>
+            <strong>${displayDate(dayKey)}</strong>
+            <small>اليوم التشغيلي يبدأ ${operationalStartLabel()}</small>
           </div>
-          <button class="btn ghost" id="goTodayBtn">فتح حالات اليوم</button>
+        </div>
+      </div>
+
+      <div class="v66-primary-actions">
+        <button class="v66-action-card clinic" id="v66NewVisit">
+          <span class="v66-action-icon">🩺</span>
+          <span class="v66-action-copy">
+            <strong>كشف / استشارة</strong>
+            <small>تسجيل حالة عيادة جديدة</small>
+          </span>
+          <span class="v66-action-arrow">‹</span>
+        </button>
+
+        <button class="v66-action-card labs" id="v66NewLab">
+          <span class="v66-action-icon">🧪</span>
+          <span class="v66-action-copy">
+            <strong>تحاليل</strong>
+            <small>تسجيل مريض تحاليل</small>
+          </span>
+          <span class="v66-action-arrow">‹</span>
+        </button>
+
+        <button class="v66-action-card nursing" id="v66NewNursing">
+          <span class="v66-action-icon">✚</span>
+          <span class="v66-action-copy">
+            <strong>تمريض</strong>
+            <small>تسجيل خدمة تمريض</small>
+          </span>
+          <span class="v66-action-arrow">‹</span>
+        </button>
+      </div>
+
+      <div class="v66-stats-grid">
+        <button class="v66-stat-card" data-v66-stat-filter="clinic">
+          <span class="v66-stat-icon clinic">🩺</span>
+          <span><small>تسجيلات العيادة اليوم</small><strong>${clinicToday}</strong></span>
+        </button>
+        <button class="v66-stat-card" data-v66-stat-filter="lab">
+          <span class="v66-stat-icon labs">🧪</span>
+          <span><small>تسجيلات التحاليل اليوم</small><strong>${labPatientsToday}</strong></span>
+        </button>
+        <button class="v66-stat-card" data-v66-stat-filter="nursing">
+          <span class="v66-stat-icon nursing">✚</span>
+          <span><small>تسجيلات التمريض اليوم</small><strong>${nursingPatientsToday}</strong></span>
+        </button>
+        <button class="v66-stat-card total" data-v66-stat-filter="all">
+          <span class="v66-stat-icon total">▥</span>
+          <span><small>إجمالي تسجيلات اليوم</small><strong>${totalToday}</strong></span>
+        </button>
+      </div>
+
+      <section class="v66-today-card">
+        <div class="v66-today-card-head">
+          <div>
+            <h2>تسجيلات اليوم</h2>
+            <p>جميع الحالات المسجلة اليوم في العيادة والتحاليل والتمريض</p>
+          </div>
+          <button class="btn ghost small" id="v66OpenToday">فتح شاشة حالات اليوم</button>
         </div>
 
-        <div class="doctor-day-grid">
-          ${doctorRows.length ? doctorRows.map(([doctor, count]) => `
-            <article class="doctor-day-card dashboard-clickable" role="button" tabindex="0" data-dashboard-target="today" title="فتح حالات اليوم">
-              <div>
-                <strong>${esc(doctor)}</strong>
-                <span>${count} حالة</span>
-              </div>
-            </article>
-          `).join('') : `<div class="empty-block">لا توجد كشوفات أو استشارات مسجلة اليوم</div>`}
+        <div class="v66-today-toolbar">
+          <div class="v66-filter-tabs">
+            <button class="active" data-v66-filter="all">الكل (${totalToday})</button>
+            <button data-v66-filter="clinic">العيادة (${clinicToday})</button>
+            <button data-v66-filter="lab">التحاليل (${labPatientsToday})</button>
+            <button data-v66-filter="nursing">التمريض (${nursingPatientsToday})</button>
+          </div>
+
+          <div class="v66-today-search">
+            <span>⌕</span>
+            <input id="v66TodaySearch" type="search" placeholder="بحث في تسجيلات اليوم..." />
+          </div>
+        </div>
+
+        <div class="v66-today-table-wrap">
+          <table class="v66-today-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>وقت التسجيل</th>
+                <th>نوع الخدمة</th>
+                <th>اسم المريض</th>
+                <th>رقم الملف</th>
+                <th>الطبيب / مقدم الخدمة</th>
+                <th>الحالة</th>
+                <th>الإجراءات</th>
+              </tr>
+            </thead>
+            <tbody id="v66TodayRows">
+              ${unifiedRows.map((row, index) => `
+                <tr
+                  data-v66-row
+                  data-v66-kind="${row.kind}"
+                  data-v66-search="${esc(`${row.patientName} ${row.patientPhone}`.toLowerCase())}"
+                >
+                  <td>${index + 1}</td>
+                  <td class="ltr">${esc(row.time)}</td>
+                  <td><span class="v66-service-badge ${row.kind}">${row.icon} ${esc(row.kindLabel)}</span></td>
+                  <td>${esc(row.patientName)}</td>
+                  <td class="ltr">${esc((row.patientId || '').slice(0, 8).toUpperCase())}</td>
+                  <td>${esc(row.provider)}</td>
+                  <td><span class="v66-status-badge">${esc(row.status)}</span></td>
+                  <td>${row.action}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="v66-empty-state ${unifiedRows.length ? '' : 'show'}" id="v66TodayEmpty">
+            <div class="v66-empty-icon">▤</div>
+            <strong>لا توجد تسجيلات اليوم حتى الآن</strong>
+            <span>ستظهر هنا جميع الحالات المسجلة في العيادة والتحاليل والتمريض لهذا اليوم</span>
+          </div>
         </div>
       </section>
-    </div>
-  `, 'لوحة التحكم', 'تسجيلات اليوم فقط بدون إجماليات تراكمية');
+    </section>
+  `, 'لوحة التحكم', 'تسجيلات اليوم فقط بدون إحصائيات تراكمية');
 
   ensureCaseContextMenu();
 
-  document.querySelector<HTMLButtonElement>('#goTodayBtn')!.onclick = () => navigate('today');
+  document.querySelector<HTMLButtonElement>('#v66NewVisit')!.onclick = () => openCaseModal();
+  document.querySelector<HTMLButtonElement>('#v66NewLab')!.onclick = () => openLabPatientRegistrationModal();
+  document.querySelector<HTMLButtonElement>('#v66NewNursing')!.onclick = () => openNursingPatientRegistrationModal();
+  document.querySelector<HTMLButtonElement>('#v66OpenToday')!.onclick = () => navigate('today');
 
-  const openDashboardTarget = (target: string) => {
-    if (target === 'today') navigate('today');
-    else if (target === 'nursing') navigate('nursing');
-  };
-
-  document.querySelectorAll<HTMLElement>('[data-dashboard-target]').forEach(card => {
-    const open = () => openDashboardTarget(card.dataset.dashboardTarget || '');
-    card.onclick = open;
-    card.onkeydown = event => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        open();
-      }
-    };
+  document.querySelectorAll<HTMLButtonElement>('[data-dash-open-patient]').forEach(button => {
+    button.onclick = () => openPatient(button.dataset.dashOpenPatient || '');
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-dash-open-lab]').forEach(button => {
+    button.onclick = () => openLabOrderDetails(button.dataset.dashOpenLab || '');
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-dash-open-nursing]').forEach(button => {
+    button.onclick = () => openNursingOrderDetails(button.dataset.dashOpenNursing || '');
   });
 
+  const tabs = [...document.querySelectorAll<HTMLButtonElement>('[data-v66-filter]')];
+  const rows = [...document.querySelectorAll<HTMLTableRowElement>('[data-v66-row]')];
+  const search = document.querySelector<HTMLInputElement>('#v66TodaySearch')!;
+  const empty = document.querySelector<HTMLDivElement>('#v66TodayEmpty')!;
+  let activeFilter = 'all';
+
+  const apply = () => {
+    const q = search.value.trim().toLowerCase();
+    let visible = 0;
+
+    rows.forEach(row => {
+      const kind = row.dataset.v66Kind || '';
+      const searchable = row.dataset.v66Search || '';
+      const okKind = activeFilter === 'all' || kind === activeFilter;
+      const okSearch = !q || searchable.includes(q);
+      const show = okKind && okSearch;
+      row.style.display = show ? '' : 'none';
+      if (show) visible += 1;
+    });
+
+    empty.classList.toggle('show', visible === 0);
+  };
+
+  const setFilter = (filter: string) => {
+    activeFilter = filter;
+    tabs.forEach(tab => tab.classList.toggle('active', (tab.dataset.v66Filter || '') === activeFilter));
+    apply();
+  };
+
+  tabs.forEach(tab => {
+    tab.onclick = () => setFilter(tab.dataset.v66Filter || 'all');
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-v66-stat-filter]').forEach(card => {
+    card.onclick = () => setFilter(card.dataset.v66StatFilter || 'all');
+  });
+
+  search.oninput = apply;
 }
 
 async function renderPatients(archived: boolean) {
