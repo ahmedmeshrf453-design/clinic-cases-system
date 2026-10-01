@@ -245,8 +245,8 @@ function patientFileClinicHeaderHtml(p: Patient) {
     <section class="patient-file-clinic-banner">
       <img src="/sidebar-clinic-logo.jpg" alt="لوجو عيادات العقاد التخصصية">
       <div class="patient-file-clinic-copy">
-        <strong>عيادات العقاد التخصصية</strong>
-        <span>${esc(CLINIC_ADDRESS)}</span>
+        <strong>${esc(appSettings.clinicName)}</strong>
+        <span>${esc(appSettings.clinicAddress)}</span>
         <small>
           واتساب: <span class="ltr">${esc(appSettings.whatsappNumber)}</span>
           • تليفون: <span class="ltr">${esc(appSettings.phoneNumber)}</span>
@@ -287,10 +287,15 @@ type ReportResult = {
 };
 
 type AppSettings = {
+  clinicName: string;
+  clinicSlogan: string;
+  clinicAddress: string;
   whatsappNumber: string;
   phoneNumber: string;
   operationalStartHour: number;
+  backupHour: number;
   backupPath: string;
+  exportPath: string;
   databasePath: string;
   version: string;
 };
@@ -310,14 +315,18 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 let screen: Screen = 'dashboard';
 let doctors: Doctor[] = [];
 let appSettings: AppSettings = {
+  clinicName: 'عيادات العقاد التخصصية',
+  clinicSlogan: 'رعاية تليق بك',
+  clinicAddress: '59 شارع فيصل الرئيسي - ناصية شارع الوفاء والأمل - أمام أسماك عروس البحر وعنتر الكبابجي - فيصل - الجيزة',
   whatsappNumber: '01102233167',
   phoneNumber: '01107072134',
   operationalStartHour: 11,
+  backupHour: 4,
   backupPath: '',
+  exportPath: '',
   databasePath: '',
-  version: '6.6.0'
+  version: '6.7.0'
 };
-const CLINIC_ADDRESS = '59 شارع فيصل الرئيسي - ناصية شارع الوفاء والأمل - أمام أسماك عروس البحر وعنتر الكبابجي - فيصل - الجيزة';
 
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
@@ -850,8 +859,8 @@ function exportSheet(title: string, subtitle: string, body: string) {
     <div class="export-document">
       <div class="export-brand">
         <div>
-          <h1>عيادات العقاد التخصصية</h1>
-          <p>رعاية تليق بك</p>
+          <h1>${esc(appSettings.clinicName)}</h1>
+          <p>${esc(appSettings.clinicSlogan)}</p>
         </div>
         <div class="export-ak-mark">AK</div>
       </div>
@@ -861,7 +870,7 @@ function exportSheet(title: string, subtitle: string, body: string) {
         <p>${esc(subtitle)}</p>
       </div>
       ${body}
-      <div class="export-footer">تم إنشاء الملف من نظام عيادات العقاد التخصصية</div>
+      <div class="export-footer">تم إنشاء الملف من نظام ${esc(appSettings.clinicName)}</div>
     </div>`;
 }
 
@@ -872,8 +881,8 @@ function patientExportSheet(title: string, subtitle: string, body: string) {
       <div class="patient-print-brand">
         <img src="/patient-print-logo.jpg" alt="لوجو عيادات العقاد التخصصية" />
         <div>
-          <div class="patient-print-slogan">رعاية تليق بك</div>
-          <div class="patient-print-address">${esc(CLINIC_ADDRESS)}</div>
+          <div class="patient-print-slogan">${esc(appSettings.clinicSlogan)}</div>
+          <div class="patient-print-address">${esc(appSettings.clinicAddress)}</div>
         </div>
       </div>
 
@@ -895,7 +904,7 @@ function patientExportSheet(title: string, subtitle: string, body: string) {
           <span class="patient-print-footer-badge phone">☎</span>
           <strong class="ltr">${esc(appSettings.phoneNumber)}</strong>
         </div>
-        <div class="patient-print-footer-address">${esc(CLINIC_ADDRESS)}</div>
+        <div class="patient-print-footer-address">${esc(appSettings.clinicAddress)}</div>
       </div>
     </div>`;
 }
@@ -1264,7 +1273,7 @@ function shell(content: string, title: string, subtitle: string) {
           <img src="/sidebar-clinic-logo.jpg" alt="لوجو عيادات العقاد التخصصية">
           <div>
             <strong>نظام الحالات</strong>
-            <small>عيادات العقاد التخصصية</small>
+            <small>${esc(appSettings.clinicName)}</small>
           </div>
         </div>
 
@@ -1294,8 +1303,8 @@ function shell(content: string, title: string, subtitle: string) {
           <div class="clinic-identity modern-header-brand">
             <img class="clinic-logo" src="/sidebar-clinic-logo.jpg" alt="لوجو عيادات العقاد التخصصية" />
             <div class="clinic-copy">
-              <strong class="clinic-name">عيادات العقاد التخصصية</strong>
-              <span class="clinic-slogan">رعاية تليق بك</span>
+              <strong class="clinic-name">${esc(appSettings.clinicName)}</strong>
+              <span class="clinic-slogan">${esc(appSettings.clinicSlogan)}</span>
             </div>
           </div>
 
@@ -2962,74 +2971,147 @@ async function renderSettings() {
     `<option value="${hour}" ${hour === appSettings.operationalStartHour ? 'selected' : ''}>${String(hour).padStart(2, '0')}:00</option>`
   ).join('');
 
+  const backupHourOptions = Array.from({ length: 24 }, (_, hour) =>
+    `<option value="${hour}" ${hour === appSettings.backupHour ? 'selected' : ''}>${String(hour).padStart(2, '0')}:00</option>`
+  ).join('');
+
   shell(`
-    <section class="card settings-card">
-      <div class="card-head">
+    <section class="settings-workspace">
+      <div class="settings-hero">
         <div>
-          <h2>إعدادات النظام</h2>
-          <p>الإعدادات العامة المحفوظة داخل قاعدة بيانات البرنامج</p>
+          <span class="settings-kicker">إعدادات التطبيق</span>
+          <h2>إدارة بيانات العيادة وتشغيل النظام</h2>
+          <p>كل الإعدادات الأساسية في مكان واحد، ومحفوظة محليًا داخل قاعدة بيانات البرنامج.</p>
         </div>
-        <span class="version-badge">V${esc(appSettings.version)}</span>
+        <div class="settings-version-box">
+          <span>الإصدار الحالي</span>
+          <strong>V${esc(appSettings.version)}</strong>
+          <small>Windows • Offline • SQLite</small>
+        </div>
       </div>
 
-      <form id="settingsForm">
-        <div class="settings-grid">
-          <label>رقم واتساب في الطباعة
-            <input class="ltr" name="whatsappNumber" value="${esc(appSettings.whatsappNumber)}" maxlength="32">
-          </label>
+      <form id="settingsForm" class="settings-sections">
+        <section class="settings-section-card">
+          <div class="settings-section-head">
+            <div class="settings-section-icon identity">AK</div>
+            <div><h3>بيانات العيادة</h3><p>تظهر في واجهة البرنامج والطباعة وملفات المرضى.</p></div>
+          </div>
+          <div class="settings-grid settings-grid-v67">
+            <label>اسم العيادة<input name="clinicName" value="${esc(appSettings.clinicName)}" maxlength="120"></label>
+            <label>الشعار النصي<input name="clinicSlogan" value="${esc(appSettings.clinicSlogan)}" maxlength="160"></label>
+            <label>رقم واتساب<input class="ltr" name="whatsappNumber" value="${esc(appSettings.whatsappNumber)}" maxlength="32"></label>
+            <label>رقم الهاتف<input class="ltr" name="phoneNumber" value="${esc(appSettings.phoneNumber)}" maxlength="32"></label>
+            <label class="span2">عنوان العيادة<textarea name="clinicAddress" rows="2" maxlength="500">${esc(appSettings.clinicAddress)}</textarea></label>
+          </div>
+        </section>
 
-          <label>رقم الهاتف في الطباعة
-            <input class="ltr" name="phoneNumber" value="${esc(appSettings.phoneNumber)}" maxlength="32">
-          </label>
+        <section class="settings-section-card">
+          <div class="settings-section-head">
+            <div class="settings-section-icon operation">◷</div>
+            <div><h3>التشغيل اليومي</h3><p>تحديد اليوم التشغيلي وموعد النسخة الاحتياطية التلقائية.</p></div>
+          </div>
+          <div class="settings-grid settings-grid-v67">
+            <label>بداية اليوم التشغيلي
+              <select name="operationalStartHour">${hourOptions}</select>
+              <small>أي تسجيل قبل هذا الوقت يُحسب ضمن اليوم التشغيلي السابق.</small>
+            </label>
+            <label>موعد النسخة الاحتياطية اليومية
+              <select name="backupHour">${backupHourOptions}</select>
+              <small>يتم جدولة نسخة يومية على Windows مع Catch-up عند فتح الجهاز.</small>
+            </label>
+          </div>
+          <div class="settings-operational-preview">
+            <div><span>اليوم التشغيلي الحالي</span><strong>${displayDate(businessDay())}</strong></div>
+            <div><span>يبدأ الساعة</span><strong class="ltr">${operationalStartLabel()}</strong></div>
+            <div><span>النسخ التلقائي</span><strong class="ltr">${String(appSettings.backupHour).padStart(2, '0')}:00</strong></div>
+          </div>
+        </section>
 
-          <label>بداية اليوم التشغيلي
-            <select name="operationalStartHour">${hourOptions}</select>
-          </label>
+        <section class="settings-section-card">
+          <div class="settings-section-head">
+            <div class="settings-section-icon storage">▣</div>
+            <div><h3>البيانات والنسخ الاحتياطية</h3><p>المسارات محمية للقراءة فقط، مع أدوات النسخ والفحص.</p></div>
+          </div>
 
-          <label class="span2">مجلد النسخ الاحتياطية
-            <input class="ltr" value="${esc(appSettings.backupPath)}" readonly>
-          </label>
+          <div class="settings-path-list">
+            <div class="settings-path-row">
+              <div><span>مجلد النسخ الاحتياطية</span><code class="ltr">${esc(appSettings.backupPath)}</code></div>
+              <button type="button" class="btn ghost small" id="openSettingsBackupFolder">فتح المجلد</button>
+            </div>
+            <div class="settings-path-row">
+              <div><span>مجلد الملفات المصدّرة</span><code class="ltr">${esc(appSettings.exportPath)}</code></div>
+              <button type="button" class="btn ghost small" id="openSettingsExportFolder">فتح المجلد</button>
+            </div>
+            <div class="settings-path-row">
+              <div><span>قاعدة البيانات المحلية</span><code class="ltr">${esc(appSettings.databasePath)}</code></div>
+              <span class="settings-lock-badge">محمي</span>
+            </div>
+          </div>
 
-          <label class="span2">قاعدة البيانات المحلية
-            <input class="ltr" value="${esc(appSettings.databasePath)}" readonly>
-          </label>
-        </div>
+          <div class="settings-tool-grid">
+            <button type="button" class="settings-tool-card backup" id="settingsBackupNow">
+              <span class="tool-icon">⟳</span><span><strong>نسخة احتياطية الآن</strong><small>إنشاء نسخة فورية من قاعدة البيانات</small></span>
+            </button>
+            <button type="button" class="settings-tool-card health" id="healthCheckBtn">
+              <span class="tool-icon">✓</span><span><strong>فحص سلامة النظام</strong><small>قاعدة البيانات والعلاقات والنسخ</small></span>
+            </button>
+            <button type="button" class="settings-tool-card backups" id="goBackupsFromSettings">
+              <span class="tool-icon">▣</span><span><strong>إدارة النسخ</strong><small>فتح شاشة النسخ والاستعادة</small></span>
+            </button>
+          </div>
 
-        <div class="settings-note">
-          مكان النسخ الاحتياطية ثابت ومؤمّن حاليًا حتى لا يتم استرجاع ملفات من مسارات غير موثوقة.
-        </div>
+          <div id="healthResult" class="health-result settings-health-result"></div>
+        </section>
 
-        <div class="form-actions settings-actions">
-          <button type="button" class="btn ghost" id="openSettingsBackupFolder">فتح مجلد النسخ</button>
-          <button type="button" class="btn ghost" id="healthCheckBtn">فحص النظام</button>
-          <button type="submit" class="btn primary">حفظ الإعدادات</button>
+        <section class="settings-section-card">
+          <div class="settings-section-head">
+            <div class="settings-section-icon about">i</div>
+            <div><h3>معلومات النظام</h3><p>حالة التشغيل والحماية المحلية.</p></div>
+          </div>
+          <div class="settings-info-grid">
+            <div><span>وضع التشغيل</span><strong>Offline بالكامل</strong></div>
+            <div><span>قاعدة البيانات</span><strong>SQLite محلية</strong></div>
+            <div><span>النسخ اليومية</span><strong>مفعلة</strong></div>
+            <div><span>الإصدار</span><strong>V${esc(appSettings.version)}</strong></div>
+          </div>
+        </section>
+
+        <div class="settings-save-bar">
+          <div><strong>حفظ التغييرات</strong><small>سيتم تطبيق بيانات العيادة ومواعيد التشغيل فورًا.</small></div>
+          <button type="submit" class="btn primary settings-save-btn">حفظ كل الإعدادات</button>
         </div>
       </form>
-
-      <div id="healthResult" class="health-result"></div>
     </section>
-  `, 'الإعدادات', 'أرقام التواصل وبداية اليوم وفحص سلامة النظام');
+  `, 'الإعدادات', 'بيانات العيادة والتشغيل والنسخ الاحتياطية وفحص النظام');
 
   document.querySelector<HTMLButtonElement>('#openSettingsBackupFolder')!.onclick = async () => {
-    await invoke('open_backup_folder');
+    try { await invoke('open_backup_folder'); }
+    catch (err) { toast(`تعذر فتح مجلد النسخ: ${String(err)}`, 'error'); }
   };
 
-  document.querySelector<HTMLButtonElement>('#healthCheckBtn')!.onclick = async () => {
+  document.querySelector<HTMLButtonElement>('#openSettingsExportFolder')!.onclick = async () => {
+    try { await invoke('open_export_folder'); }
+    catch (err) { toast(`تعذر فتح مجلد الملفات: ${String(err)}`, 'error'); }
+  };
+
+  const runSettingsHealthCheck = async () => {
     const box = document.querySelector<HTMLDivElement>('#healthResult')!;
     box.innerHTML = '<div class="health-running">جاري فحص قاعدة البيانات والنسخ الاحتياطية...</div>';
-
     try {
       const health = await invoke<HealthCheck>('health_check');
       const ok = health.integrityOk && health.foreignKeyIssues === 0 && health.backupWritable;
       box.innerHTML = `
-        <div class="health-card ${ok ? 'ok' : 'warn'}">
-          <strong>${ok ? '✓ النظام سليم' : '⚠ يحتاج مراجعة'}</strong>
+        <div class="health-card ${ok ? 'ok' : 'warn'} settings-health-card">
+          <div class="settings-health-title">
+            <strong>${ok ? '✓ النظام سليم' : '⚠ يحتاج مراجعة'}</strong>
+            <span>${ok ? 'تم اجتياز فحص سلامة البيانات' : 'راجع نتائج الفحص بالأسفل'}</span>
+          </div>
           <div class="health-grid">
-            <span>سلامة قاعدة البيانات: <b>${health.integrityOk ? 'سليم' : esc(health.integrityMessage)}</b></span>
-            <span>مشاكل العلاقات: <b>${health.foreignKeyIssues}</b></span>
-            <span>حجم قاعدة البيانات: <b>${(health.databaseSize / 1024 / 1024).toFixed(2)} MB</b></span>
-            <span>عدد النسخ الاحتياطية: <b>${health.backupCount}</b></span>
-            <span>النسخ قابل للكتابة: <b>${health.backupWritable ? 'نعم' : 'لا'}</b></span>
+            <span>سلامة قاعدة البيانات <b>${health.integrityOk ? 'سليم' : esc(health.integrityMessage)}</b></span>
+            <span>مشاكل العلاقات <b>${health.foreignKeyIssues}</b></span>
+            <span>حجم قاعدة البيانات <b>${(health.databaseSize / 1024 / 1024).toFixed(2)} MB</b></span>
+            <span>عدد النسخ الاحتياطية <b>${health.backupCount}</b></span>
+            <span>مجلد النسخ قابل للكتابة <b>${health.backupWritable ? 'نعم' : 'لا'}</b></span>
           </div>
         </div>`;
     } catch (err) {
@@ -3037,20 +3119,39 @@ async function renderSettings() {
     }
   };
 
+  document.querySelector<HTMLButtonElement>('#settingsBackupNow')!.onclick = async () => {
+    const button = document.querySelector<HTMLButtonElement>('#settingsBackupNow')!;
+    button.disabled = true;
+    try {
+      await invoke('create_backup');
+      toast('تم إنشاء نسخة احتياطية جديدة');
+      await runSettingsHealthCheck();
+    } catch (err) {
+      toast(`تعذر إنشاء النسخة: ${String(err)}`, 'error');
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  document.querySelector<HTMLButtonElement>('#goBackupsFromSettings')!.onclick = () => navigate('backups');
+  document.querySelector<HTMLButtonElement>('#healthCheckBtn')!.onclick = runSettingsHealthCheck;
+
   document.querySelector<HTMLFormElement>('#settingsForm')!.onsubmit = async e => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget as HTMLFormElement);
-
     try {
       const saved = await invoke<AppSettings>('save_settings', { input: {
+        clinicName: String(fd.get('clinicName') || '').trim(),
+        clinicSlogan: String(fd.get('clinicSlogan') || '').trim(),
+        clinicAddress: String(fd.get('clinicAddress') || '').trim(),
         whatsappNumber: String(fd.get('whatsappNumber') || '').trim(),
         phoneNumber: String(fd.get('phoneNumber') || '').trim(),
-        operationalStartHour: Number(fd.get('operationalStartHour') || 11)
+        operationalStartHour: Number(fd.get('operationalStartHour') || 11),
+        backupHour: Number(fd.get('backupHour') || 4)
       }});
-
       appSettings = saved;
       activeBusinessDay = businessDay();
-      toast('تم حفظ الإعدادات');
+      toast('تم حفظ كل إعدادات النظام');
       await renderScreen();
     } catch (err) {
       toast(`تعذر حفظ الإعدادات: ${String(err)}`, 'error');

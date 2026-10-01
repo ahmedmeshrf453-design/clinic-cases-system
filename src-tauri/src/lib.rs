@@ -106,9 +106,13 @@ struct UpdateVisitInput {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SettingsInput {
+    clinic_name: String,
+    clinic_slogan: String,
+    clinic_address: String,
     whatsapp_number: String,
     phone_number: String,
     operational_start_hour: u32,
+    backup_hour: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -351,10 +355,15 @@ struct ReportResult {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SettingsInfo {
+    clinic_name: String,
+    clinic_slogan: String,
+    clinic_address: String,
     whatsapp_number: String,
     phone_number: String,
     operational_start_hour: u32,
+    backup_hour: u32,
     backup_path: String,
+    export_path: String,
     database_path: String,
     version: String,
 }
@@ -393,6 +402,11 @@ fn meta_value(conn: &Connection, key: &str, fallback: &str) -> Result<String, St
 fn get_operational_start_hour(conn: &Connection) -> Result<u32, String> {
     let raw = meta_value(conn, "operational_start_hour", "11")?;
     Ok(raw.parse::<u32>().unwrap_or(11).min(23))
+}
+
+fn get_backup_hour(conn: &Connection) -> Result<u32, String> {
+    let raw = meta_value(conn, "backup_hour", "4")?;
+    Ok(raw.parse::<u32>().unwrap_or(4).min(23))
 }
 
 fn validate_patient_fields(
@@ -2093,10 +2107,15 @@ fn get_settings(state: State<AppState>) -> Result<SettingsInfo, String> {
     let conn = open_db(&state)?;
 
     Ok(SettingsInfo {
+        clinic_name: meta_value(&conn, "clinic_name", "عيادات العقاد التخصصية")?,
+        clinic_slogan: meta_value(&conn, "clinic_slogan", "رعاية تليق بك")?,
+        clinic_address: meta_value(&conn, "clinic_address", "59 شارع فيصل الرئيسي - ناصية شارع الوفاء والأمل - أمام أسماك عروس البحر وعنتر الكبابجي - فيصل - الجيزة")?,
         whatsapp_number: meta_value(&conn, "contact_whatsapp", "01102233167")?,
         phone_number: meta_value(&conn, "contact_phone", "01107072134")?,
         operational_start_hour: get_operational_start_hour(&conn)?,
+        backup_hour: get_backup_hour(&conn)?,
         backup_path: state.backup_dir.to_string_lossy().to_string(),
+        export_path: state.export_dir.to_string_lossy().to_string(),
         database_path: state.db_path.to_string_lossy().to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
     })
@@ -2104,47 +2123,51 @@ fn get_settings(state: State<AppState>) -> Result<SettingsInfo, String> {
 
 #[tauri::command]
 fn save_settings(state: State<AppState>, input: SettingsInput) -> Result<SettingsInfo, String> {
-    if input.operational_start_hour > 23 {
-        return Err("ساعة بداية اليوم غير صالحة".into());
+    if input.operational_start_hour > 23 || input.backup_hour > 23 {
+        return Err("وقت التشغيل أو النسخ الاحتياطي غير صالح".into());
     }
 
     fn valid_contact(value: &str) -> bool {
         let v = value.trim();
-        !v.is_empty()
-            && v.len() <= 32
-            && v.chars()
-                .all(|c| c.is_ascii_digit() || matches!(c, '+' | '-' | ' ' | '(' | ')'))
+        !v.is_empty() && v.len() <= 32
+            && v.chars().all(|c| c.is_ascii_digit() || matches!(c, '+' | '-' | ' ' | '(' | ')'))
     }
 
+    let clinic_name = input.clinic_name.trim();
+    let clinic_slogan = input.clinic_slogan.trim();
+    let clinic_address = input.clinic_address.trim();
+
+    if clinic_name.is_empty() || clinic_name.len() > 120 { return Err("اسم العيادة غير صالح".into()); }
+    if clinic_slogan.len() > 160 { return Err("الشعار النصي أطول من المسموح".into()); }
+    if clinic_address.is_empty() || clinic_address.len() > 500 { return Err("عنوان العيادة غير صالح".into()); }
     if !valid_contact(&input.whatsapp_number) || !valid_contact(&input.phone_number) {
         return Err("رقم التواصل غير صالح".into());
     }
 
     let mut conn = open_db(&state)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
-
-    for (key, value) in [
+    let values = vec![
+        ("clinic_name", clinic_name.to_string()),
+        ("clinic_slogan", clinic_slogan.to_string()),
+        ("clinic_address", clinic_address.to_string()),
         ("contact_whatsapp", input.whatsapp_number.trim().to_string()),
         ("contact_phone", input.phone_number.trim().to_string()),
-        (
-            "operational_start_hour",
-            input.operational_start_hour.to_string(),
-        ),
-    ] {
+        ("operational_start_hour", input.operational_start_hour.to_string()),
+        ("backup_hour", input.backup_hour.to_string()),
+    ];
+
+    for (key, value) in values {
         tx.execute(
-            "INSERT INTO app_meta(key,value) VALUES(?1,?2)
-             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            "INSERT INTO app_meta(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             params![key, value],
-        )
-        .map_err(|e| e.to_string())?;
+        ).map_err(|e| e.to_string())?;
     }
 
     tx.commit().map_err(|e| e.to_string())?;
     drop(conn);
-
+    let _ = ensure_backup_tasks(input.backup_hour);
     get_settings(state)
 }
-
 #[tauri::command]
 fn health_check(state: State<AppState>) -> Result<HealthCheck, String> {
     let conn = open_db(&state)?;
@@ -2396,57 +2419,37 @@ fn run_hidden_command(program: &str, args: &[String]) -> Result<(), String> {
     }
 }
 
-fn ensure_backup_tasks() -> Result<(), String> {
+fn ensure_backup_tasks(backup_hour: u32) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let action = format!("\\\"{}\\\" --backup-only", exe.to_string_lossy());
+    let schedule_time = format!("{:02}:00", backup_hour.min(23));
 
     let daily_args = vec![
-        "/Create".to_string(),
-        "/F".to_string(),
-        "/SC".to_string(),
-        "DAILY".to_string(),
-        "/ST".to_string(),
-        "04:00".to_string(),
-        "/RL".to_string(),
-        "LIMITED".to_string(),
-        "/TN".to_string(),
-        DAILY_BACKUP_TASK.to_string(),
-        "/TR".to_string(),
-        action.clone(),
+        "/Create".to_string(), "/F".to_string(), "/SC".to_string(), "DAILY".to_string(),
+        "/ST".to_string(), schedule_time, "/RL".to_string(), "LIMITED".to_string(),
+        "/TN".to_string(), DAILY_BACKUP_TASK.to_string(), "/TR".to_string(), action.clone(),
     ];
     run_hidden_command("schtasks.exe", &daily_args)?;
 
     let catchup_args = vec![
-        "/Create".to_string(),
-        "/F".to_string(),
-        "/SC".to_string(),
-        "ONLOGON".to_string(),
-        "/RL".to_string(),
-        "LIMITED".to_string(),
-        "/TN".to_string(),
-        CATCHUP_BACKUP_TASK.to_string(),
-        "/TR".to_string(),
-        action,
+        "/Create".to_string(), "/F".to_string(), "/SC".to_string(), "ONLOGON".to_string(),
+        "/RL".to_string(), "LIMITED".to_string(), "/TN".to_string(), CATCHUP_BACKUP_TASK.to_string(),
+        "/TR".to_string(), action,
     ];
     run_hidden_command("schtasks.exe", &catchup_args)?;
-
     Ok(())
 }
 
 fn automatic_backup_due(state: &AppState) -> Result<bool, String> {
     let now = Local::now();
+    let conn = Connection::open(&state.db_path).map_err(|e| e.to_string())?;
+    let backup_hour = get_backup_hour(&conn)?;
+    drop(conn);
 
-    if now.hour() < 4 {
-        return Ok(false);
-    }
+    if now.hour() < backup_hour { return Ok(false); }
 
-    let daily = state
-        .backup_dir
-        .join(format!("clinic-cases-auto-{}.db", now.format("%Y-%m-%d")));
-
-    if daily.exists() {
-        return Ok(false);
-    }
+    let daily = state.backup_dir.join(format!("clinic-cases-auto-{}.db", now.format("%Y-%m-%d")));
+    if daily.exists() { return Ok(false); }
 
     checkpoint_and_copy(state, &daily)?;
     Ok(true)
@@ -2497,10 +2500,14 @@ pub fn run() {
                 return Ok(());
             }
 
-            // Windows schedules the real daily 04:00 backup using local system time.
-            let _ = ensure_backup_tasks();
+            // Windows schedules the daily backup using the hour saved in Settings.
+            let backup_hour = Connection::open(&state.db_path)
+                .ok()
+                .and_then(|conn| get_backup_hour(&conn).ok())
+                .unwrap_or(4);
+            let _ = ensure_backup_tasks(backup_hour);
 
-            // Catch-up if Windows/device missed 04:00.
+            // Catch-up if Windows/device missed the selected backup hour.
             let _ = automatic_backup_due(&state);
 
             app.manage(state);
