@@ -1,0 +1,93 @@
+name: Build SMS WhatsApp APK - V3 JVM Fix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Restore Android project from V2 payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=".github/workflows/build-sms-whatsapp-v2.yml"
+          test -f "$SRC"
+          mkdir -p "$RUNNER_TEMP/smsapp"
+          sed -n "/<<'PROJECT_B64'/,/^[[:space:]]*PROJECT_B64[[:space:]]*$/p" "$SRC" \
+            | sed '1d;$d;s/^[[:space:]]*//' \
+            > "$RUNNER_TEMP/project.b64"
+          test -s "$RUNNER_TEMP/project.b64"
+          base64 -d "$RUNNER_TEMP/project.b64" > "$RUNNER_TEMP/project.zip"
+          unzip -q "$RUNNER_TEMP/project.zip" -d "$RUNNER_TEMP/smsapp"
+
+      - name: Fix Java and Kotlin JVM target mismatch
+        shell: bash
+        working-directory: ${{ runner.temp }}/smsapp
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/build.gradle.kts')
+          s = p.read_text(encoding='utf-8')
+          if 'sourceCompatibility = JavaVersion.VERSION_17' not in s:
+              marker = 'android {'
+              if marker not in s:
+                  raise SystemExit('android block not found')
+              replacement = '''android {
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          '''
+              s = s.replace(marker, replacement, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+          grep -n "sourceCompatibility\|targetCompatibility" app/build.gradle.kts
+
+      - name: Verify locked configuration
+        shell: bash
+        working-directory: ${{ runner.temp }}/smsapp
+        run: |
+          set -euo pipefail
+          ! grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          ! grep -q 'android.permission.READ_SMS' app/src/main/AndroidManifest.xml
+          grep -q 'Vezeeta.com' README.md
+          grep -q 'CliniDo' README.md
+          grep -q 'ekshef' README.md
+          grep -q 'CUORi0rtfVU2QlujljCzEg' app/src/main/java/com/alakad/smsforwarder/MainActivity.kt
+
+      - name: Build installable APK
+        shell: bash
+        working-directory: ${{ runner.temp }}/smsapp
+        run: |
+          set -euo pipefail
+          gradle :app:assembleDebug --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/SMS-WhatsApp-Forwarder-v1.2.apk"
+          sha256sum "$GITHUB_WORKSPACE/SMS-WhatsApp-Forwarder-v1.2.apk" > "$GITHUB_WORKSPACE/SMS-WhatsApp-Forwarder-v1.2.sha256"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SMS-WhatsApp-Forwarder-v1.2
+          path: |
+            SMS-WhatsApp-Forwarder-v1.2.apk
+            SMS-WhatsApp-Forwarder-v1.2.sha256
+          retention-days: 30
