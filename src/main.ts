@@ -5,6 +5,7 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import './style.css';
 import { LAB_TESTS, type LabTestItem } from './labCatalog';
+import { LAB2LAB_SOURCE } from './lab2labCatalog';
 
 type Patient = {
   id: string;
@@ -309,7 +310,10 @@ type HealthCheck = {
   backupWritable: boolean;
 };
 
-type Screen = 'dashboard' | 'patients' | 'today' | 'doctors' | 'labs' | 'nursing' | 'reports' | 'archive' | 'backups' | 'settings';
+type Lab2LabAuthStatus = { pinSet: boolean };
+type Lab2LabPriceRow = { id: number; testName: string; price: string; updatedAt: string };
+
+type Screen = 'dashboard' | 'patients' | 'today' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'reports' | 'archive' | 'backups' | 'settings';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 let screen: Screen = 'dashboard';
@@ -325,13 +329,14 @@ let appSettings: AppSettings = {
   backupPath: '',
   exportPath: '',
   databasePath: '',
-  version: '6.7.0'
+  version: '6.8.0'
 };
 
 let refreshTimer: number | undefined;
 let activeBusinessDay = '';
 let sidebarPatientsTotal = 0;
 let screenHistory: Screen[] = [];
+let lab2labSessionPin = '';
 
 function esc(v: unknown) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({
@@ -1246,6 +1251,7 @@ function serviceDockHtml() {
           ${nav('today','◷','حالات اليوم')}
           ${nav('doctors','⚕','الأطباء')}
           ${nav('labs','🧪','التحاليل')}
+          ${nav('lab2lab','L2L','أسعار Lab 2 Lab')}
           ${nav('nursing','✚','خدمات التمريض')}
           ${nav('reports','▤','التقارير')}
         </div>
@@ -1283,6 +1289,7 @@ function shell(content: string, title: string, subtitle: string) {
           ${navButton('today','◷','حالات اليوم')}
           ${navButton('doctors','⚕','الأطباء')}
           ${navButton('labs','🧪','التحاليل')}
+          ${navButton('lab2lab','L2L','أسعار Lab 2 Lab')}
           ${navButton('nursing','✚','خدمات التمريض')}
           ${navButton('reports','▤','التقارير')}
           ${navButton('archive','▣','الأرشيف')}
@@ -1510,6 +1517,7 @@ function toast(message: string, type: 'ok'|'error'='ok') {
 }
 
 async function navigate(next: Screen, remember = true) {
+  if (screen === 'lab2lab' && next !== 'lab2lab') lab2labSessionPin = '';
   if (next === screen) {
     await renderScreen();
     return;
@@ -1520,6 +1528,7 @@ async function navigate(next: Screen, remember = true) {
 }
 
 async function goBackScreen() {
+  if (screen === 'lab2lab') lab2labSessionPin = '';
   const previous = screenHistory.pop() || 'dashboard';
   screen = previous;
   await renderScreen();
@@ -1590,6 +1599,7 @@ async function renderScreen() {
   if (screen === 'today') return renderToday();
   if (screen === 'doctors') return renderDoctors();
   if (screen === 'labs') return renderLabPrices();
+  if (screen === 'lab2lab') return renderLab2Lab();
   if (screen === 'nursing') return renderNursingServices();
   if (screen === 'reports') return renderReports();
   if (screen === 'backups') return renderBackups();
@@ -2702,6 +2712,311 @@ function renderLabPrices() {
     renderRows();
     input.focus();
   };
+}
+
+
+async function renderLab2Lab() {
+  const auth = await invoke<Lab2LabAuthStatus>('lab2lab_auth_status');
+
+  if (!auth.pinSet) {
+    shell(`
+      <section class="card lab2lab-lock-card">
+        <div class="lab2lab-lock-hero">
+          <div class="lab2lab-lock-icon">L2L</div>
+          <div>
+            <h2>إنشاء الرقم السري لأسعار Lab 2 Lab</h2>
+            <p>هذا القسم خاص بأسعار Lab 2 Lab فقط.</p>
+          </div>
+        </div>
+        <form id="lab2labSetupForm" class="lab2lab-pin-form">
+          <label>رقم سري جديد
+            <input id="lab2labNewPin" class="ltr" inputmode="numeric" maxlength="8" autocomplete="new-password" type="password" placeholder="من 4 إلى 8 أرقام">
+          </label>
+          <label>تأكيد الرقم السري
+            <input id="lab2labConfirmPin" class="ltr" inputmode="numeric" maxlength="8" autocomplete="new-password" type="password" placeholder="أعد كتابة الرقم السري">
+          </label>
+          <button class="btn primary" type="submit">حفظ وفتح Lab 2 Lab</button>
+        </form>
+      </section>
+    `, 'أسعار Lab 2 Lab', 'قسم مستقل ومحمي برقم سري');
+
+    document.querySelector<HTMLFormElement>('#lab2labSetupForm')!.onsubmit = async event => {
+      event.preventDefault();
+      const pin = document.querySelector<HTMLInputElement>('#lab2labNewPin')!.value.trim();
+      const confirmPin = document.querySelector<HTMLInputElement>('#lab2labConfirmPin')!.value.trim();
+      if (pin !== confirmPin) {
+        toast('تأكيد الرقم السري غير مطابق', 'error');
+        return;
+      }
+      try {
+        await invoke('setup_lab2lab_pin', { input: { pin } });
+        lab2labSessionPin = pin;
+        toast('تم إنشاء الرقم السري');
+        await renderScreen();
+      } catch (err) {
+        toast(String(err), 'error');
+      }
+    };
+    return;
+  }
+
+  if (!lab2labSessionPin) {
+    shell(`
+      <section class="card lab2lab-lock-card">
+        <div class="lab2lab-lock-hero">
+          <div class="lab2lab-lock-icon">L2L</div>
+          <div>
+            <h2>أسعار Lab 2 Lab</h2>
+            <p>أدخل الرقم السري لفتح قائمة الأسعار.</p>
+          </div>
+        </div>
+        <form id="lab2labUnlockForm" class="lab2lab-pin-form compact">
+          <label>الرقم السري
+            <input id="lab2labPin" class="ltr" inputmode="numeric" maxlength="8" autocomplete="current-password" type="password" autofocus placeholder="••••">
+          </label>
+          <button class="btn primary" type="submit">فتح القائمة</button>
+        </form>
+      </section>
+    `, 'أسعار Lab 2 Lab', 'القائمة محمية برقم سري');
+
+    document.querySelector<HTMLFormElement>('#lab2labUnlockForm')!.onsubmit = async event => {
+      event.preventDefault();
+      const pin = document.querySelector<HTMLInputElement>('#lab2labPin')!.value.trim();
+      try {
+        const ok = await invoke<boolean>('verify_lab2lab_pin', { input: { pin } });
+        if (!ok) {
+          toast('الرقم السري غير صحيح', 'error');
+          document.querySelector<HTMLInputElement>('#lab2labPin')!.select();
+          return;
+        }
+        lab2labSessionPin = pin;
+        await renderScreen();
+      } catch (err) {
+        toast(String(err), 'error');
+      }
+    };
+    return;
+  }
+
+  let rows: Lab2LabPriceRow[] = [];
+  try {
+    await invoke('seed_lab2lab_prices', {
+      input: { pin: lab2labSessionPin, items: LAB2LAB_SOURCE }
+    });
+    rows = await invoke<Lab2LabPriceRow[]>('list_lab2lab_prices', {
+      input: { search: '', pin: lab2labSessionPin }
+    });
+  } catch (err) {
+    lab2labSessionPin = '';
+    toast(`تعذر فتح قائمة Lab 2 Lab: ${String(err)}`, 'error');
+    await renderScreen();
+    return;
+  }
+
+  shell(`
+    <section class="card lab2lab-card">
+      <div class="card-head lab2lab-head">
+        <div class="lab2lab-title-wrap">
+          <div class="lab2lab-badge">L2L</div>
+          <div>
+            <h2>أسعار Lab 2 Lab</h2>
+            <p>${rows.length} تحليل • الأسعار من القائمة المرفوعة</p>
+          </div>
+        </div>
+        <div class="lab2lab-head-actions">
+          <button class="btn ghost small" id="changeLab2LabPin">تغيير الرقم السري</button>
+          <button class="btn ghost small" id="lockLab2Lab">🔒 قفل</button>
+        </div>
+      </div>
+
+      <div class="lab2lab-search-wrap">
+        <label class="lab2lab-search-box">
+          <span>⌕</span>
+          <input id="lab2labSearch" type="search" autocomplete="off" spellcheck="false" placeholder="اكتب اسم التحليل للبحث...">
+        </label>
+        <div class="lab2lab-dropdown" id="lab2labDropdown"></div>
+      </div>
+
+      <div class="lab2lab-help">اكتب جزءًا من اسم التحليل، ثم اختره من القائمة المنسدلة.</div>
+
+      <section class="lab2lab-selected empty" id="lab2labSelected">
+        <div class="lab2lab-selected-placeholder">
+          <span class="lab2lab-selected-icon">L2L</span>
+          <strong>ابحث عن تحليل واختره من القائمة</strong>
+          <small>سيظهر السعر هنا مع أيقونة تعديل السعر.</small>
+        </div>
+      </section>
+    </section>
+  `, 'أسعار Lab 2 Lab', 'بحث وتعديل أسعار Lab 2 Lab');
+
+  const searchInput = document.querySelector<HTMLInputElement>('#lab2labSearch')!;
+  const dropdown = document.querySelector<HTMLDivElement>('#lab2labDropdown')!;
+  const selectedHost = document.querySelector<HTMLElement>('#lab2labSelected')!;
+  let selected: Lab2LabPriceRow | null = null;
+
+  const norm = (value: string) => value.trim().toLocaleLowerCase();
+  const matchingRows = () => {
+    const q = norm(searchInput.value);
+    if (!q) return [];
+    return rows.filter(row => norm(row.testName).includes(q)).slice(0, 15);
+  };
+
+  const closeDropdown = () => {
+    dropdown.innerHTML = '';
+    dropdown.classList.remove('show');
+  };
+
+  const renderSelected = () => {
+    if (!selected) return;
+    selectedHost.classList.remove('empty');
+    selectedHost.innerHTML = `
+      <div class="lab2lab-selected-main">
+        <span>اسم التحليل</span>
+        <strong class="ltr">${esc(selected.testName)}</strong>
+      </div>
+      <div class="lab2lab-price-main">
+        <span>سعر Lab 2 Lab</span>
+        <strong class="ltr">${esc(selected.price)}</strong>
+      </div>
+      <button class="lab2lab-edit-btn" id="editLab2LabPrice" title="تعديل السعر" aria-label="تعديل السعر">✎</button>
+    `;
+
+    document.querySelector<HTMLButtonElement>('#editLab2LabPrice')!.onclick = () => {
+      const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+      root.innerHTML = `
+        <div class="modal-backdrop" id="lab2labEditBackdrop">
+          <section class="modal lab2lab-edit-modal">
+            <div class="modal-head">
+              <div><h2>تعديل سعر Lab 2 Lab</h2><p class="ltr">${esc(selected!.testName)}</p></div>
+              <button class="modal-close" id="closeLab2LabEdit">×</button>
+            </div>
+            <form id="lab2labEditForm">
+              <label>السعر
+                <input id="lab2labPriceInput" class="ltr" value="${esc(selected!.price)}" maxlength="64" autocomplete="off">
+              </label>
+              <div class="form-actions">
+                <button class="btn primary" type="submit">حفظ السعر</button>
+                <button class="btn ghost" type="button" id="cancelLab2LabEdit">إلغاء</button>
+              </div>
+            </form>
+          </section>
+        </div>`;
+      const close = () => root.innerHTML = '';
+      document.querySelector<HTMLButtonElement>('#closeLab2LabEdit')!.onclick = close;
+      document.querySelector<HTMLButtonElement>('#cancelLab2LabEdit')!.onclick = close;
+      document.querySelector<HTMLDivElement>('#lab2labEditBackdrop')!.onclick = e => {
+        if (e.target === e.currentTarget) close();
+      };
+      const priceInput = document.querySelector<HTMLInputElement>('#lab2labPriceInput')!;
+      setTimeout(() => priceInput.select(), 0);
+      document.querySelector<HTMLFormElement>('#lab2labEditForm')!.onsubmit = async event => {
+        event.preventDefault();
+        const price = priceInput.value.trim();
+        try {
+          const updated = await invoke<Lab2LabPriceRow>('update_lab2lab_price', {
+            input: { id: selected!.id, price, pin: lab2labSessionPin }
+          });
+          rows = rows.map(row => row.id === updated.id ? updated : row);
+          selected = updated;
+          close();
+          renderSelected();
+          toast('تم تعديل سعر Lab 2 Lab');
+        } catch (err) {
+          toast(String(err), 'error');
+        }
+      };
+    };
+  };
+
+  const chooseRow = (row: Lab2LabPriceRow) => {
+    selected = row;
+    searchInput.value = row.testName;
+    closeDropdown();
+    renderSelected();
+  };
+
+  const renderDropdown = () => {
+    const matches = matchingRows();
+    if (!searchInput.value.trim()) {
+      closeDropdown();
+      return;
+    }
+    dropdown.innerHTML = matches.length ? matches.map(row => `
+      <button type="button" class="lab2lab-option" data-lab2lab-id="${row.id}">
+        <span class="ltr">${esc(row.testName)}</span>
+        <strong class="ltr">${esc(row.price)}</strong>
+      </button>
+    `).join('') : '<div class="lab2lab-no-result">لا يوجد تحليل مطابق</div>';
+    dropdown.classList.add('show');
+    dropdown.querySelectorAll<HTMLButtonElement>('[data-lab2lab-id]').forEach(button => {
+      button.onclick = () => {
+        const row = rows.find(item => item.id === Number(button.dataset.lab2labId));
+        if (row) chooseRow(row);
+      };
+    });
+  };
+
+  searchInput.oninput = renderDropdown;
+  searchInput.onfocus = renderDropdown;
+  searchInput.onblur = () => window.setTimeout(closeDropdown, 180);
+  document.addEventListener('click', event => {
+    if (!(event.target as HTMLElement).closest('.lab2lab-search-wrap')) closeDropdown();
+  }, { once: true });
+
+  document.querySelector<HTMLButtonElement>('#lockLab2Lab')!.onclick = async () => {
+    lab2labSessionPin = '';
+    await renderScreen();
+  };
+
+  document.querySelector<HTMLButtonElement>('#changeLab2LabPin')!.onclick = () => {
+    const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+    root.innerHTML = `
+      <div class="modal-backdrop" id="lab2labChangePinBackdrop">
+        <section class="modal lab2lab-edit-modal">
+          <div class="modal-head">
+            <div><h2>تغيير الرقم السري</h2><p>أدخل الرقم الجديد من 4 إلى 8 أرقام.</p></div>
+            <button class="modal-close" id="closeLab2LabPin">×</button>
+          </div>
+          <form id="lab2labChangePinForm" class="lab2lab-pin-form">
+            <label>الرقم السري الجديد
+              <input id="lab2labChangeNew" class="ltr" inputmode="numeric" maxlength="8" type="password" autocomplete="new-password">
+            </label>
+            <label>تأكيد الرقم السري
+              <input id="lab2labChangeConfirm" class="ltr" inputmode="numeric" maxlength="8" type="password" autocomplete="new-password">
+            </label>
+            <div class="form-actions">
+              <button class="btn primary" type="submit">حفظ الرقم الجديد</button>
+              <button class="btn ghost" type="button" id="cancelLab2LabPin">إلغاء</button>
+            </div>
+          </form>
+        </section>
+      </div>`;
+    const close = () => root.innerHTML = '';
+    document.querySelector<HTMLButtonElement>('#closeLab2LabPin')!.onclick = close;
+    document.querySelector<HTMLButtonElement>('#cancelLab2LabPin')!.onclick = close;
+    document.querySelector<HTMLDivElement>('#lab2labChangePinBackdrop')!.onclick = e => {
+      if (e.target === e.currentTarget) close();
+    };
+    document.querySelector<HTMLFormElement>('#lab2labChangePinForm')!.onsubmit = async event => {
+      event.preventDefault();
+      const newPin = document.querySelector<HTMLInputElement>('#lab2labChangeNew')!.value.trim();
+      const confirmPin = document.querySelector<HTMLInputElement>('#lab2labChangeConfirm')!.value.trim();
+      if (newPin !== confirmPin) {
+        toast('تأكيد الرقم السري غير مطابق', 'error');
+        return;
+      }
+      try {
+        await invoke('change_lab2lab_pin', { input: { currentPin: lab2labSessionPin, newPin } });
+        lab2labSessionPin = newPin;
+        close();
+        toast('تم تغيير الرقم السري');
+      } catch (err) {
+        toast(String(err), 'error');
+      }
+    };
+  };
+
+  setTimeout(() => searchInput.focus(), 0);
 }
 
 async function renderDoctors() {

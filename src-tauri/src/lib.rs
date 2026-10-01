@@ -2,6 +2,7 @@ use base64::{engine::general_purpose, Engine as _};
 use chrono::{Duration, Local, NaiveDate, NaiveTime, Timelike};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{fs, path::PathBuf, process::Command};
 use tauri::{Manager, State};
 use uuid::Uuid;
@@ -11,6 +12,38 @@ struct AppState {
     backup_dir: PathBuf,
     export_dir: PathBuf,
 }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Lab2LabAuthStatus { pin_set: bool }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Lab2LabPinInput { pin: String }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Lab2LabChangePinInput { current_pin: String, new_pin: String }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Lab2LabSeedItem { id: i64, test_name: String, price: String }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Lab2LabSeedInput { pin: String, items: Vec<Lab2LabSeedItem> }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Lab2LabSearchInput { search: String, pin: String }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Lab2LabPriceUpdateInput { id: i64, price: String, pin: String }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Lab2LabPriceRow { id: i64, test_name: String, price: String, updated_at: String }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -749,6 +782,20 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         ON nursing_orders(order_date DESC,order_time DESC);
       CREATE INDEX IF NOT EXISTS idx_nursing_orders_patient
         ON nursing_orders(patient_id,order_date DESC,order_time DESC);
+    "#,
+    )
+    .map_err(|e| e.to_string())?;
+
+    // V6.8 - Lab 2 Lab is an independent price store.
+    conn.execute_batch(
+        r#"
+      CREATE TABLE IF NOT EXISTS lab2lab_prices(
+        id INTEGER PRIMARY KEY,
+        test_name TEXT NOT NULL UNIQUE,
+        price TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL DEFAULT ''
+      );
+      CREATE INDEX IF NOT EXISTS idx_lab2lab_prices_name ON lab2lab_prices(test_name COLLATE NOCASE);
     "#,
     )
     .map_err(|e| e.to_string())?;
@@ -2102,6 +2149,137 @@ fn create_safety_backup(state: &AppState, prefix: &str) -> Result<PathBuf, Strin
     Ok(target)
 }
 
+fn validate_lab2lab_pin(pin: &str) -> Result<(), String> {
+    let clean = pin.trim();
+    if clean.len() < 4 || clean.len() > 8 || !clean.chars().all(|c| c.is_ascii_digit()) {
+        return Err("الرقم السري يجب أن يكون من 4 إلى 8 أرقام".into());
+    }
+    Ok(())
+}
+
+fn lab2lab_pin_hash(pin: &str, salt: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"clinic-cases-lab2lab-v1|");
+    hasher.update(salt.as_bytes());
+    hasher.update(b"|");
+    hasher.update(pin.as_bytes());
+    let digest = hasher.finalize();
+    digest.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+}
+
+fn verify_lab2lab_pin_value(conn: &Connection, pin: &str) -> Result<bool, String> {
+    validate_lab2lab_pin(pin)?;
+    let salt: Option<String> = conn.query_row(
+        "SELECT value FROM app_meta WHERE key='lab2lab_pin_salt'", [], |row| row.get(0)
+    ).optional().map_err(|e| e.to_string())?;
+    let saved: Option<String> = conn.query_row(
+        "SELECT value FROM app_meta WHERE key='lab2lab_pin_hash'", [], |row| row.get(0)
+    ).optional().map_err(|e| e.to_string())?;
+    match (salt, saved) {
+        (Some(salt), Some(saved)) => Ok(lab2lab_pin_hash(pin.trim(), &salt) == saved),
+        _ => Ok(false),
+    }
+}
+
+#[tauri::command]
+fn lab2lab_auth_status(state: State<AppState>) -> Result<Lab2LabAuthStatus, String> {
+    let conn = open_db(&state)?;
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM app_meta WHERE key='lab2lab_pin_hash' AND length(value)>0", [], |row| row.get(0)
+    ).map_err(|e| e.to_string())?;
+    Ok(Lab2LabAuthStatus { pin_set: count > 0 })
+}
+
+#[tauri::command]
+fn setup_lab2lab_pin(state: State<AppState>, input: Lab2LabPinInput) -> Result<(), String> {
+    validate_lab2lab_pin(&input.pin)?;
+    let mut conn = open_db(&state)?;
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM app_meta WHERE key='lab2lab_pin_hash' AND length(value)>0", [], |row| row.get(0)
+    ).map_err(|e| e.to_string())?;
+    if count > 0 { return Err("تم إنشاء رقم سري لهذا القسم بالفعل".into()); }
+    let salt = Uuid::new_v4().to_string();
+    let hash = lab2lab_pin_hash(input.pin.trim(), &salt);
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute("INSERT INTO app_meta(key,value) VALUES('lab2lab_pin_salt',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![salt]).map_err(|e| e.to_string())?;
+    tx.execute("INSERT INTO app_meta(key,value) VALUES('lab2lab_pin_hash',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![hash]).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn verify_lab2lab_pin(state: State<AppState>, input: Lab2LabPinInput) -> Result<bool, String> {
+    let conn = open_db(&state)?;
+    verify_lab2lab_pin_value(&conn, &input.pin)
+}
+
+#[tauri::command]
+fn change_lab2lab_pin(state: State<AppState>, input: Lab2LabChangePinInput) -> Result<(), String> {
+    validate_lab2lab_pin(&input.new_pin)?;
+    let mut conn = open_db(&state)?;
+    if !verify_lab2lab_pin_value(&conn, &input.current_pin)? { return Err("الرقم السري الحالي غير صحيح".into()); }
+    let salt = Uuid::new_v4().to_string();
+    let hash = lab2lab_pin_hash(input.new_pin.trim(), &salt);
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute("INSERT INTO app_meta(key,value) VALUES('lab2lab_pin_salt',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![salt]).map_err(|e| e.to_string())?;
+    tx.execute("INSERT INTO app_meta(key,value) VALUES('lab2lab_pin_hash',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![hash]).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn seed_lab2lab_prices(state: State<AppState>, input: Lab2LabSeedInput) -> Result<(), String> {
+    let mut conn = open_db(&state)?;
+    if !verify_lab2lab_pin_value(&conn, &input.pin)? { return Err("الرقم السري غير صحيح".into()); }
+    if input.items.len() > 1000 { return Err("قائمة Lab 2 Lab أكبر من المسموح".into()); }
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    for item in input.items {
+        let name = item.test_name.trim();
+        let price = item.price.trim();
+        if item.id <= 0 || name.is_empty() || name.len() > 240 || price.is_empty() || price.len() > 64 { continue; }
+        tx.execute(
+            "INSERT OR IGNORE INTO lab2lab_prices(id,test_name,price,updated_at) VALUES(?1,?2,?3,datetime('now','localtime'))",
+            params![item.id, name, price],
+        ).map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn list_lab2lab_prices(state: State<AppState>, input: Lab2LabSearchInput) -> Result<Vec<Lab2LabPriceRow>, String> {
+    let conn = open_db(&state)?;
+    if !verify_lab2lab_pin_value(&conn, &input.pin)? { return Err("الرقم السري غير صحيح".into()); }
+    let search = input.search.trim().to_string();
+    let pattern = format!("%{}%", search);
+    let mut stmt = conn.prepare(
+        "SELECT id,test_name,price,updated_at FROM lab2lab_prices WHERE (?1='' OR test_name LIKE ?2 COLLATE NOCASE) ORDER BY test_name COLLATE NOCASE ASC"
+    ).map_err(|e| e.to_string())?;
+    let mapped = stmt.query_map(params![search, pattern], |row| Ok(Lab2LabPriceRow {
+        id: row.get(0)?, test_name: row.get(1)?, price: row.get(2)?, updated_at: row.get(3)?
+    })).map_err(|e| e.to_string())?;
+    let mut result = Vec::new();
+    for row in mapped { result.push(row.map_err(|e| e.to_string())?); }
+    Ok(result)
+}
+
+#[tauri::command]
+fn update_lab2lab_price(state: State<AppState>, input: Lab2LabPriceUpdateInput) -> Result<Lab2LabPriceRow, String> {
+    let conn = open_db(&state)?;
+    if !verify_lab2lab_pin_value(&conn, &input.pin)? { return Err("الرقم السري غير صحيح".into()); }
+    let price = input.price.trim();
+    if price.is_empty() || price.len() > 64 || price.chars().any(|c| c.is_control()) { return Err("السعر غير صالح".into()); }
+    let changed = conn.execute(
+        "UPDATE lab2lab_prices SET price=?1,updated_at=datetime('now','localtime') WHERE id=?2",
+        params![price, input.id],
+    ).map_err(|e| e.to_string())?;
+    if changed == 0 { return Err("التحليل غير موجود".into()); }
+    conn.query_row(
+        "SELECT id,test_name,price,updated_at FROM lab2lab_prices WHERE id=?1", params![input.id],
+        |row| Ok(Lab2LabPriceRow { id: row.get(0)?, test_name: row.get(1)?, price: row.get(2)?, updated_at: row.get(3)? })
+    ).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn get_settings(state: State<AppState>) -> Result<SettingsInfo, String> {
     let conn = open_db(&state)?;
@@ -2542,6 +2720,13 @@ pub fn run() {
             save_doctor,
             delete_doctor,
             run_report,
+            lab2lab_auth_status,
+            setup_lab2lab_pin,
+            verify_lab2lab_pin,
+            change_lab2lab_pin,
+            seed_lab2lab_prices,
+            list_lab2lab_prices,
+            update_lab2lab_price,
             get_settings,
             save_settings,
             health_check,
@@ -2577,7 +2762,7 @@ mod production_tests {
 
         let conn = Connection::open(&path).expect("open failed");
 
-        for table in ["patients", "visits", "doctors", "patient_labs", "lab_orders", "lab_order_items", "nursing_orders", "app_meta"] {
+        for table in ["patients", "visits", "doctors", "patient_labs", "lab_orders", "lab_order_items", "nursing_orders", "app_meta", "lab2lab_prices"] {
             let count: i64 = conn
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
