@@ -11,6 +11,7 @@ struct AppState {
     db_path: PathBuf,
     backup_dir: PathBuf,
     export_dir: PathBuf,
+    attachments_dir: PathBuf,
 }
 
 #[derive(Debug, Serialize)]
@@ -449,6 +450,50 @@ struct HealthCheck {
     backup_writable: bool,
 }
 
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SecurityStatus { pin_set: bool, auto_lock_minutes: u32 }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SecurityPinInput { current_pin: String, new_pin: String, auto_lock_minutes: u32 }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VerifySecurityPinInput { pin: String }
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PatientAttachment { id:String, patient_id:String, original_name:String, file_type:String, note:String, stored_path:String, created_at:String }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AddPatientAttachmentInput { patient_id:String, source_path:String, file_type:String, note:String }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CashierQuery { from:String, to:String }
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct CashierItem { service_type:String, service_id:String, patient_id:String, patient_name:String, patient_phone:String, service_label:String, service_date:String, charge:f64, paid:f64, remaining:f64 }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CashierPaymentInput { patient_id:String, service_type:String, service_id:String, amount:String, payment_method:String, notes:String }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FinancialCategory { service_type:String, label:String, count:i64, charges:f64, paid:f64, remaining:f64 }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FinancialSummary { total_charges:f64, total_paid:f64, total_remaining:f64, categories:Vec<FinancialCategory> }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuditEntry { id:i64, action:String, entity_type:String, entity_id:String, details:String, created_at:String }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UnifiedSearchInput { search:String, limit:i64 }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UnifiedSearchResult { kind:String, patient_id:String, title:String, subtitle:String }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SystemAlert { kind:String, title:String, detail:String, patient_id:String, service_type:String, service_id:String }
+
 fn operational_day_date(start_hour: u32) -> NaiveDate {
     let now = Local::now();
     if now.hour() < start_hour {
@@ -871,6 +916,71 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
       INSERT OR IGNORE INTO app_meta(key,value) VALUES('contact_whatsapp','01102233167');
       INSERT OR IGNORE INTO app_meta(key,value) VALUES('contact_phone','01107072134');
       INSERT OR IGNORE INTO app_meta(key,value) VALUES('operational_start_hour','11');
+    "#,
+    )
+    .map_err(|e| e.to_string())?;
+
+
+    // V7.0 core tables and audit trail.
+    conn.execute_batch(r#"
+      CREATE TABLE IF NOT EXISTS patient_attachments(
+        id TEXT PRIMARY KEY, patient_id TEXT NOT NULL, original_name TEXT NOT NULL DEFAULT '',
+        file_type TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', stored_path TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL, FOREIGN KEY(patient_id) REFERENCES patients(id)
+      );
+      CREATE TABLE IF NOT EXISTS cashier_payments(
+        id TEXT PRIMARY KEY, patient_id TEXT NOT NULL, service_type TEXT NOT NULL, service_id TEXT NOT NULL,
+        amount TEXT NOT NULL DEFAULT '0', payment_method TEXT NOT NULL DEFAULT 'نقدي', notes TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL, FOREIGN KEY(patient_id) REFERENCES patients(id)
+      );
+      CREATE TABLE IF NOT EXISTS audit_log(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT NOT NULL, entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_patient_attachments_patient ON patient_attachments(patient_id,created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_cashier_payments_service ON cashier_payments(service_type,service_id,created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_cashier_payments_patient ON cashier_payments(patient_id,created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC,id DESC);
+
+      CREATE TRIGGER IF NOT EXISTS audit_patients_insert AFTER INSERT ON patients BEGIN
+        INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('إضافة','مريض',NEW.id,'الاسم='||COALESCE(NEW.full_name,'')||' | الهاتف='||COALESCE(NEW.phone,'')); END;
+      CREATE TRIGGER IF NOT EXISTS audit_patients_update AFTER UPDATE ON patients BEGIN
+        INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('تعديل','مريض',NEW.id,'الاسم='||COALESCE(NEW.full_name,'')||' | الهاتف='||COALESCE(NEW.phone,'')); END;
+      CREATE TRIGGER IF NOT EXISTS audit_patients_delete AFTER DELETE ON patients BEGIN
+        INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('حذف','مريض',OLD.id,'الاسم='||COALESCE(OLD.full_name,'')||' | الهاتف='||COALESCE(OLD.phone,'')); END;
+      CREATE TRIGGER IF NOT EXISTS audit_visits_insert AFTER INSERT ON visits BEGIN
+        INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('إضافة','زيارة',NEW.id,COALESCE(NEW.visit_type,'')||' | '||COALESCE(NEW.doctor,'')||' | '||COALESCE(NEW.fee,'')); END;
+      CREATE TRIGGER IF NOT EXISTS audit_visits_update AFTER UPDATE ON visits BEGIN
+        INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('تعديل','زيارة',NEW.id,COALESCE(NEW.visit_type,'')||' | '||COALESCE(NEW.doctor,'')||' | '||COALESCE(NEW.fee,'')); END;
+      CREATE TRIGGER IF NOT EXISTS audit_visits_delete AFTER DELETE ON visits BEGIN
+        INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('حذف','زيارة',OLD.id,COALESCE(OLD.visit_type,'')||' | '||COALESCE(OLD.doctor,'')); END;
+      CREATE TRIGGER IF NOT EXISTS audit_lab_orders_insert AFTER INSERT ON lab_orders BEGIN
+        INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('إضافة','تحاليل',NEW.id,'الصافي='||COALESCE(NEW.net_total,'')||' | المدفوع='||COALESCE(NEW.paid_amount,'')); END;
+      CREATE TRIGGER IF NOT EXISTS audit_nursing_insert AFTER INSERT ON nursing_orders BEGIN
+        INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('إضافة','تمريض',NEW.id,COALESCE(NEW.service_name,'')||' | السعر='||COALESCE(NEW.price,'')); END;
+      CREATE TRIGGER IF NOT EXISTS audit_radiology_insert AFTER INSERT ON radiology_orders BEGIN
+        INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('إضافة','أشعة',NEW.id,COALESCE(NEW.radiology_name,'')||' | المركز='||COALESCE(NEW.center_name,'')||' | الصافي='||COALESCE(NEW.net_total,'')); END;
+      CREATE TRIGGER IF NOT EXISTS audit_cashier_payment_insert AFTER INSERT ON cashier_payments BEGIN
+        INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('دفع','كاشير',NEW.id,NEW.service_type||':'||NEW.service_id||' | المبلغ='||COALESCE(NEW.amount,'')||' | الطريقة='||COALESCE(NEW.payment_method,'')); END;
+      CREATE TRIGGER IF NOT EXISTS audit_attachment_insert AFTER INSERT ON patient_attachments BEGIN
+        INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('إضافة','مرفق',NEW.id,COALESCE(NEW.original_name,'')||' | النوع='||COALESCE(NEW.file_type,'')); END;
+      CREATE TRIGGER IF NOT EXISTS audit_attachment_delete AFTER DELETE ON patient_attachments BEGIN
+        INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('حذف','مرفق',OLD.id,COALESCE(OLD.original_name,'')); END;
+    "#).map_err(|e| e.to_string())?;
+    conn.execute("INSERT OR IGNORE INTO app_meta(key,value) VALUES('security_auto_lock_minutes','10')",[]).map_err(|e|e.to_string())?;
+
+    conn.execute_batch(
+        r#"
+      CREATE TRIGGER IF NOT EXISTS audit_lab2lab_update AFTER UPDATE ON lab2lab_prices BEGIN
+        INSERT INTO audit_log(action,entity_type,entity_id,details)
+        VALUES(
+          'تعديل سعر',
+          'Lab 2 Lab',
+          CAST(NEW.id AS TEXT),
+          COALESCE(NEW.test_name,'') || ' | ' || COALESCE(OLD.price,'') || ' -> ' || COALESCE(NEW.price,'')
+        );
+      END;
     "#,
     )
     .map_err(|e| e.to_string())?;
@@ -2071,7 +2181,14 @@ fn list_patient_radiology_orders(
 fn delete_patient(state: State<AppState>, id: String) -> Result<(), String> {
     create_safety_backup(&state, "before-delete-patient")?;
     let mut conn = open_db(&state)?;
+    let attachment_paths: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT stored_path FROM patient_attachments WHERE patient_id=?1").map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(params![id.clone()], |r| r.get::<_,String>(0)).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?
+    };
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM cashier_payments WHERE patient_id=?1", params![id.clone()]).map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM patient_attachments WHERE patient_id=?1", params![id.clone()]).map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM radiology_orders WHERE patient_id=?1", params![id.clone()])
         .map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM nursing_orders WHERE patient_id=?1", params![id.clone()])
@@ -2093,6 +2210,7 @@ fn delete_patient(state: State<AppState>, id: String) -> Result<(), String> {
     tx.execute("DELETE FROM patients WHERE id=?1", params![id])
         .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
+    for path in attachment_paths { let _ = fs::remove_file(path); }
     Ok(())
 }
 
@@ -2517,6 +2635,56 @@ fn update_lab2lab_price(state: State<AppState>, input: Lab2LabPriceUpdateInput) 
     ).map_err(|e| e.to_string())
 }
 
+
+fn security_pin_hash(pin:&str,salt:&str)->String { let mut h=Sha256::new(); h.update(b"clinic-cases-security-v1|"); h.update(salt.as_bytes()); h.update(b"|"); h.update(pin.as_bytes()); h.finalize().iter().map(|b|format!("{:02x}",b)).collect() }
+fn validate_security_pin(pin:&str)->Result<(),String>{let p=pin.trim(); if p.len()<4||p.len()>8||!p.chars().all(|c|c.is_ascii_digit()){return Err("رقم الحماية يجب أن يكون من 4 إلى 8 أرقام".into())} Ok(())}
+fn verify_security_pin_value(conn:&Connection,pin:&str)->Result<bool,String>{validate_security_pin(pin)?; let s:Option<String>=conn.query_row("SELECT value FROM app_meta WHERE key='security_pin_salt'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?; let h:Option<String>=conn.query_row("SELECT value FROM app_meta WHERE key='security_pin_hash'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?; match(s,h){(Some(s),Some(h))=>Ok(security_pin_hash(pin.trim(),&s)==h),_=>Ok(false)}}
+#[tauri::command]
+fn security_status(state:State<AppState>)->Result<SecurityStatus,String>{let c=open_db(&state)?; let n:i64=c.query_row("SELECT COUNT(*) FROM app_meta WHERE key='security_pin_hash' AND value<>''",[],|r|r.get(0)).map_err(|e|e.to_string())?; let m=meta_value(&c,"security_auto_lock_minutes","10")?.parse::<u32>().unwrap_or(10).clamp(1,120); Ok(SecurityStatus{pin_set:n>0,auto_lock_minutes:m})}
+#[tauri::command]
+fn verify_security_pin(state:State<AppState>,input:VerifySecurityPinInput)->Result<bool,String>{let c=open_db(&state)?; verify_security_pin_value(&c,&input.pin)}
+#[tauri::command]
+fn set_security_pin(state:State<AppState>,input:SecurityPinInput)->Result<SecurityStatus,String>{ if input.auto_lock_minutes<1||input.auto_lock_minutes>120{return Err("مدة القفل التلقائي يجب أن تكون من 1 إلى 120 دقيقة".into())} validate_security_pin(&input.new_pin)?; let mut c=open_db(&state)?; let n:i64=c.query_row("SELECT COUNT(*) FROM app_meta WHERE key='security_pin_hash' AND value<>''",[],|r|r.get(0)).map_err(|e|e.to_string())?; if n>0&&!verify_security_pin_value(&c,&input.current_pin)?{return Err("رقم الحماية الحالي غير صحيح".into())} let salt=Uuid::new_v4().to_string(); let hash=security_pin_hash(input.new_pin.trim(),&salt); let tx=c.transaction().map_err(|e|e.to_string())?; for (k,v) in [("security_pin_salt",salt),("security_pin_hash",hash),("security_auto_lock_minutes",input.auto_lock_minutes.to_string())]{tx.execute("INSERT INTO app_meta(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![k,v]).map_err(|e|e.to_string())?;} tx.execute("INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('تعديل','حماية','system','تم تحديث PIN والقفل التلقائي')",[]).map_err(|e|e.to_string())?; tx.commit().map_err(|e|e.to_string())?; drop(c); security_status(state)}
+
+fn map_patient_attachment(row:&rusqlite::Row<'_>)->rusqlite::Result<PatientAttachment>{Ok(PatientAttachment{id:row.get(0)?,patient_id:row.get(1)?,original_name:row.get(2)?,file_type:row.get(3)?,note:row.get(4)?,stored_path:row.get(5)?,created_at:row.get(6)?})}
+#[tauri::command]
+fn add_patient_attachment(state:State<AppState>,input:AddPatientAttachmentInput)->Result<PatientAttachment,String>{let c=open_db(&state)?; let n:i64=c.query_row("SELECT COUNT(*) FROM patients WHERE id=?1",params![input.patient_id],|r|r.get(0)).map_err(|e|e.to_string())?; if n==0{return Err("ملف المريض غير موجود".into())} let src=PathBuf::from(input.source_path.trim()); if !src.exists()||!src.is_file(){return Err("الملف المختار غير موجود".into())} let meta=fs::metadata(&src).map_err(|e|e.to_string())?; if meta.len()==0||meta.len()>30*1024*1024{return Err("حجم المرفق يجب ألا يتجاوز 30 ميجابايت".into())} let ext=src.extension().and_then(|x|x.to_str()).unwrap_or("").to_ascii_lowercase(); if !["pdf","png","jpg","jpeg"].contains(&ext.as_str()){return Err("المسموح PDF أو PNG أو JPG فقط".into())} let original=src.file_name().and_then(|x|x.to_str()).ok_or_else(||"اسم الملف غير صالح".to_string())?.to_string(); let dir=state.attachments_dir.join(&input.patient_id); fs::create_dir_all(&dir).map_err(|e|e.to_string())?; let id=Uuid::new_v4().to_string(); let target=dir.join(format!("{}.{}",id,ext)); fs::copy(&src,&target).map_err(|e|format!("تعذر حفظ المرفق: {}",e))?; let now=Local::now().format("%Y-%m-%d %H:%M:%S").to_string(); let typ=input.file_type.trim().chars().take(80).collect::<String>(); let note=input.note.trim().chars().take(500).collect::<String>(); c.execute("INSERT INTO patient_attachments(id,patient_id,original_name,file_type,note,stored_path,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![id,input.patient_id,original,typ,note,target.to_string_lossy().to_string(),now]).map_err(|e|e.to_string())?; Ok(PatientAttachment{id,patient_id:input.patient_id,original_name:original,file_type:typ,note,stored_path:target.to_string_lossy().to_string(),created_at:now})}
+#[tauri::command]
+fn list_patient_attachments(state:State<AppState>,patient_id:String)->Result<Vec<PatientAttachment>,String>{let c=open_db(&state)?; let mut s=c.prepare("SELECT id,patient_id,original_name,file_type,note,stored_path,created_at FROM patient_attachments WHERE patient_id=?1 ORDER BY created_at DESC").map_err(|e|e.to_string())?; let rows=s.query_map(params![patient_id],map_patient_attachment).map_err(|e|e.to_string())?; rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())}
+#[tauri::command]
+fn delete_patient_attachment(state:State<AppState>,id:String)->Result<(),String>{create_safety_backup(&state,"before-delete-attachment")?; let c=open_db(&state)?; let p:Option<String>=c.query_row("SELECT stored_path FROM patient_attachments WHERE id=?1",params![id.clone()],|r|r.get(0)).optional().map_err(|e|e.to_string())?; c.execute("DELETE FROM patient_attachments WHERE id=?1",params![id]).map_err(|e|e.to_string())?; if let Some(p)=p{let _=fs::remove_file(p);} Ok(())}
+#[tauri::command]
+fn open_patient_attachment(state:State<AppState>,id:String)->Result<(),String>{let c=open_db(&state)?; let p:String=c.query_row("SELECT stored_path FROM patient_attachments WHERE id=?1",params![id],|r|r.get(0)).map_err(|_|"المرفق غير موجود".to_string())?; if !PathBuf::from(&p).exists(){return Err("ملف المرفق غير موجود على الجهاز".into())} Command::new("explorer.exe").arg(format!("/select,{}",p)).spawn().map_err(|e|e.to_string())?; Ok(())}
+
+fn validate_cashier_dates(from:&str,to:&str)->Result<(String,String),String>{let f=NaiveDate::parse_from_str(from.trim(),"%Y-%m-%d").map_err(|_|"تاريخ البداية غير صالح".to_string())?; let t=NaiveDate::parse_from_str(to.trim(),"%Y-%m-%d").map_err(|_|"تاريخ النهاية غير صالح".to_string())?; if t<f{return Err("تاريخ النهاية يجب ألا يسبق البداية".into())} Ok((f.format("%Y-%m-%d").to_string(),t.format("%Y-%m-%d").to_string()))}
+fn cashier_items_for_range(c:&Connection,from:&str,to:&str)->Result<Vec<CashierItem>,String>{let (f,t)=validate_cashier_dates(from,to)?; let sql=r#"
+SELECT service_type,service_id,patient_id,patient_name,patient_phone,service_label,service_date,charge,paid FROM (
+SELECT 'clinic',v.id,p.id,p.full_name,p.phone,COALESCE(v.visit_type,'كشف / استشارة')||CASE WHEN COALESCE(v.doctor,'')<>'' THEN ' - '||v.doctor ELSE '' END,v.visit_date,CAST(COALESCE(NULLIF(v.fee,''),'0') AS REAL),COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='clinic' AND cp.service_id=v.id),0) FROM visits v JOIN patients p ON p.id=v.patient_id WHERE p.archived=0 AND v.visit_date BETWEEN ?1 AND ?2
+UNION ALL SELECT 'lab',o.id,p.id,p.full_name,p.phone,'تحاليل',o.order_date,CAST(COALESCE(NULLIF(o.net_total,''),'0') AS REAL),CAST(COALESCE(NULLIF(o.paid_amount,''),'0') AS REAL)+COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='lab' AND cp.service_id=o.id),0) FROM lab_orders o JOIN patients p ON p.id=o.patient_id WHERE p.archived=0 AND o.order_date BETWEEN ?1 AND ?2
+UNION ALL SELECT 'nursing',n.id,p.id,p.full_name,p.phone,'تمريض - '||COALESCE(n.service_name,''),n.order_date,CAST(COALESCE(NULLIF(n.price,''),'0') AS REAL),COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='nursing' AND cp.service_id=n.id),0) FROM nursing_orders n JOIN patients p ON p.id=n.patient_id WHERE p.archived=0 AND n.order_date BETWEEN ?1 AND ?2
+UNION ALL SELECT 'radiology',r.id,p.id,p.full_name,p.phone,'أشعة - '||COALESCE(r.radiology_name,''),r.order_date,CAST(COALESCE(NULLIF(r.net_total,''),'0') AS REAL),COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='radiology' AND cp.service_id=r.id),0) FROM radiology_orders r JOIN patients p ON p.id=r.patient_id WHERE p.archived=0 AND r.order_date BETWEEN ?1 AND ?2
+) x ORDER BY service_date DESC,patient_name"#; let mut s=c.prepare(sql).map_err(|e|e.to_string())?; let rows=s.query_map(params![f,t],|r|{let charge:f64=r.get(7)?; let paid:f64=r.get(8)?; Ok(CashierItem{service_type:r.get(0)?,service_id:r.get(1)?,patient_id:r.get(2)?,patient_name:r.get(3)?,patient_phone:r.get(4)?,service_label:r.get(5)?,service_date:r.get(6)?,charge,paid,remaining:(charge-paid).max(0.0)})}).map_err(|e|e.to_string())?; rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())}
+#[tauri::command]
+fn list_cashier_items(state:State<AppState>,query:CashierQuery)->Result<Vec<CashierItem>,String>{let c=open_db(&state)?; cashier_items_for_range(&c,&query.from,&query.to)}
+#[tauri::command]
+fn record_cashier_payment(state:State<AppState>,input:CashierPaymentInput)->Result<(),String>{if !["clinic","lab","nursing","radiology"].contains(&input.service_type.as_str()){return Err("نوع الخدمة غير صالح".into())} let amount=parse_lab_money(&input.amount,"المبلغ")?; if amount<=0.0{return Err("المبلغ يجب أن يكون أكبر من صفر".into())} let method=input.payment_method.trim(); if method.is_empty(){return Err("طريقة الدفع مطلوبة".into())} let c=open_db(&state)?; let item=cashier_items_for_range(&c,"2000-01-01","2099-12-31")?.into_iter().find(|x|x.service_type==input.service_type&&x.service_id==input.service_id).ok_or_else(||"الخدمة غير موجودة".to_string())?; if item.patient_id!=input.patient_id{return Err("بيانات المريض غير متطابقة".into())} if amount>item.remaining+0.001{return Err("المبلغ أكبر من المتبقي".into())} c.execute("INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![Uuid::new_v4().to_string(),input.patient_id,input.service_type,input.service_id,format!("{:.2}",amount),method,input.notes.trim(),Local::now().format("%Y-%m-%d %H:%M:%S").to_string()]).map_err(|e|e.to_string())?; Ok(())}
+#[tauri::command]
+fn financial_report(state:State<AppState>,query:CashierQuery)->Result<FinancialSummary,String>{let c=open_db(&state)?; let items=cashier_items_for_range(&c,&query.from,&query.to)?; let defs=[("clinic","الكشف والاستشارات"),("lab","التحاليل"),("nursing","التمريض"),("radiology","الأشعة")]; let mut cats=Vec::new(); for (k,l) in defs{let s=items.iter().filter(|x|x.service_type==k).collect::<Vec<_>>(); cats.push(FinancialCategory{service_type:k.into(),label:l.into(),count:s.len() as i64,charges:s.iter().map(|x|x.charge).sum(),paid:s.iter().map(|x|x.paid).sum(),remaining:s.iter().map(|x|x.remaining).sum()});} Ok(FinancialSummary{total_charges:items.iter().map(|x|x.charge).sum(),total_paid:items.iter().map(|x|x.paid).sum(),total_remaining:items.iter().map(|x|x.remaining).sum(),categories:cats})}
+#[tauri::command]
+fn list_audit_logs(state:State<AppState>,limit:i64)->Result<Vec<AuditEntry>,String>{let c=open_db(&state)?; let mut s=c.prepare("SELECT id,action,entity_type,entity_id,details,created_at FROM audit_log ORDER BY id DESC LIMIT ?1").map_err(|e|e.to_string())?; let rows=s.query_map(params![limit.clamp(1,1000)],|r|Ok(AuditEntry{id:r.get(0)?,action:r.get(1)?,entity_type:r.get(2)?,entity_id:r.get(3)?,details:r.get(4)?,created_at:r.get(5)?})).map_err(|e|e.to_string())?; rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())}
+
+#[tauri::command]
+fn unified_search(state:State<AppState>,input:UnifiedSearchInput)->Result<Vec<UnifiedSearchResult>,String>{let c=open_db(&state)?; let q=input.search.trim(); if q.is_empty(){return Ok(Vec::new())} let like=format!("%{}%",q); let lim=input.limit.clamp(1,30); let mut out:Vec<UnifiedSearchResult>=Vec::new();
+{let mut s=c.prepare("SELECT id,full_name,phone FROM patients WHERE archived=0 AND (full_name LIKE ?1 OR phone LIKE ?1 OR id LIKE ?1) ORDER BY updated_at DESC LIMIT ?2").map_err(|e|e.to_string())?; let rows=s.query_map(params![like,lim],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e|e.to_string())?; for row in rows{let(id,n,p)=row.map_err(|e|e.to_string())?; out.push(UnifiedSearchResult{kind:"مريض".into(),patient_id:id.clone(),title:n,subtitle:format!("{} • ملف {}",p,id.chars().take(8).collect::<String>().to_uppercase())});}}
+for (sql,kind) in [
+("SELECT DISTINCT p.id,p.full_name,v.doctor||' • '||v.visit_type FROM visits v JOIN patients p ON p.id=v.patient_id WHERE p.archived=0 AND (v.doctor LIKE ?1 OR v.visit_type LIKE ?1) ORDER BY v.created_at DESC LIMIT ?2","عيادة"),
+("SELECT DISTINCT p.id,p.full_name,i.test_name FROM lab_order_items i JOIN lab_orders o ON o.id=i.order_id JOIN patients p ON p.id=o.patient_id WHERE p.archived=0 AND i.test_name LIKE ?1 ORDER BY o.created_at DESC LIMIT ?2","تحاليل"),
+("SELECT DISTINCT p.id,p.full_name,n.service_name FROM nursing_orders n JOIN patients p ON p.id=n.patient_id WHERE p.archived=0 AND n.service_name LIKE ?1 ORDER BY n.created_at DESC LIMIT ?2","تمريض"),
+("SELECT DISTINCT p.id,p.full_name,r.radiology_name||' • '||r.center_name FROM radiology_orders r JOIN patients p ON p.id=r.patient_id WHERE p.archived=0 AND (r.radiology_name LIKE ?1 OR r.center_name LIKE ?1) ORDER BY r.created_at DESC LIMIT ?2","أشعة")]{let mut s=c.prepare(sql).map_err(|e|e.to_string())?; let rows=s.query_map(params![like,lim],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e|e.to_string())?; for row in rows{if out.len()>=lim as usize{break} let(id,n,d)=row.map_err(|e|e.to_string())?; if !out.iter().any(|x|x.patient_id==id&&x.kind==kind&&x.subtitle==d){out.push(UnifiedSearchResult{kind:kind.into(),patient_id:id,title:n,subtitle:d});}}}
+out.truncate(lim as usize); Ok(out)}
+#[tauri::command]
+fn list_system_alerts(state:State<AppState>)->Result<Vec<SystemAlert>,String>{let c=open_db(&state)?; let mut a=Vec::new(); for x in cashier_items_for_range(&c,"2000-01-01","2099-12-31")?{if x.remaining>0.009{a.push(SystemAlert{kind:"متبقي".into(),title:format!("{} — {}",x.patient_name,x.service_label),detail:format!("متبقي {:.2} ج.م من إجمالي {:.2} ج.م",x.remaining,x.charge),patient_id:x.patient_id,service_type:x.service_type,service_id:x.service_id});} if a.len()>=100{break}} let backups=fs::read_dir(&state.backup_dir).map(|it|it.filter_map(Result::ok).filter(|e|e.path().extension().and_then(|x|x.to_str())==Some("db")).count()).unwrap_or(0); if backups==0{a.insert(0,SystemAlert{kind:"حماية".into(),title:"لا توجد نسخة احتياطية".into(),detail:"أنشئ نسخة احتياطية من شاشة النسخ الاحتياطية.".into(),patient_id:"".into(),service_type:"".into(),service_id:"".into()});} Ok(a)}
+
 #[tauri::command]
 fn get_settings(state: State<AppState>) -> Result<SettingsInfo, String> {
     let conn = open_db(&state)?;
@@ -2896,11 +3064,14 @@ pub fn run() {
                 .unwrap_or_else(|_| documents_dir.clone());
             let export_dir = downloads_dir.join("تسجيل حالات عيادات العقاد");
             fs::create_dir_all(&export_dir)?;
+            let attachments_dir = data_dir.join("patient-attachments");
+            fs::create_dir_all(&attachments_dir)?;
 
             let state = AppState {
                 db_path,
                 backup_dir,
                 export_dir,
+                attachments_dir,
             };
 
             if backup_only {
@@ -2968,6 +3139,19 @@ pub fn run() {
             seed_lab2lab_prices,
             list_lab2lab_prices,
             update_lab2lab_price,
+            security_status,
+            verify_security_pin,
+            set_security_pin,
+            add_patient_attachment,
+            list_patient_attachments,
+            delete_patient_attachment,
+            open_patient_attachment,
+            list_cashier_items,
+            record_cashier_payment,
+            financial_report,
+            list_audit_logs,
+            unified_search,
+            list_system_alerts,
             get_settings,
             save_settings,
             health_check,

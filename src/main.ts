@@ -1,6 +1,6 @@
 import QRCode from 'qrcode';
 import { invoke } from '@tauri-apps/api/core';
-import { save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { save as saveDialog, open as openDialog } from '@tauri-apps/plugin-dialog';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import './style.css';
@@ -347,7 +347,17 @@ type HealthCheck = {
 type Lab2LabAuthStatus = { pinSet: boolean };
 type Lab2LabPriceRow = { id: number; testName: string; price: string; updatedAt: string };
 
-type Screen = 'dashboard' | 'patients' | 'today' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'radiology' | 'reports' | 'archive' | 'backups' | 'settings';
+
+type SecurityStatus={pinSet:boolean;autoLockMinutes:number};
+type PatientAttachment={id:string;patientId:string;originalName:string;fileType:string;note:string;storedPath:string;createdAt:string};
+type CashierItem={serviceType:string;serviceId:string;patientId:string;patientName:string;patientPhone:string;serviceLabel:string;serviceDate:string;charge:number;paid:number;remaining:number};
+type FinancialCategory={serviceType:string;label:string;count:number;charges:number;paid:number;remaining:number};
+type FinancialSummary={totalCharges:number;totalPaid:number;totalRemaining:number;categories:FinancialCategory[]};
+type AuditEntry={id:number;action:string;entityType:string;entityId:string;details:string;createdAt:string};
+type UnifiedSearchResult={kind:string;patientId:string;title:string;subtitle:string};
+type SystemAlert={kind:string;title:string;detail:string;patientId:string;serviceType:string;serviceId:string};
+
+type Screen = 'dashboard' | 'patients' | 'today' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'radiology' | 'cashier' | 'finance' | 'alerts' | 'audit' | 'security' | 'reports' | 'archive' | 'backups' | 'settings';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 let screen: Screen = 'dashboard';
@@ -371,6 +381,9 @@ let activeBusinessDay = '';
 let sidebarPatientsTotal = 0;
 let screenHistory: Screen[] = [];
 let lab2labSessionPin = '';
+let v7SecurityStatus:SecurityStatus={pinSet:false,autoLockMinutes:10};
+let v7LastActivityAt=Date.now();
+let v7SecurityTimer:number|undefined;
 
 function esc(v: unknown) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({
@@ -1603,6 +1616,10 @@ function serviceDockHtml() {
           ${nav('lab2lab','L2L','أسعار Lab 2 Lab')}
           ${nav('nursing','✚','خدمات التمريض')}
           ${nav('radiology','🩻','الأشعة')}
+          ${nav('cashier','💵','الكاشير')}
+          ${nav('finance','📊','المالية')}
+          ${nav('alerts','🔔','التنبيهات')}
+          ${nav('audit','🧾','سجل العمليات')}
           ${nav('reports','▤','التقارير')}
         </div>
       </div>
@@ -1642,6 +1659,11 @@ function shell(content: string, title: string, subtitle: string) {
           ${navButton('lab2lab','L2L','أسعار Lab 2 Lab')}
           ${navButton('nursing','✚','خدمات التمريض')}
           ${navButton('radiology','🩻','الأشعة')}
+          ${navButton('cashier','💵','الكاشير')}
+          ${navButton('finance','📊','التقارير المالية')}
+          ${navButton('alerts','🔔','التنبيهات')}
+          ${navButton('audit','🧾','Audit Log')}
+          ${navButton('security','🔐','الحماية')}
           ${navButton('reports','▤','التقارير')}
           ${navButton('archive','▣','الأرشيف')}
           ${navButton('backups','⟳','النسخ الاحتياطية')}
@@ -1739,19 +1761,13 @@ function shell(content: string, title: string, subtitle: string) {
       }
 
       try {
-        const rows = await invoke<Patient[]>('list_patients', {
-          query: { search: q, archivedOnly: false, limit: 8 }
-        });
-
-        globalResults.innerHTML = rows.length ? rows.map(p => `
-          <button type="button" class="global-patient-result" data-global-patient="${esc(p.id)}">
-            <span class="global-patient-result-avatar">${esc((p.fullName || 'م').trim().charAt(0) || 'م')}</span>
-            <span>
-              <strong>${esc(p.fullName || 'بدون اسم')}</strong>
-              <small class="ltr">${esc(p.phone || 'بدون رقم')}</small>
-            </span>
+        const rows = await invoke<UnifiedSearchResult[]>('unified_search', { input: { search: q, limit: 12 } });
+        globalResults.innerHTML = rows.length ? rows.map(r => `
+          <button type="button" class="global-patient-result" data-global-patient="${esc(r.patientId)}">
+            <span class="global-patient-result-avatar">${esc((r.title || 'م').trim().charAt(0) || 'م')}</span>
+            <span><strong>${esc(r.title || 'بدون اسم')}</strong><small>${esc(r.kind)} • ${esc(r.subtitle || '')}</small></span>
           </button>
-        `).join('') : `<div class="global-search-empty">لا يوجد مريض مطابق</div>`;
+        `).join('') : `<div class="global-search-empty">لا توجد نتيجة مطابقة</div>`;
 
         globalResults.classList.add('show');
 
@@ -1942,6 +1958,33 @@ if (document.body) {
   }, { once: true });
 }
 
+
+async function openPatientAttachments(patientId:string){
+  const [details,rows]=await Promise.all([invoke<PatientDetails>('get_patient_details',{id:patientId}),invoke<PatientAttachment[]>('list_patient_attachments',{patientId})]);
+  const p=details.patient; const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
+  root.innerHTML=`<div class="modal-backdrop" data-back-patient-id="${esc(patientId)}"><section class="modal wide v7-attachments-modal">
+    <div class="modal-head"><div class="patient-feature-title"><div class="patient-feature-title-icon attachments">📎</div><div><h2>مرفقات ملف المريض</h2><p>${esc(p.fullName||'بدون اسم')}</p></div></div><button class="modal-close" id="closeAttachments">×</button></div>
+    <div class="v7-attachment-toolbar"><select id="attachmentCategory"><option>تقرير طبي</option><option>نتيجة تحاليل</option><option>أشعة</option><option>روشتة</option><option>صورة</option><option>ملف طبي</option></select><input id="attachmentNote" placeholder="ملاحظة اختيارية..." maxlength="500"><button class="btn primary" id="addAttachment">📎 إضافة ملف</button></div>
+    <div class="v7-attachment-list">${rows.length?rows.map(a=>`<article class="v7-attachment-row"><div class="v7-attachment-icon">📄</div><div><strong>${esc(a.originalName)}</strong><small>${esc(a.fileType||'ملف')} • ${esc(displaySavedDateTime(a.createdAt))}</small>${a.note?`<p>${esc(a.note)}</p>`:''}</div><div class="v7-attachment-actions"><button class="btn ghost small" data-open-attachment="${esc(a.id)}">إظهار الملف</button><button class="btn danger-outline small" data-delete-attachment="${esc(a.id)}">حذف</button></div></article>`).join(''):'<div class="empty-block">لا توجد مرفقات داخل الملف.</div>'}</div>
+    <div class="form-actions"><button class="btn ghost" id="attachmentsBack">← رجوع لملف المريض</button></div>
+  </section></div>`;
+  const close=()=>root.innerHTML=''; document.querySelector<HTMLButtonElement>('#closeAttachments')!.onclick=close; document.querySelector<HTMLButtonElement>('#attachmentsBack')!.onclick=async()=>{close();await openPatient(patientId)};
+  document.querySelector<HTMLButtonElement>('#addAttachment')!.onclick=async()=>{const selected=await openDialog({multiple:false,directory:false,filters:[{name:'ملفات طبية',extensions:['pdf','png','jpg','jpeg']}]}); if(!selected||Array.isArray(selected))return; const fileType=document.querySelector<HTMLSelectElement>('#attachmentCategory')!.value; const note=document.querySelector<HTMLInputElement>('#attachmentNote')!.value.trim(); try{await invoke('add_patient_attachment',{input:{patientId,sourcePath:selected,fileType,note}});toast('تم حفظ المرفق داخل ملف المريض');await openPatientAttachments(patientId)}catch(err){toast(`تعذر حفظ المرفق: ${String(err)}`,'error')}};
+  document.querySelectorAll<HTMLButtonElement>('[data-open-attachment]').forEach(b=>b.onclick=()=>invoke('open_patient_attachment',{id:b.dataset.openAttachment||''}).catch(err=>toast(String(err),'error')));
+  document.querySelectorAll<HTMLButtonElement>('[data-delete-attachment]').forEach(b=>b.onclick=async()=>{if(!confirm('حذف هذا المرفق نهائيًا؟'))return;try{await invoke('delete_patient_attachment',{id:b.dataset.deleteAttachment||''});toast('تم حذف المرفق');await openPatientAttachments(patientId)}catch(err){toast(`تعذر حذف المرفق: ${String(err)}`,'error')}});
+}
+
+function cashierTableHtml(rows:CashierItem[]){return `<div class="table-wrap"><table class="v7-cashier-table"><thead><tr><th>التاريخ</th><th>المريض</th><th>الخدمة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>إجراء</th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr><td>${esc(displayDate(r.serviceDate))}</td><td><strong>${esc(r.patientName)}</strong><small class="ltr">${esc(r.patientPhone||'')}</small></td><td>${esc(r.serviceLabel)}</td><td class="ltr">${r.charge.toFixed(2)} ج.م</td><td class="ltr">${r.paid.toFixed(2)} ج.م</td><td class="ltr ${r.remaining>0.009?'v7-due':'v7-paid'}">${r.remaining.toFixed(2)} ج.م</td><td>${r.remaining>0.009?`<button class="btn primary small" data-cashier-pay="${esc(r.serviceType)}" data-service-id="${esc(r.serviceId)}" data-patient-id="${esc(r.patientId)}" data-remaining="${r.remaining}">تحصيل</button>`:'<span class="v7-paid-badge">تم السداد</span>'}</td></tr>`).join(''):'<tr><td colspan="7" class="empty-row">لا توجد خدمات في الفترة</td></tr>'}</tbody></table></div>`}
+function openCashierPaymentModal(item:{patientId:string;serviceType:string;serviceId:string;remaining:number},onSaved:()=>Promise<void>){const root=document.querySelector<HTMLDivElement>('#modalRoot')!;root.innerHTML=`<div class="modal-backdrop"><section class="modal compact"><div class="modal-head"><div><h2>تحصيل مبلغ</h2><p>المتبقي ${item.remaining.toFixed(2)} ج.م</p></div><button class="modal-close" id="closeCashierPayment">×</button></div><form id="cashierPaymentForm"><div class="form-grid one"><label>المبلغ<input class="ltr" name="amount" type="number" min="0.01" max="${item.remaining}" step="0.01" value="${item.remaining.toFixed(2)}"></label><label>طريقة الدفع<select name="paymentMethod"><option>نقدي</option><option>فيزا</option><option>إنستاباي</option><option>محفظة</option><option>أخرى</option></select></label><label>ملاحظات<input name="notes" maxlength="300"></label></div><div class="form-actions"><button type="button" class="btn ghost" id="cancelCashierPayment">إلغاء</button><button class="btn primary">✓ حفظ التحصيل</button></div></form></section></div>`;const close=()=>root.innerHTML='';document.querySelector<HTMLButtonElement>('#closeCashierPayment')!.onclick=close;document.querySelector<HTMLButtonElement>('#cancelCashierPayment')!.onclick=close;document.querySelector<HTMLFormElement>('#cashierPaymentForm')!.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget as HTMLFormElement);try{await invoke('record_cashier_payment',{input:{patientId:item.patientId,serviceType:item.serviceType,serviceId:item.serviceId,amount:String(fd.get('amount')||''),paymentMethod:String(fd.get('paymentMethod')||''),notes:String(fd.get('notes')||'').trim()}});close();toast('تم تسجيل التحصيل');await onSaved()}catch(err){toast(`تعذر تسجيل التحصيل: ${String(err)}`,'error')}}}
+async function renderCashier(){const day=businessDay();shell(`<section class="card"><div class="card-head toolbar"><div><h2>الكاشير والحسابات</h2><p>تحصيل ومتابعة المتبقي لكل خدمات المريض</p></div><div class="filters"><label>من<input id="cashierFrom" type="date" value="${day}"></label><label>إلى<input id="cashierTo" type="date" value="${day}"></label><button class="btn primary small" id="cashierRefresh">عرض</button></div></div><div id="cashierSummary"></div><div id="cashierRows"></div></section>`,'الكاشير','حساب موحد لكل الخدمات');const from=document.querySelector<HTMLInputElement>('#cashierFrom')!,to=document.querySelector<HTMLInputElement>('#cashierTo')!,host=document.querySelector<HTMLDivElement>('#cashierRows')!,summary=document.querySelector<HTMLDivElement>('#cashierSummary')!;const load=async()=>{const rows=await invoke<CashierItem[]>('list_cashier_items',{query:{from:from.value,to:to.value}});const charges=rows.reduce((s,r)=>s+r.charge,0),paid=rows.reduce((s,r)=>s+r.paid,0),remaining=rows.reduce((s,r)=>s+r.remaining,0);summary.innerHTML=`<div class="v7-money-grid"><div><span>إجمالي الخدمات</span><strong>${charges.toFixed(2)} ج.م</strong></div><div><span>المدفوع</span><strong>${paid.toFixed(2)} ج.م</strong></div><div><span>المتبقي</span><strong>${remaining.toFixed(2)} ج.م</strong></div></div>`;host.innerHTML=cashierTableHtml(rows);host.querySelectorAll<HTMLButtonElement>('[data-cashier-pay]').forEach(b=>b.onclick=()=>openCashierPaymentModal({patientId:b.dataset.patientId||'',serviceType:b.dataset.cashierPay||'',serviceId:b.dataset.serviceId||'',remaining:Number(b.dataset.remaining||0)},load))};document.querySelector<HTMLButtonElement>('#cashierRefresh')!.onclick=()=>load().catch(err=>toast(String(err),'error'));await load()}
+async function renderFinance(){const day=businessDay();shell(`<section class="card"><div class="card-head toolbar"><div><h2>التقارير المالية المنفصلة</h2><p>العيادة • التحاليل • التمريض • الأشعة</p></div><div class="filters"><label>من<input id="financeFrom" type="date" value="${day}"></label><label>إلى<input id="financeTo" type="date" value="${day}"></label><button class="btn primary small" id="financeRun">عرض</button></div></div><div id="financeHost"></div></section>`,'التقارير المالية','الإجمالي والمدفوع والمتبقي حسب الخدمة');const run=async()=>{const from=document.querySelector<HTMLInputElement>('#financeFrom')!.value,to=document.querySelector<HTMLInputElement>('#financeTo')!.value,r=await invoke<FinancialSummary>('financial_report',{query:{from,to}});document.querySelector<HTMLDivElement>('#financeHost')!.innerHTML=`<div class="v7-money-grid"><div><span>إجمالي الخدمات</span><strong>${r.totalCharges.toFixed(2)} ج.م</strong></div><div><span>إجمالي المدفوع</span><strong>${r.totalPaid.toFixed(2)} ج.م</strong></div><div><span>إجمالي المتبقي</span><strong>${r.totalRemaining.toFixed(2)} ج.م</strong></div></div><div class="v7-finance-grid">${r.categories.map(c=>`<article><strong>${esc(c.label)}</strong><span>${c.count} حالة</span><b>الإجمالي ${c.charges.toFixed(2)} ج.م</b><b>المدفوع ${c.paid.toFixed(2)} ج.م</b><b class="${c.remaining>0?'v7-due':''}">المتبقي ${c.remaining.toFixed(2)} ج.م</b></article>`).join('')}</div>`};document.querySelector<HTMLButtonElement>('#financeRun')!.onclick=()=>run().catch(err=>toast(String(err),'error'));await run()}
+async function renderAudit(){const rows=await invoke<AuditEntry[]>('list_audit_logs',{limit:500});shell(`<section class="card"><div class="card-head"><div><h2>Audit Log</h2><p>سجل قراءة فقط للعمليات</p></div></div><div class="table-wrap"><table><thead><tr><th>التاريخ والوقت</th><th>العملية</th><th>النوع</th><th>المعرف</th><th>التفاصيل</th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td class="ltr">${esc(x.createdAt)}</td><td>${esc(x.action)}</td><td>${esc(x.entityType)}</td><td class="ltr">${esc(x.entityId)}</td><td>${esc(x.details)}</td></tr>`).join(''):'<tr><td colspan="5" class="empty-row">لا توجد عمليات بعد</td></tr>'}</tbody></table></div></section>`,'Audit Log','من أضاف أو عدّل أو حذف أو حصّل')}
+async function renderAlerts(){const rows=await invoke<SystemAlert[]>('list_system_alerts');shell(`<section class="card"><div class="card-head"><div><h2>التنبيهات</h2><p>متبقيات وحالات حماية تحتاج متابعة</p></div><span class="v7-alert-count">${rows.length}</span></div><div class="v7-alert-list">${rows.length?rows.map(a=>`<article class="v7-alert-row"><span class="v7-alert-icon">${a.kind==='حماية'?'🔐':'🔔'}</span><div><strong>${esc(a.title)}</strong><p>${esc(a.detail)}</p></div>${a.patientId?`<button class="btn ghost small" data-alert-patient="${esc(a.patientId)}">ملف المريض</button>`:''}</article>`).join(''):'<div class="empty-block">لا توجد تنبيهات حالية ✅</div>'}</div></section>`,'التنبيهات','ما يحتاج متابعة داخل النظام');document.querySelectorAll<HTMLButtonElement>('[data-alert-patient]').forEach(b=>b.onclick=()=>openPatient(b.dataset.alertPatient||''))}
+
+async function renderSecurity(){v7SecurityStatus=await invoke<SecurityStatus>('security_status');shell(`<section class="card v7-security-card"><div class="card-head"><div><h2>حماية البيانات</h2><p>PIN وقفل تلقائي للجلسة</p></div><span class="v7-security-state">${v7SecurityStatus.pinSet?'🔐 مفعّل':'🔓 غير مفعّل'}</span></div><form id="securityForm" class="v7-security-form">${v7SecurityStatus.pinSet?'<label>PIN الحالي<input name="currentPin" type="password" inputmode="numeric" maxlength="8"></label>':''}<label>PIN الجديد<input name="newPin" type="password" inputmode="numeric" maxlength="8" placeholder="4 إلى 8 أرقام"></label><label>القفل التلقائي بعد<select name="autoLockMinutes">${[1,5,10,15,30,60,120].map(x=>`<option value="${x}" ${x===v7SecurityStatus.autoLockMinutes?'selected':''}>${x} دقيقة</option>`).join('')}</select></label><button class="btn primary">حفظ إعدادات الحماية</button></form><div class="v7-security-notes">PIN لا يُحفظ كنص صريح؛ يتم حفظ Hash مع Salt محلي.</div></section>`,'الحماية','قفل النظام تلقائيًا عند عدم الاستخدام');document.querySelector<HTMLFormElement>('#securityForm')!.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget as HTMLFormElement);try{v7SecurityStatus=await invoke<SecurityStatus>('set_security_pin',{input:{currentPin:String(fd.get('currentPin')||''),newPin:String(fd.get('newPin')||''),autoLockMinutes:Number(fd.get('autoLockMinutes')||10)}});v7LastActivityAt=Date.now();toast('تم حفظ إعدادات الحماية');await renderSecurity()}catch(err){toast(`تعذر الحفظ: ${String(err)}`,'error')}}}
+function showV7LockScreen(){app.innerHTML=`<div class="v7-lock-screen"><div class="v7-lock-card"><div class="v7-lock-icon">🔐</div><h1>النظام مقفول</h1><p>أدخل PIN الحماية للمتابعة</p><form id="v7UnlockForm"><input id="v7UnlockPin" type="password" inputmode="numeric" maxlength="8" autofocus placeholder="PIN"><button class="btn primary">فتح النظام</button></form><div id="v7LockError"></div></div></div>`;document.querySelector<HTMLFormElement>('#v7UnlockForm')!.onsubmit=async e=>{e.preventDefault();const pin=document.querySelector<HTMLInputElement>('#v7UnlockPin')!.value.trim();try{const ok=await invoke<boolean>('verify_security_pin',{input:{pin}});if(!ok){document.querySelector<HTMLDivElement>('#v7LockError')!.textContent='PIN غير صحيح';return}v7LastActivityAt=Date.now();await renderScreen()}catch(err){document.querySelector<HTMLDivElement>('#v7LockError')!.textContent=String(err)}}}
+async function startV7App(){v7SecurityStatus=await invoke<SecurityStatus>('security_status');const activity=()=>{v7LastActivityAt=Date.now()};['pointerdown','keydown','touchstart'].forEach(name=>window.addEventListener(name,activity,{passive:true}));window.clearInterval(v7SecurityTimer);v7SecurityTimer=window.setInterval(()=>{if(!v7SecurityStatus.pinSet)return;const idle=Date.now()-v7LastActivityAt;if(idle>=v7SecurityStatus.autoLockMinutes*60000&&!document.querySelector('.v7-lock-screen'))showV7LockScreen()},15000);if(v7SecurityStatus.pinSet)showV7LockScreen();else await renderScreen()}
+
 async function renderScreen() {
   await Promise.all([loadDoctors(), loadSettings(), loadSidebarPatientsTotal()]);
   if (screen === 'dashboard') return renderDashboard();
@@ -1953,6 +1996,11 @@ async function renderScreen() {
   if (screen === 'lab2lab') return renderLab2Lab();
   if (screen === 'nursing') return renderNursingServices();
   if (screen === 'radiology') return renderRadiologyServices();
+  if (screen === 'cashier') return renderCashier();
+  if (screen === 'finance') return renderFinance();
+  if (screen === 'alerts') return renderAlerts();
+  if (screen === 'audit') return renderAudit();
+  if (screen === 'security') return renderSecurity();
   if (screen === 'reports') return renderReports();
   if (screen === 'backups') return renderBackups();
   if (screen === 'settings') return renderSettings();
@@ -4551,6 +4599,11 @@ async function openPatient(id: string) {
             </span>
             <span class="patient-feature-card-arrow">‹</span>
           </button>
+          <button class="patient-feature-card attachments" id="patientAttachments">
+            <span class="patient-feature-card-icon">📎</span>
+            <span class="patient-feature-card-copy"><strong>المرفقات</strong><small>PDF وصور وتقارير داخل ملف المريض</small></span>
+            <span class="patient-feature-card-arrow">‹</span>
+          </button>
         </div>
 
         <div class="profile-actions patient-profile-actions patient-file-actions-bar">
@@ -4598,6 +4651,10 @@ async function openPatient(id: string) {
   document.querySelector<HTMLButtonElement>('#patientRadiologyServices')!.onclick = () => {
     close();
     openPatientRadiologyPanel(id);
+  };
+  document.querySelector<HTMLButtonElement>('#patientAttachments')!.onclick = () => {
+    close();
+    openPatientAttachments(id);
   };
 
   document.querySelector<HTMLButtonElement>('#patientLabTests')!.onclick = () => {
@@ -5051,6 +5108,6 @@ function openDoctorModal(doctor?: Doctor) {
   };
 }
 
-renderScreen().catch(e => {
+startV7App().catch(e => {
   app.innerHTML = `<div class="fatal"><h2>تعذر تشغيل النظام</h2><p>${esc(String(e))}</p></div>`;
 });
