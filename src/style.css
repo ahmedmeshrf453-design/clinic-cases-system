@@ -3478,3 +3478,168 @@ table th{background:#f3f7f9!important}
   }
 }
 
+
+/* ===== V6.8.4 large square visible icons ===== */
+
+/* Sidebar / navigation */
+.nav-icon{
+  width:42px !important;
+  height:42px !important;
+  min-width:42px !important;
+  flex:0 0 42px !important;
+  aspect-ratio:1/1;
+  display:grid !important;
+  place-items:center !important;
+  border-radius:11px !important;
+  font-size:21px !important;
+  line-height:1 !important;
+}
+
+/* Primary feature / service icons */
+.patient-feature-card-icon,
+.patient-feature-title-icon,
+.service-hub-icon,
+.tool-icon,
+.settings-section-icon,
+.lab-patient-register-icon,
+.patient-file-icon,
+.patient-file-event-icon,
+.v66-action-icon,
+.doctor-icon-visual,
+.doctor-source-icon{
+  width:48px !important;
+  height:48px !important;
+  min-width:48px !important;
+  flex:0 0 48px !important;
+  aspect-ratio:1/1;
+  display:grid !important;
+  place-items:center !important;
+  border-radius:12px !important;
+  font-size:22px !important;
+  line-height:1 !important;
+  box-sizing:border-box;
+}
+
+/* Action buttons: edit / delete / restore / open */
+.icon-action,
+.doctor-icon-actions .icon-action,
+.lab-orders-table .icon-action,
+.nursing-orders-table .icon-action,
+.patient-lab-selected-side .icon-action{
+  width:42px !important;
+  height:42px !important;
+  min-width:42px !important;
+  min-height:42px !important;
+  padding:0 !important;
+  display:inline-grid !important;
+  place-items:center !important;
+  border-radius:10px !important;
+  font-size:18px !important;
+  line-height:1 !important;
+}
+
+/* Window controls / navigation controls */
+.modal-close,
+.modal-back-arrow,
+.page-back-btn{
+  min-width:42px !important;
+  width:42px !important;
+  height:42px !important;
+  min-height:42px !important;
+  padding:0 !important;
+  display:inline-grid !important;
+  place-items:center !important;
+  border-radius:10px !important;
+  font-size:21px !important;
+  line-height:1 !important;
+}
+
+/* Dashboard / status visuals */
+.stat-icon,
+.v66-stat-icon,
+.doctor-icon-symbol,
+.doctor-icon-today{
+  width:48px !important;
+  height:48px !important;
+  min-width:48px !important;
+  flex:0 0 48px !important;
+  aspect-ratio:1/1;
+  display:grid !important;
+  place-items:center !important;
+  border-radius:12px !important;
+  font-size:22px !important;
+  line-height:1 !important;
+}
+
+/* Search / Lab2Lab visible visual icons */
+.lab2lab-lock-icon,
+.lab2lab-selected-icon,
+.lab-prices-search-icon,
+.global-search-icon{
+  width:44px !important;
+  height:44px !important;
+  min-width:44px !important;
+  flex:0 0 44px !important;
+  aspect-ratio:1/1;
+  display:grid !important;
+  place-items:center !important;
+  border-radius:11px !important;
+  font-size:20px !important;
+  line-height:1 !important;
+}
+
+/* Avatars kept square and clearer */
+.doctor-avatar,
+.doctor-profile-avatar,
+.patient-profile-avatar,
+.global-patient-result-avatar{
+  width:50px !important;
+  height:50px !important;
+  min-width:50px !important;
+  flex:0 0 50px !important;
+  aspect-ratio:1/1;
+  display:grid !important;
+  place-items:center !important;
+  border-radius:12px !important;
+  font-size:20px !important;
+  line-height:1 !important;
+}
+
+/* Keep icon boxes readable on compact screens */
+@media(max-width:900px){
+  .nav-icon{
+    width:40px !important;
+    height:40px !important;
+    min-width:40px !important;
+    flex-basis:40px !important;
+  }
+
+  .patient-feature-card-icon,
+  .patient-feature-title-icon,
+  .service-hub-icon,
+  .tool-icon,
+  .settings-section-icon,
+  .lab-patient-register-icon,
+  .patient-file-icon,
+  .patient-file-event-icon,
+  .v66-action-icon,
+  .doctor-icon-visual,
+  .doctor-source-icon,
+  .stat-icon,
+  .v66-stat-icon{
+    width:44px !important;
+    height:44px !important;
+    min-width:44px !important;
+    flex-basis:44px !important;
+  }
+
+  .icon-action,
+  .modal-close,
+  .modal-back-arrow,
+  .page-back-btn{
+    width:40px !important;
+    height:40px !important;
+    min-width:40px !important;
+    min-height:40px !important;
+  }
+}
