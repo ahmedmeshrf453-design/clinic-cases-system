@@ -1,0 +1,219 @@
+name: Clinic Cases V7.0 Core FIX3
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Protect Lab2Lab catalogs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum src/labCatalog.ts > "$RUNNER_TEMP/labCatalog.sha256"
+          sha256sum src/lab2labCatalog.ts > "$RUNNER_TEMP/lab2labCatalog.sha256"
+          sha256sum src/lab2labArabic.ts > "$RUNNER_TEMP/lab2labArabic.sha256"
+
+      - name: Extract FIX2 patch and correct DB init order
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          import re
+
+          wf = Path(".github/workflows/V700-CORE-FIX2.yml")
+          if not wf.exists():
+              raise RuntimeError("V700-CORE-FIX2.yml was not found on main")
+
+          text = wf.read_text(encoding="utf-8")
+          m = re.search(
+              r'cat > "\$RUNNER_TEMP/v700\.b64" <<\'PATCH\'\n([\s\S]*?)\n\s*PATCH',
+              text
+          )
+          if not m:
+              raise RuntimeError("Embedded V7 patch block was not found in FIX2")
+
+          compact = re.sub(r"\s+", "", m.group(1))
+          patch = base64.b64decode(compact).decode("utf-8")
+
+          old_up = "up='    // Upgrade old V3 databases:'"
+          new_up = "up='    let doctors_seeded: Option<String> = conn'"
+
+          old_lab = "lab2lab_marker = '''    // Seed the requested doctors once. Later edits/deletes remain untouched.'''"
+          new_lab = "lab2lab_marker = '''    let doctors_seeded: Option<String> = conn'''"
+
+          if patch.count(old_up) != 1:
+              raise RuntimeError(f"Unexpected V7 schema insertion marker count: {patch.count(old_up)}")
+          if patch.count(old_lab) != 1:
+              raise RuntimeError(f"Unexpected Lab2Lab trigger marker count: {patch.count(old_lab)}")
+
+          patch = patch.replace(old_up, new_up, 1)
+          patch = patch.replace(old_lab, new_lab, 1)
+
+          out = Path("_v700_fix3_patch.py")
+          out.write_text(patch, encoding="utf-8")
+          print("FIX3 patch prepared: V7 schema + audit triggers will be created only after Lab2Lab and app_meta exist.")
+          PY
+
+      - name: Apply V7.0 Core FIX3
+        shell: bash
+        run: |
+          set -euo pipefail
+          python _v700_fix3_patch.py
+
+      - name: Verify DB initialization dependency order
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          r = Path("src-tauri/src/lib.rs").read_text(encoding="utf-8")
+
+          needles = {
+              "lab2lab_table": "CREATE TABLE IF NOT EXISTS lab2lab_prices",
+              "app_meta_table": "CREATE TABLE IF NOT EXISTS app_meta",
+              "v7_tables": "// V7.0 core tables and audit trail.",
+              "audit_log": "CREATE TABLE IF NOT EXISTS audit_log",
+              "lab2lab_trigger": "CREATE TRIGGER IF NOT EXISTS audit_lab2lab_update AFTER UPDATE ON lab2lab_prices",
+              "doctors_seed": "let doctors_seeded: Option<String> = conn",
+          }
+
+          pos = {}
+          for key, needle in needles.items():
+              p = r.find(needle)
+              if p < 0:
+                  raise RuntimeError(f"Missing generated marker: {key}")
+              pos[key] = p
+
+          assert pos["lab2lab_table"] < pos["app_meta_table"], pos
+          assert pos["app_meta_table"] < pos["v7_tables"], pos
+          assert pos["v7_tables"] < pos["audit_log"], pos
+          assert pos["audit_log"] < pos["lab2lab_trigger"], pos
+          assert pos["lab2lab_trigger"] < pos["doctors_seed"], pos
+
+          print("DB dependency order verified:")
+          print(pos)
+          PY
+
+      - name: Verify Lab2Lab catalogs untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c "$RUNNER_TEMP/labCatalog.sha256"
+          sha256sum -c "$RUNNER_TEMP/lab2labCatalog.sha256"
+          sha256sum -c "$RUNNER_TEMP/lab2labArabic.sha256"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: V7.0 core gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          main = Path("src/main.ts").read_text(encoding="utf-8")
+          rust = Path("src-tauri/src/lib.rs").read_text(encoding="utf-8")
+          css = Path("src/style.css").read_text(encoding="utf-8")
+          pkg = json.loads(Path("package.json").read_text(encoding="utf-8"))
+          conf = json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+
+          assert pkg["version"] == "7.0.0"
+          assert conf["version"] == "7.0.0"
+
+          for term in [
+              "renderCashier","renderFinance","renderAudit","renderAlerts","renderSecurity",
+              "openPatientAttachments","unified_search","startV7App","patientAttachments",
+              "'cashier'","'finance'","'alerts'","'audit'","'security'"
+          ]:
+              assert term in main, term
+
+          for term in [
+              "CREATE TABLE IF NOT EXISTS patient_attachments",
+              "CREATE TABLE IF NOT EXISTS cashier_payments",
+              "CREATE TABLE IF NOT EXISTS audit_log",
+              "security_status","set_security_pin","verify_security_pin",
+              "add_patient_attachment","list_patient_attachments",
+              "list_cashier_items","record_cashier_payment",
+              "financial_report","list_audit_logs","unified_search","list_system_alerts"
+          ]:
+              assert term in rust, term
+
+          assert "V7.0 Core" in css
+          print("V7.0 core gates passed")
+          PY
+
+      - name: Build V7.0 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify self-contained installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          Write-Host "Installer: $($installer.FullName)"
+          Write-Host "Size: $($installer.Length) bytes"
+          if ($installer.Length -lt 80000000) { throw "Offline WebView2 installer missing or setup too small" }
+
+      - name: Upload V7.0 FIX3 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.0-Core-FIX3
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated V7.0 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src/style.css src-tauri/src/lib.rs package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V7.0.0 FIX3: correct database initialization order"
+          fi
+
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
