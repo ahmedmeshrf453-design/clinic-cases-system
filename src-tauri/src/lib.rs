@@ -342,6 +342,43 @@ struct NursingOrder {
     created_at: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RadiologyOrderInput {
+    patient_id: String,
+    radiology_name: String,
+    center_name: String,
+    price: String,
+    discount_percent: String,
+    order_date: String,
+    order_time: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RadiologyOrderQuery {
+    from: String,
+    to: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct RadiologyOrder {
+    id: String,
+    patient_id: String,
+    patient_name: String,
+    patient_phone: String,
+    radiology_name: String,
+    center_name: String,
+    price: String,
+    discount_percent: String,
+    discount_amount: String,
+    net_total: String,
+    order_date: String,
+    order_time: String,
+    created_at: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Doctor {
@@ -610,6 +647,21 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         updated_at TEXT NOT NULL,
         FOREIGN KEY(patient_id) REFERENCES patients(id)
       );
+      CREATE TABLE IF NOT EXISTS radiology_orders(
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL,
+        radiology_name TEXT NOT NULL DEFAULT '',
+        center_name TEXT NOT NULL DEFAULT '',
+        price TEXT NOT NULL DEFAULT '0',
+        discount_percent TEXT NOT NULL DEFAULT '0',
+        discount_amount TEXT NOT NULL DEFAULT '0',
+        net_total TEXT NOT NULL DEFAULT '0',
+        order_date TEXT NOT NULL DEFAULT '',
+        order_time TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(patient_id) REFERENCES patients(id)
+      );
     "#,
     )
     .map_err(|e| e.to_string())?;
@@ -782,6 +834,10 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         ON nursing_orders(order_date DESC,order_time DESC);
       CREATE INDEX IF NOT EXISTS idx_nursing_orders_patient
         ON nursing_orders(patient_id,order_date DESC,order_time DESC);
+      CREATE INDEX IF NOT EXISTS idx_radiology_orders_date_time
+        ON radiology_orders(order_date DESC,order_time DESC);
+      CREATE INDEX IF NOT EXISTS idx_radiology_orders_patient
+        ON radiology_orders(patient_id,order_date DESC,order_time DESC);
     "#,
     )
     .map_err(|e| e.to_string())?;
@@ -1832,11 +1888,192 @@ fn list_patient_nursing_orders(
         .map_err(|e| e.to_string())
 }
 
+
+fn map_radiology_order(row: &rusqlite::Row<'_>) -> rusqlite::Result<RadiologyOrder> {
+    Ok(RadiologyOrder {
+        id: row.get(0)?,
+        patient_id: row.get(1)?,
+        patient_name: row.get(2)?,
+        patient_phone: row.get(3)?,
+        radiology_name: row.get(4)?,
+        center_name: row.get(5)?,
+        price: row.get(6)?,
+        discount_percent: row.get(7)?,
+        discount_amount: row.get(8)?,
+        net_total: row.get(9)?,
+        order_date: row.get(10)?,
+        order_time: row.get(11)?,
+        created_at: row.get(12)?,
+    })
+}
+
+#[tauri::command]
+fn add_radiology_order(
+    state: State<AppState>,
+    input: RadiologyOrderInput,
+) -> Result<RadiologyOrder, String> {
+    let radiology_name = input.radiology_name.trim();
+    let center_name = input.center_name.trim();
+    if radiology_name.is_empty() { return Err("اسم الأشعة مطلوب".into()); }
+    if center_name.is_empty() { return Err("اسم مركز الأشعة مطلوب".into()); }
+    if radiology_name.len() > 240 || center_name.len() > 240 {
+        return Err("اسم الأشعة أو المركز أطول من المسموح".into());
+    }
+    if input.price.trim().is_empty() { return Err("سعر الأشعة مطلوب".into()); }
+
+    let price = parse_lab_money(input.price.trim(), "سعر الأشعة")?;
+    let discount_percent = parse_lab_money(input.discount_percent.trim(), "نسبة الخصم")?;
+    if discount_percent > 100.0 { return Err("نسبة الخصم لا يمكن أن تتجاوز 100%".into()); }
+    let discount_amount = price * discount_percent / 100.0;
+    let net_total = (price - discount_amount).max(0.0);
+
+    NaiveDate::parse_from_str(input.order_date.trim(), "%Y-%m-%d")
+        .map_err(|_| "تاريخ الأشعة غير صالح".to_string())?;
+    if !input.order_time.trim().is_empty() {
+        NaiveTime::parse_from_str(input.order_time.trim(), "%H:%M")
+            .map_err(|_| "وقت الأشعة غير صالح".to_string())?;
+    }
+
+    let mut conn = open_db(&state)?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let patient: Option<(String, String)> = tx
+        .query_row(
+            "SELECT full_name,phone FROM patients WHERE id=?1 AND archived=0",
+            params![input.patient_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let (patient_name, patient_phone) =
+        patient.ok_or_else(|| "ملف المريض غير موجود".to_string())?;
+
+    let id = Uuid::new_v4().to_string();
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    tx.execute(
+        "INSERT INTO radiology_orders(
+           id,patient_id,radiology_name,center_name,price,discount_percent,
+           discount_amount,net_total,order_date,order_time,created_at,updated_at
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11)",
+        params![
+            id,
+            input.patient_id,
+            radiology_name,
+            center_name,
+            format!("{:.2}", price),
+            format!("{:.2}", discount_percent),
+            format!("{:.2}", discount_amount),
+            format!("{:.2}", net_total),
+            input.order_date.trim(),
+            input.order_time.trim(),
+            now
+        ],
+    ).map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "UPDATE patients SET updated_at=?1 WHERE id=?2",
+        params![now, input.patient_id.clone()],
+    ).map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(RadiologyOrder {
+        id,
+        patient_id: input.patient_id,
+        patient_name,
+        patient_phone,
+        radiology_name: radiology_name.to_string(),
+        center_name: center_name.to_string(),
+        price: format!("{:.2}", price),
+        discount_percent: format!("{:.2}", discount_percent),
+        discount_amount: format!("{:.2}", discount_amount),
+        net_total: format!("{:.2}", net_total),
+        order_date: input.order_date,
+        order_time: input.order_time,
+        created_at: now,
+    })
+}
+
+#[tauri::command]
+fn get_radiology_order(state: State<AppState>, id: String) -> Result<RadiologyOrder, String> {
+    let conn = open_db(&state)?;
+    conn.query_row(
+        "SELECT r.id,r.patient_id,p.full_name,p.phone,r.radiology_name,r.center_name,
+                r.price,r.discount_percent,r.discount_amount,r.net_total,
+                r.order_date,r.order_time,r.created_at
+         FROM radiology_orders r
+         JOIN patients p ON p.id=r.patient_id
+         WHERE r.id=?1",
+        params![id],
+        map_radiology_order,
+    ).map_err(|_| "حالة الأشعة غير موجودة".to_string())
+}
+
+#[tauri::command]
+fn list_radiology_orders(
+    state: State<AppState>,
+    query: RadiologyOrderQuery,
+) -> Result<Vec<RadiologyOrder>, String> {
+    let conn = open_db(&state)?;
+    let from_date = NaiveDate::parse_from_str(query.from.trim(), "%Y-%m-%d")
+        .map_err(|_| "تاريخ البداية غير صالح".to_string())?;
+    let to_date = NaiveDate::parse_from_str(query.to.trim(), "%Y-%m-%d")
+        .map_err(|_| "تاريخ النهاية غير صالح".to_string())?;
+    if to_date < from_date {
+        return Err("تاريخ النهاية يجب أن يكون بعد أو مساويًا لتاريخ البداية".into());
+    }
+    let end_date = to_date + Duration::days(1);
+    let from_s = from_date.format("%Y-%m-%d").to_string();
+    let end_s = end_date.format("%Y-%m-%d").to_string();
+    let start_hour = get_operational_start_hour(&conn)?;
+    let boundary = format!("{:02}:00", start_hour);
+
+    let mut stmt = conn.prepare(
+        "SELECT r.id,r.patient_id,p.full_name,p.phone,r.radiology_name,r.center_name,
+                r.price,r.discount_percent,r.discount_amount,r.net_total,
+                r.order_date,r.order_time,r.created_at
+         FROM radiology_orders r
+         JOIN patients p ON p.id=r.patient_id
+         WHERE p.archived=0
+           AND (r.order_date > ?1 OR (r.order_date=?1 AND COALESCE(NULLIF(r.order_time,''),'00:00') >= ?3))
+           AND (r.order_date < ?2 OR (r.order_date=?2 AND COALESCE(NULLIF(r.order_time,''),'00:00') < ?3))
+         ORDER BY r.order_date DESC,r.order_time DESC,r.created_at DESC"
+    ).map_err(|e| e.to_string())?;
+
+    let rows = stmt.query_map(params![from_s, end_s, boundary], map_radiology_order)
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_patient_radiology_orders(
+    state: State<AppState>,
+    patient_id: String,
+) -> Result<Vec<RadiologyOrder>, String> {
+    let conn = open_db(&state)?;
+    let mut stmt = conn.prepare(
+        "SELECT r.id,r.patient_id,p.full_name,p.phone,r.radiology_name,r.center_name,
+                r.price,r.discount_percent,r.discount_amount,r.net_total,
+                r.order_date,r.order_time,r.created_at
+         FROM radiology_orders r
+         JOIN patients p ON p.id=r.patient_id
+         WHERE r.patient_id=?1
+         ORDER BY r.order_date DESC,r.order_time DESC,r.created_at DESC"
+    ).map_err(|e| e.to_string())?;
+
+    let rows = stmt.query_map(params![patient_id], map_radiology_order)
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+
 #[tauri::command]
 fn delete_patient(state: State<AppState>, id: String) -> Result<(), String> {
     create_safety_backup(&state, "before-delete-patient")?;
     let mut conn = open_db(&state)?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM radiology_orders WHERE patient_id=?1", params![id.clone()])
+        .map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM nursing_orders WHERE patient_id=?1", params![id.clone()])
         .map_err(|e| e.to_string())?;
     tx.execute(
@@ -2708,6 +2945,10 @@ pub fn run() {
             get_nursing_order,
             list_nursing_orders,
             list_patient_nursing_orders,
+            add_radiology_order,
+            get_radiology_order,
+            list_radiology_orders,
+            list_patient_radiology_orders,
             list_patients,
             get_patient_details,
             update_patient,
@@ -2762,7 +3003,7 @@ mod production_tests {
 
         let conn = Connection::open(&path).expect("open failed");
 
-        for table in ["patients", "visits", "doctors", "patient_labs", "lab_orders", "lab_order_items", "nursing_orders", "app_meta", "lab2lab_prices"] {
+        for table in ["patients", "visits", "doctors", "patient_labs", "lab_orders", "lab_order_items", "nursing_orders", "radiology_orders", "app_meta", "lab2lab_prices"] {
             let count: i64 = conn
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
@@ -2786,6 +3027,8 @@ mod production_tests {
             "idx_lab_order_items_order",
             "idx_nursing_orders_date_time",
             "idx_nursing_orders_patient",
+            "idx_radiology_orders_date_time",
+            "idx_radiology_orders_patient",
         ] {
             let count: i64 = conn
                 .query_row(

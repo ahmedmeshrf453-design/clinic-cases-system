@@ -73,6 +73,22 @@ type NursingOrder = {
   createdAt: string;
 };
 
+type RadiologyOrder = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientPhone: string;
+  radiologyName: string;
+  centerName: string;
+  price: string;
+  discountPercent: string;
+  discountAmount: string;
+  netTotal: string;
+  orderDate: string;
+  orderTime: string;
+  createdAt: string;
+};
+
 type LabOrder = {
   id: string;
   patientId: string;
@@ -108,6 +124,7 @@ type PatientFileSnapshot = {
   details: PatientDetails;
   labOrders: LabOrderDetails[];
   nursingOrders: NursingOrder[];
+  radiologyOrders: RadiologyOrder[];
 };
 
 function displaySavedDateTime(value: string) {
@@ -119,10 +136,11 @@ function displaySavedDateTime(value: string) {
 }
 
 async function loadPatientFile(patientId: string): Promise<PatientFileSnapshot> {
-  const [details, labOrders, nursingOrders] = await Promise.all([
+  const [details, labOrders, nursingOrders, radiologyOrders] = await Promise.all([
     invoke<PatientDetails>('get_patient_details', { id: patientId }),
     invoke<LabOrder[]>('list_patient_lab_orders', { patientId }),
-    invoke<NursingOrder[]>('list_patient_nursing_orders', { patientId })
+    invoke<NursingOrder[]>('list_patient_nursing_orders', { patientId }),
+    invoke<RadiologyOrder[]>('list_patient_radiology_orders', { patientId })
   ]);
 
   const labDetails = await Promise.all(
@@ -132,7 +150,8 @@ async function loadPatientFile(patientId: string): Promise<PatientFileSnapshot> 
   return {
     details,
     labOrders: labDetails,
-    nursingOrders
+    nursingOrders,
+    radiologyOrders
   };
 }
 
@@ -140,7 +159,7 @@ function patientFileTimelineHtml(file: PatientFileSnapshot, interactive = true) 
   const p = file.details.patient;
 
   const items: Array<{
-    kind: 'created' | 'visit' | 'lab' | 'nursing';
+    kind: 'created' | 'visit' | 'lab' | 'nursing' | 'radiology';
     id: string;
     savedAt: string;
     serviceAt: string;
@@ -211,6 +230,20 @@ function patientFileTimelineHtml(file: PatientFileSnapshot, interactive = true) 
       subtitle: 'خدمة تمريض مسجلة بملف المريض',
       detail: `تاريخ الخدمة: ${displayDate(o.orderDate)}${o.orderTime ? ` • ${o.orderTime}` : ''}`,
       money: `${moneyNumber(o.price).toFixed(2)} ج.م`
+    });
+  });
+
+  file.radiologyOrders.forEach(o => {
+    items.push({
+      kind: 'radiology',
+      id: o.id,
+      savedAt: o.createdAt,
+      serviceAt: `${o.orderDate || ''} ${o.orderTime || ''}`.trim(),
+      icon: '🩻',
+      title: `أشعة — ${o.radiologyName || 'بدون اسم'}`,
+      subtitle: o.centerName ? `المركز: ${o.centerName}` : 'حالة أشعة مسجلة بملف المريض',
+      detail: `تاريخ الخدمة: ${displayDate(o.orderDate)}${o.orderTime ? ` • ${o.orderTime}` : ''} • خصم ${moneyNumber(o.discountPercent).toFixed(0)}%`,
+      money: `السعر ${moneyNumber(o.price).toFixed(2)} ج.م • الصافي ${moneyNumber(o.netTotal).toFixed(2)} ج.م`
     });
   });
 
@@ -314,7 +347,7 @@ type HealthCheck = {
 type Lab2LabAuthStatus = { pinSet: boolean };
 type Lab2LabPriceRow = { id: number; testName: string; price: string; updatedAt: string };
 
-type Screen = 'dashboard' | 'patients' | 'today' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'reports' | 'archive' | 'backups' | 'settings';
+type Screen = 'dashboard' | 'patients' | 'today' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'radiology' | 'reports' | 'archive' | 'backups' | 'settings';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 let screen: Screen = 'dashboard';
@@ -404,6 +437,318 @@ function moneyNumber(value: string) {
   const n = Number(String(value || '').replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
 }
+
+
+function radiologyOrderRowsHtml(rows: RadiologyOrder[], showPatient = true) {
+  return `
+    <div class="table-wrap radiology-orders-table-wrap">
+      <table class="radiology-orders-table">
+        <thead>
+          <tr>
+            <th>التاريخ</th><th>الوقت</th>
+            ${showPatient ? '<th>المريض</th><th>رقم التليفون</th>' : ''}
+            <th>اسم الأشعة</th><th>المركز</th><th>السعر</th><th>الخصم</th><th>الصافي</th><th>إجراءات</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map(order => `
+            <tr>
+              <td>${esc(displayDate(order.orderDate))}</td>
+              <td class="ltr">${esc(order.orderTime || '—')}</td>
+              ${showPatient ? `<td>${esc(order.patientName || '—')}</td><td class="ltr">${esc(order.patientPhone || '—')}</td>` : ''}
+              <td>${esc(order.radiologyName || '—')}</td>
+              <td>${esc(order.centerName || '—')}</td>
+              <td class="ltr">${moneyNumber(order.price).toFixed(2)} ج.م</td>
+              <td class="ltr">${moneyNumber(order.discountPercent).toFixed(0)}%</td>
+              <td class="ltr">${moneyNumber(order.netTotal).toFixed(2)} ج.م</td>
+              <td>
+                <div class="visit-row-actions">
+                  <button class="icon-action" data-open-radiology-order="${esc(order.id)}" title="فتح">⌕</button>
+                </div>
+              </td>
+            </tr>
+          `).join('') : `<tr><td colspan="${showPatient ? 10 : 8}" class="empty-row">لا توجد حالات أشعة</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+async function openRadiologyOrderDetails(orderId: string) {
+  const order = await invoke<RadiologyOrder>('get_radiology_order', { id: orderId });
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+
+  root.innerHTML = `
+    <div class="modal-backdrop" id="radiologyOrderBackdrop">
+      <section class="modal radiology-order-details-modal">
+        <div class="modal-head">
+          <div class="patient-feature-title">
+            <div class="patient-feature-title-icon radiology">🩻</div>
+            <div>
+              <h2>حالة أشعة</h2>
+              <p>${esc(order.patientName || 'بدون اسم')} • <span class="ltr">${esc(order.patientPhone || 'بدون رقم')}</span></p>
+            </div>
+          </div>
+          <button class="modal-close" id="closeRadiologyOrder">×</button>
+        </div>
+
+        <div class="radiology-detail-grid">
+          <div><span>اسم الأشعة</span><strong>${esc(order.radiologyName)}</strong></div>
+          <div><span>اسم المركز</span><strong>${esc(order.centerName)}</strong></div>
+          <div><span>السعر</span><strong class="ltr">${moneyNumber(order.price).toFixed(2)} ج.م</strong></div>
+          <div><span>نسبة الخصم</span><strong class="ltr">${moneyNumber(order.discountPercent).toFixed(0)}%</strong></div>
+          <div><span>قيمة الخصم</span><strong class="ltr">${moneyNumber(order.discountAmount).toFixed(2)} ج.م</strong></div>
+          <div class="net"><span>الصافي</span><strong class="ltr">${moneyNumber(order.netTotal).toFixed(2)} ج.م</strong></div>
+          <div><span>التاريخ</span><strong>${displayDate(order.orderDate)}</strong></div>
+          <div><span>الوقت</span><strong class="ltr">${esc(order.orderTime || '—')}</strong></div>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn ghost" id="radiologyOrderPatient">👤 ملف المريض</button>
+          <button class="btn primary" id="radiologyOrderCloseBottom">إغلاق</button>
+        </div>
+      </section>
+    </div>`;
+
+  const close = () => root.innerHTML = '';
+  document.querySelector<HTMLButtonElement>('#closeRadiologyOrder')!.onclick = close;
+  document.querySelector<HTMLButtonElement>('#radiologyOrderCloseBottom')!.onclick = close;
+  document.querySelector<HTMLDivElement>('#radiologyOrderBackdrop')!.onclick = e => {
+    if (e.target === e.currentTarget) close();
+  };
+  document.querySelector<HTMLButtonElement>('#radiologyOrderPatient')!.onclick = async () => {
+    close();
+    await openPatient(order.patientId);
+  };
+}
+
+function bindRadiologyOrderActions() {
+  document.querySelectorAll<HTMLButtonElement>('[data-open-radiology-order]').forEach(button => {
+    button.onclick = () => openRadiologyOrderDetails(button.dataset.openRadiologyOrder || '');
+  });
+}
+
+async function openRadiologyPatientRegistrationModal() {
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+
+  root.innerHTML = `
+    <div class="modal-backdrop" id="radiologyPatientRegisterBackdrop">
+      <section class="modal form-modal radiology-patient-register-modal">
+        <div class="modal-head">
+          <div class="patient-feature-title">
+            <div class="patient-feature-title-icon radiology">🩻</div>
+            <div>
+              <h2>تسجيل مريض أشعة</h2>
+              <p>تسجيل بيانات المريض ثم فتح حالة الأشعة مباشرة</p>
+            </div>
+          </div>
+          <button class="modal-close" id="closeRadiologyPatientRegister">×</button>
+        </div>
+
+        <form id="radiologyPatientRegisterForm">
+          <div class="section-title">بيانات المريض</div>
+          <div class="patient-register-grid">
+            <label class="field-name">الاسم بالكامل<input name="fullName" autocomplete="off"></label>
+            <label class="field-phone">رقم التليفون<input class="ltr" name="phone" inputmode="tel" autocomplete="off"></label>
+            <label class="field-age">السن<input name="age" type="number" min="0" max="130"></label>
+            <label class="field-gender">النوع<select name="gender"><option value="">—</option><option>ذكر</option><option>أنثى</option></select></label>
+            <label class="field-address">العنوان (اختياري)<input name="address" autocomplete="off"></label>
+          </div>
+
+          <div class="lab-patient-register-note">
+            بعد حفظ بيانات المريض سيفتح تسجيل الأشعة تلقائيًا.
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn ghost" id="cancelRadiologyPatientRegister">إلغاء</button>
+            <button type="submit" class="btn primary">حفظ وفتح الأشعة</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+
+  const close = () => root.innerHTML = '';
+  document.querySelector<HTMLButtonElement>('#closeRadiologyPatientRegister')!.onclick = close;
+  document.querySelector<HTMLButtonElement>('#cancelRadiologyPatientRegister')!.onclick = close;
+  document.querySelector<HTMLDivElement>('#radiologyPatientRegisterBackdrop')!.onclick = e => {
+    if (e.target === e.currentTarget) close();
+  };
+
+  document.querySelector<HTMLFormElement>('#radiologyPatientRegisterForm')!.onsubmit = async e => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    const rawAge = String(fd.get('age') || '').trim();
+
+    try {
+      const result = await invoke<{id:string, existed:boolean}>('register_patient', {
+        input: {
+          fullName: String(fd.get('fullName') || '').trim(),
+          phone: String(fd.get('phone') || '').trim(),
+          age: rawAge ? Number(rawAge) : null,
+          gender: String(fd.get('gender') || ''),
+          address: String(fd.get('address') || '').trim()
+        }
+      });
+
+      close();
+      toast(result.existed ? 'المريض مسجل بالفعل — تم فتح الأشعة' : 'تم إنشاء ملف المريض وفتح الأشعة');
+      await renderScreen();
+      await openPatientRadiologyPanel(result.id);
+    } catch (err) {
+      toast(`تعذر تسجيل المريض: ${String(err)}`, 'error');
+    }
+  };
+}
+
+async function openPatientRadiologyPanel(patientId: string) {
+  const [details, history] = await Promise.all([
+    invoke<PatientDetails>('get_patient_details', { id: patientId }),
+    invoke<RadiologyOrder[]>('list_patient_radiology_orders', { patientId })
+  ]);
+  const p = details.patient;
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+
+  root.innerHTML = `
+    <div class="modal-backdrop" id="radiologyFeatureBackdrop">
+      <section class="modal wide patient-feature-modal radiology-service-modal">
+        <div class="modal-head">
+          <div class="patient-feature-title">
+            <div class="patient-feature-title-icon radiology">🩻</div>
+            <div>
+              <h2>الأشعة</h2>
+              <p>${esc(p.fullName || 'بدون اسم')} • <span class="ltr">${esc(p.phone || 'بدون رقم')}</span></p>
+            </div>
+          </div>
+          <button class="modal-close" id="closeRadiologyFeature">×</button>
+        </div>
+
+        <form id="radiologyServiceForm">
+          <div class="radiology-entry-grid">
+            <label>اسم الأشعة
+              <input name="radiologyName" autocomplete="off" placeholder="مثال: X-Ray / CT / MRI...">
+            </label>
+            <label>اسم المركز
+              <input name="centerName" autocomplete="off" placeholder="اسم مركز الأشعة">
+            </label>
+            <label>السعر
+              <input id="radiologyPrice" name="price" class="ltr" type="number" min="0" step="0.01" placeholder="0.00">
+            </label>
+            <label>نسبة الخصم %
+              <input id="radiologyDiscount" name="discountPercent" class="ltr" type="number" min="0" max="100" step="0.01" value="0">
+            </label>
+            <label>الصافي بعد الخصم
+              <div class="radiology-net-preview ltr" id="radiologyNetPreview">0.00 ج.م</div>
+            </label>
+            <label>التاريخ
+              <input name="orderDate" type="date" value="${today()}">
+            </label>
+            <label>الوقت
+              <input name="orderTime" type="time" value="${timeNow()}">
+            </label>
+          </div>
+
+          <div class="form-actions radiology-finish-actions">
+            <button class="btn primary" type="submit">✓ حفظ حالة الأشعة</button>
+            <button class="btn ghost" type="button" id="backToPatientProfile">← رجوع لملف المريض</button>
+          </div>
+        </form>
+
+        <section class="radiology-history-section">
+          <div class="lab-order-history-head">
+            <strong>سجل الأشعة السابقة</strong>
+            <span>${history.length} حالة</span>
+          </div>
+          ${radiologyOrderRowsHtml(history, false)}
+        </section>
+      </section>
+    </div>`;
+
+  const close = () => root.innerHTML = '';
+  const priceInput = document.querySelector<HTMLInputElement>('#radiologyPrice')!;
+  const discountInput = document.querySelector<HTMLInputElement>('#radiologyDiscount')!;
+  const netHost = document.querySelector<HTMLElement>('#radiologyNetPreview')!;
+
+  const updateNet = () => {
+    const price = Math.max(0, moneyNumber(priceInput.value));
+    const discount = Math.max(0, Math.min(100, moneyNumber(discountInput.value)));
+    netHost.textContent = `${(price * (1 - discount / 100)).toFixed(2)} ج.م`;
+  };
+  priceInput.oninput = updateNet;
+  discountInput.oninput = updateNet;
+
+  document.querySelector<HTMLButtonElement>('#closeRadiologyFeature')!.onclick = close;
+  document.querySelector<HTMLDivElement>('#radiologyFeatureBackdrop')!.onclick = e => {
+    if (e.target === e.currentTarget) close();
+  };
+  document.querySelector<HTMLButtonElement>('#backToPatientProfile')!.onclick = async () => {
+    close();
+    await openPatient(patientId);
+  };
+
+  document.querySelector<HTMLFormElement>('#radiologyServiceForm')!.onsubmit = async e => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    try {
+      const order = await invoke<RadiologyOrder>('add_radiology_order', {
+        input: {
+          patientId,
+          radiologyName: String(fd.get('radiologyName') || '').trim(),
+          centerName: String(fd.get('centerName') || '').trim(),
+          price: String(fd.get('price') || '').trim(),
+          discountPercent: String(fd.get('discountPercent') || '0').trim(),
+          orderDate: String(fd.get('orderDate') || ''),
+          orderTime: String(fd.get('orderTime') || '')
+        }
+      });
+      close();
+      toast('تم حفظ حالة الأشعة وإضافتها إلى ملف المريض');
+      await renderScreen();
+      await openRadiologyOrderDetails(order.id);
+    } catch (err) {
+      toast(`تعذر حفظ حالة الأشعة: ${String(err)}`, 'error');
+    }
+  };
+
+  bindRadiologyOrderActions();
+}
+
+async function renderRadiologyServices() {
+  const dayKey = businessDay();
+  const rows = await invoke<RadiologyOrder[]>('list_radiology_orders', {
+    query: { from: dayKey, to: dayKey }
+  });
+
+  shell(`
+    <section class="card radiology-main-card">
+      <div class="card-head toolbar">
+        <div>
+          <h2>الأشعة</h2>
+          <p>${displayDate(dayKey)} • تسجيل ومتابعة حالات الأشعة</p>
+        </div>
+        <button class="btn primary small" id="registerRadiologyPatient">＋ تسجيل حالة أشعة</button>
+      </div>
+
+      <div class="nursing-main-summary">
+        <div>
+          <span>حالات اليوم</span>
+          <strong>${rows.length}</strong>
+        </div>
+      </div>
+
+      <div class="today-case-section-head radiology">
+        <h3>حالات الأشعة اليوم</h3>
+        <span>${rows.length} حالة</span>
+      </div>
+
+      ${radiologyOrderRowsHtml(rows, true)}
+    </section>
+  `, 'الأشعة', 'اسم الأشعة والمركز والسعر والخصم والصافي');
+
+  document.querySelector<HTMLButtonElement>('#registerRadiologyPatient')!.onclick = () => {
+    openRadiologyPatientRegistrationModal();
+  };
+  bindRadiologyOrderActions();
+}
+
 
 function nursingOrderRowsHtml(rows: NursingOrder[], showPatient = true) {
   return `
@@ -1021,7 +1366,8 @@ async function exportPatientFile(file: PatientFileSnapshot, format: ExportFormat
   const totalActivities =
     details.visits.length +
     file.labOrders.length +
-    file.nursingOrders.length;
+    file.nursingOrders.length +
+    file.radiologyOrders.length;
 
   const body = `
     <div class="patient-export-top">
@@ -1038,6 +1384,7 @@ async function exportPatientFile(file: PatientFileSnapshot, format: ExportFormat
         <div><span>كشف / استشارة</span><strong>${details.visits.length}</strong></div>
         <div><span>حالات تحاليل</span><strong>${file.labOrders.length}</strong></div>
         <div><span>خدمات تمريض</span><strong>${file.nursingOrders.length}</strong></div>
+        <div><span>أشعة</span><strong>${file.radiologyOrders.length}</strong></div>
         <div><span>إجمالي الأنشطة</span><strong>${totalActivities}</strong></div>
       </div>
 
@@ -1238,6 +1585,7 @@ function serviceDockHtml() {
           ${action('visit','🩺','كشف / استشارة','تسجيل حالة عيادة')}
           ${action('lab-case','🧪','تحاليل','تسجيل مريض تحاليل')}
           ${action('nursing-case','✚','تمريض','تسجيل خدمة تمريض')}
+          ${action('radiology-case','🩻','أشعة','تسجيل حالة أشعة')}
         </div>
       </div>
 
@@ -1254,6 +1602,7 @@ function serviceDockHtml() {
           ${nav('labs','🧪','التحاليل')}
           ${nav('lab2lab','L2L','أسعار Lab 2 Lab')}
           ${nav('nursing','✚','خدمات التمريض')}
+          ${nav('radiology','🩻','الأشعة')}
           ${nav('reports','▤','التقارير')}
         </div>
       </div>
@@ -1292,6 +1641,7 @@ function shell(content: string, title: string, subtitle: string) {
           ${navButton('labs','🧪','التحاليل')}
           ${navButton('lab2lab','L2L','أسعار Lab 2 Lab')}
           ${navButton('nursing','✚','خدمات التمريض')}
+          ${navButton('radiology','🩻','الأشعة')}
           ${navButton('reports','▤','التقارير')}
           ${navButton('archive','▣','الأرشيف')}
           ${navButton('backups','⟳','النسخ الاحتياطية')}
@@ -1565,7 +1915,7 @@ function ensureModalBackArrow() {
     }
 
     const preferred = root.querySelector<HTMLButtonElement>(
-      '#cancelVisit, #cancelEditVisit, #cancelEdit, #cancelDoctor, #cancelCase, #cancelLabPatientRegister, #cancelNursingPatientRegister, #labOrderCloseBottom, #nursingOrderCloseBottom'
+      '#cancelVisit, #cancelEditVisit, #cancelEdit, #cancelDoctor, #cancelCase, #cancelLabPatientRegister, #cancelNursingPatientRegister, #cancelRadiologyPatientRegister, #labOrderCloseBottom, #nursingOrderCloseBottom, #radiologyOrderCloseBottom'
     );
     if (preferred) {
       preferred.click();
@@ -1602,6 +1952,7 @@ async function renderScreen() {
   if (screen === 'labs') return renderLabPrices();
   if (screen === 'lab2lab') return renderLab2Lab();
   if (screen === 'nursing') return renderNursingServices();
+  if (screen === 'radiology') return renderRadiologyServices();
   if (screen === 'reports') return renderReports();
   if (screen === 'backups') return renderBackups();
   if (screen === 'settings') return renderSettings();
@@ -1649,7 +2000,7 @@ function bindPatientActions() {
     const name = b.dataset.deletePatientName || 'المريض';
     if (!id) return;
     if (!confirm(`حذف ملف ${name} نهائيًا بكل بياناته؟`)) return;
-    if (!confirm('تأكيد أخير: سيتم حذف الزيارات والتحاليل وخدمات التمريض الخاصة بالمريض.')) return;
+    if (!confirm('تأكيد أخير: سيتم حذف الزيارات والتحاليل وخدمات التمريض والأشعة الخاصة بالمريض.')) return;
     try {
       await invoke('delete_patient', { id });
       toast('تم حذف ملف المريض نهائيًا');
@@ -1674,16 +2025,18 @@ function bindPatientActions() {
 async function renderDashboard() {
   const dayKey = businessDay();
 
-  const [todayReport, todayLabOrders, todayNursingOrders] = await Promise.all([
+  const [todayReport, todayLabOrders, todayNursingOrders, todayRadiologyOrders] = await Promise.all([
     invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } }),
     invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } }),
-    invoke<NursingOrder[]>('list_nursing_orders', { query: { from: dayKey, to: dayKey } })
+    invoke<NursingOrder[]>('list_nursing_orders', { query: { from: dayKey, to: dayKey } }),
+    invoke<RadiologyOrder[]>('list_radiology_orders', { query: { from: dayKey, to: dayKey } })
   ]);
 
   const clinicToday = todayReport.rows.length;
   const labPatientsToday = todayLabOrders.length;
   const nursingPatientsToday = todayNursingOrders.length;
-  const totalToday = clinicToday + labPatientsToday + nursingPatientsToday;
+  const radiologyPatientsToday = todayRadiologyOrders.length;
+  const totalToday = clinicToday + labPatientsToday + nursingPatientsToday + radiologyPatientsToday;
 
   const unifiedRows = [
     ...todayReport.rows.map(v => ({
@@ -1724,6 +2077,19 @@ async function renderDashboard() {
       provider: o.serviceName || '—',
       status: 'محفوظ',
       action: `<button class="dash-row-action" data-dash-open-nursing="${esc(o.id)}">فتح الحالة</button>`
+    })),
+    ...todayRadiologyOrders.map(o => ({
+      kind: 'radiology',
+      kindLabel: 'أشعة',
+      icon: '🩻',
+      sortKey: `${o.orderDate || ''} ${o.orderTime || ''} ${o.createdAt || ''}`,
+      time: o.orderTime || '—',
+      patientId: o.patientId,
+      patientName: o.patientName || '—',
+      patientPhone: o.patientPhone || '',
+      provider: `${o.radiologyName || 'أشعة'}${o.centerName ? ` • ${o.centerName}` : ''}`,
+      status: 'محفوظ',
+      action: `<button class="dash-row-action" data-dash-open-radiology="${esc(o.id)}">فتح الحالة</button>`
     }))
   ].sort((a, b) => b.sortKey.localeCompare(a.sortKey));
 
@@ -1766,6 +2132,15 @@ async function renderDashboard() {
           </span>
           <span class="v66-action-arrow">‹</span>
         </button>
+
+        <button class="v66-action-card radiology" id="v66NewRadiology">
+          <span class="v66-action-icon">🩻</span>
+          <span class="v66-action-copy">
+            <strong>أشعة</strong>
+            <small>تسجيل حالة أشعة</small>
+          </span>
+          <span class="v66-action-arrow">‹</span>
+        </button>
       </div>
 
       <div class="v66-stats-grid">
@@ -1781,6 +2156,10 @@ async function renderDashboard() {
           <span class="v66-stat-icon nursing">✚</span>
           <span><small>تسجيلات التمريض اليوم</small><strong>${nursingPatientsToday}</strong></span>
         </button>
+        <button class="v66-stat-card" data-v66-stat-filter="radiology">
+          <span class="v66-stat-icon radiology">🩻</span>
+          <span><small>تسجيلات الأشعة اليوم</small><strong>${radiologyPatientsToday}</strong></span>
+        </button>
         <button class="v66-stat-card total" data-v66-stat-filter="all">
           <span class="v66-stat-icon total">▥</span>
           <span><small>إجمالي تسجيلات اليوم</small><strong>${totalToday}</strong></span>
@@ -1791,7 +2170,7 @@ async function renderDashboard() {
         <div class="v66-today-card-head">
           <div>
             <h2>تسجيلات اليوم</h2>
-            <p>جميع الحالات المسجلة اليوم في العيادة والتحاليل والتمريض</p>
+            <p>جميع الحالات المسجلة اليوم في العيادة والتحاليل والتمريض والأشعة</p>
           </div>
           <button class="btn ghost small" id="v66OpenToday">فتح شاشة حالات اليوم</button>
         </div>
@@ -1802,6 +2181,7 @@ async function renderDashboard() {
             <button data-v66-filter="clinic">العيادة (${clinicToday})</button>
             <button data-v66-filter="lab">التحاليل (${labPatientsToday})</button>
             <button data-v66-filter="nursing">التمريض (${nursingPatientsToday})</button>
+            <button data-v66-filter="radiology">الأشعة (${radiologyPatientsToday})</button>
           </div>
 
           <div class="v66-today-search">
@@ -1859,6 +2239,7 @@ async function renderDashboard() {
   document.querySelector<HTMLButtonElement>('#v66NewVisit')!.onclick = () => openCaseModal();
   document.querySelector<HTMLButtonElement>('#v66NewLab')!.onclick = () => openLabPatientRegistrationModal();
   document.querySelector<HTMLButtonElement>('#v66NewNursing')!.onclick = () => openNursingPatientRegistrationModal();
+  document.querySelector<HTMLButtonElement>('#v66NewRadiology')!.onclick = () => openRadiologyPatientRegistrationModal();
   document.querySelector<HTMLButtonElement>('#v66OpenToday')!.onclick = () => navigate('today');
 
   document.querySelectorAll<HTMLButtonElement>('[data-dash-open-patient]').forEach(button => {
@@ -1869,6 +2250,9 @@ async function renderDashboard() {
   });
   document.querySelectorAll<HTMLButtonElement>('[data-dash-open-nursing]').forEach(button => {
     button.onclick = () => openNursingOrderDetails(button.dataset.dashOpenNursing || '');
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-dash-open-radiology]').forEach(button => {
+    button.onclick = () => openRadiologyOrderDetails(button.dataset.dashOpenRadiology || '');
   });
 
   const tabs = [...document.querySelectorAll<HTMLButtonElement>('[data-v66-filter]')];
@@ -4090,7 +4474,8 @@ async function openPatient(id: string) {
   const totalActivities =
     details.visits.length +
     patientFile.labOrders.length +
-    patientFile.nursingOrders.length;
+    patientFile.nursingOrders.length +
+    patientFile.radiologyOrders.length;
 
   const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
 
@@ -4127,6 +4512,7 @@ async function openPatient(id: string) {
           <div><span>كشف / استشارة</span><strong>${details.visits.length}</strong></div>
           <div><span>تحاليل</span><strong>${patientFile.labOrders.length}</strong></div>
           <div><span>تمريض</span><strong>${patientFile.nursingOrders.length}</strong></div>
+          <div><span>أشعة</span><strong>${patientFile.radiologyOrders.length}</strong></div>
         </div>
 
         <div class="patient-feature-grid patient-feature-grid-compact">
@@ -4156,6 +4542,15 @@ async function openPatient(id: string) {
             </span>
             <span class="patient-feature-card-arrow">‹</span>
           </button>
+
+          <button class="patient-feature-card radiology" id="patientRadiologyServices">
+            <span class="patient-feature-card-icon">🩻</span>
+            <span class="patient-feature-card-copy">
+              <strong>الأشعة</strong>
+              <small>إضافة أو فتح سجل الأشعة</small>
+            </span>
+            <span class="patient-feature-card-arrow">‹</span>
+          </button>
         </div>
 
         <div class="profile-actions patient-profile-actions patient-file-actions-bar">
@@ -4177,7 +4572,7 @@ async function openPatient(id: string) {
         <div class="patient-full-record-head">
           <div>
             <h3>السجل الكامل للمريض</h3>
-            <small>كل كشف أو استشارة أو تحليل أو خدمة تمريض محفوظة بتاريخ وتوقيت الحفظ</small>
+            <small>كل كشف أو استشارة أو تحليل أو خدمة تمريض أو أشعة محفوظة بتاريخ وتوقيت الحفظ</small>
           </div>
           <span>${totalActivities + 1} سجل شامل إنشاء الملف</span>
         </div>
@@ -4198,6 +4593,11 @@ async function openPatient(id: string) {
   document.querySelector<HTMLButtonElement>('#patientNursingServices')!.onclick = () => {
     close();
     openPatientFeaturePanel(id, 'nursing');
+  };
+
+  document.querySelector<HTMLButtonElement>('#patientRadiologyServices')!.onclick = () => {
+    close();
+    openPatientRadiologyPanel(id);
   };
 
   document.querySelector<HTMLButtonElement>('#patientLabTests')!.onclick = () => {
@@ -4242,7 +4642,7 @@ async function openPatient(id: string) {
 
   document.querySelector<HTMLButtonElement>('#deletePatient')!.onclick = async () => {
     if (!confirm(`حذف ملف ${p.fullName || 'المريض'} نهائيًا بكل بياناته وسجله؟`)) return;
-    if (!confirm('تأكيد أخير: سيتم حذف الكشوفات والاستشارات والتحاليل وخدمات التمريض الخاصة بالمريض.')) return;
+    if (!confirm('تأكيد أخير: سيتم حذف الكشوفات والاستشارات والتحاليل وخدمات التمريض والأشعة الخاصة بالمريض.')) return;
     await invoke('delete_patient', { id });
     close();
     toast('تم حذف ملف المريض');
@@ -4268,6 +4668,8 @@ async function openPatient(id: string) {
         await openLabOrderDetails(itemId);
       } else if (kind === 'nursing') {
         await openNursingOrderDetails(itemId);
+      } else if (kind === 'radiology') {
+        await openRadiologyOrderDetails(itemId);
       }
     };
   });
@@ -4293,7 +4695,7 @@ async function openPatientRegistrationModal() {
         <div class="modal-head">
           <div>
             <h2>إنشاء ملف مريض</h2>
-            <p>يتم إنشاء ملف دائم للمريض أولًا، وبعدها يمكن إضافة كشف أو استشارة أو تحاليل أو تمريض في أي وقت</p>
+            <p>يتم إنشاء ملف دائم للمريض أولًا، وبعدها يمكن إضافة كشف أو استشارة أو تحاليل أو تمريض أو أشعة في أي وقت</p>
           </div>
           <button class="modal-close" id="closeCase">×</button>
         </div>

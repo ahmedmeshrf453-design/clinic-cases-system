@@ -3643,3 +3643,70 @@ table th{background:#f3f7f9!important}
     min-height:40px !important;
   }
 }
+
+
+/* ===== V6.9.0 readable text + radiology ===== */
+body{font-size:16px !important}
+.nav-label{font-size:14px !important;font-weight:800 !important}
+.topbar h1,.modern-page-topbar h1{font-size:25px !important}
+.topbar p,.modern-page-topbar p{font-size:13px !important}
+.card-head h2{font-size:22px !important}
+.card-head p{font-size:13px !important}
+.btn{font-size:13px !important}
+.btn.small{font-size:12px !important}
+table th{font-size:12.5px !important}
+table td{font-size:13px !important}
+.v66-action-copy strong{font-size:20px !important}
+.v66-action-copy small{font-size:13px !important}
+.v66-stat-card small{font-size:12px !important}
+.v66-stat-card strong{font-size:30px !important}
+.v66-today-card-head h2{font-size:23px !important}
+.v66-today-card-head p{font-size:12.5px !important}
+.v66-today-table th{font-size:12px !important}
+.v66-today-table td{font-size:12.5px !important}
+.v66-filter-tabs button{font-size:12px !important}
+.dash-row-action{font-size:12px !important;min-height:34px !important}
+.patient-feature-card-copy strong{font-size:14px !important}
+.patient-feature-card-copy small{font-size:11px !important}
+.patient-summary span{font-size:11px !important}
+.patient-summary strong{font-size:13px !important}
+.patient-file-event-main strong{font-size:13px !important}
+.patient-file-event-main small,.patient-file-event-main p{font-size:11px !important}
+
+.nav[data-screen="radiology"] .nav-icon,
+.patient-feature-card.radiology .patient-feature-card-icon,
+.patient-feature-title-icon.radiology,
+.v66-action-card.radiology .v66-action-icon,
+.v66-stat-icon.radiology{
+  background:linear-gradient(145deg,#f7f1ff,#e5d5ff) !important;
+  color:#6c3ab1 !important;
+}
+.v66-primary-actions{grid-template-columns:repeat(4,minmax(220px,1fr)) !important}
+.v66-action-card.radiology{background:linear-gradient(135deg,#7153a6,#4b3478) !important;color:#fff !important}
+.v66-stats-grid{grid-template-columns:repeat(5,minmax(150px,1fr)) !important}
+.radiology-main-card{max-width:1180px;margin:0 auto}
+.radiology-patient-register-modal{width:min(760px,92vw)}
+.radiology-service-modal{width:min(980px,94vw);max-height:92vh;overflow:auto}
+.radiology-entry-grid{display:grid;grid-template-columns:2fr 2fr 1fr 1fr 1.2fr 1fr 1fr;gap:10px;align-items:end}
+.radiology-entry-grid label{display:grid;gap:5px;font-size:12px;color:#52677e}
+.radiology-entry-grid input{min-height:42px;font-size:13px}
+.radiology-net-preview{min-height:42px;display:flex;align-items:center;justify-content:center;border:1px solid #d9e3eb;border-radius:9px;background:#f7f3fc;color:#59358c;font-weight:900;font-size:14px}
+.radiology-finish-actions{position:sticky;bottom:0;z-index:20;background:#fff;padding:12px 0 8px}
+.radiology-history-section{margin-top:14px;padding-top:12px;border-top:1px solid #e5eaf0}
+.radiology-orders-table .icon-action{width:42px!important;height:42px!important;min-width:42px!important}
+.radiology-order-details-modal{width:min(800px,92vw)}
+.radiology-detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.radiology-detail-grid>div{padding:12px;border:1px solid #e3e9ef;border-radius:10px;background:#fafbfc}
+.radiology-detail-grid span,.radiology-detail-grid strong{display:block}
+.radiology-detail-grid span{font-size:11px;color:#718195}
+.radiology-detail-grid strong{margin-top:4px;font-size:15px;color:#173650}
+.radiology-detail-grid .net{background:#f5effc}
+.radiology-detail-grid .net strong{color:#633b98}
+.patient-file-event.radiology .patient-file-event-icon{background:#f1e8fb;color:#68429a}
+.today-case-section-head.radiology{margin-top:18px}
+@media(max-width:1250px){
+  .v66-primary-actions{grid-template-columns:repeat(2,minmax(220px,1fr)) !important}
+  .v66-stats-grid{grid-template-columns:repeat(3,minmax(150px,1fr)) !important}
+  .radiology-entry-grid{grid-template-columns:repeat(2,1fr)}
+}
+
