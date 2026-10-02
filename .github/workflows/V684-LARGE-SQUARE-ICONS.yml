@@ -1,0 +1,211 @@
+name: Clinic Cases V6.8.4 Large Square Icons
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Protect functionality and catalogs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum src/main.ts > "$RUNNER_TEMP/main.sha256"
+          sha256sum src/labCatalog.ts > "$RUNNER_TEMP/labCatalog.sha256"
+          sha256sum src/lab2labCatalog.ts > "$RUNNER_TEMP/lab2labCatalog.sha256"
+          sha256sum src/lab2labArabic.ts > "$RUNNER_TEMP/lab2labArabic.sha256"
+
+      - name: Apply large square icon UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/v684.b64" <<'PATCH'
+          ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmltcG9ydCBqc29uLCByZQoKc3R5bGVfcGF0aCA9IFBhdGgoInNyYy9zdHlsZS5jc3Mi
+          KQpzdHlsZSA9IHN0eWxlX3BhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCmNzcyA9ICdcbi8qID09PT09IFY2LjguNCBs
+          YXJnZSBzcXVhcmUgdmlzaWJsZSBpY29ucyA9PT09PSAqL1xuXG4vKiBTaWRlYmFyIC8gbmF2aWdhdGlvbiAqL1xuLm5hdi1pY29u
+          e1xuICB3aWR0aDo0MnB4ICFpbXBvcnRhbnQ7XG4gIGhlaWdodDo0MnB4ICFpbXBvcnRhbnQ7XG4gIG1pbi13aWR0aDo0MnB4ICFp
+          bXBvcnRhbnQ7XG4gIGZsZXg6MCAwIDQycHggIWltcG9ydGFudDtcbiAgYXNwZWN0LXJhdGlvOjEvMTtcbiAgZGlzcGxheTpncmlk
+          ICFpbXBvcnRhbnQ7XG4gIHBsYWNlLWl0ZW1zOmNlbnRlciAhaW1wb3J0YW50O1xuICBib3JkZXItcmFkaXVzOjExcHggIWltcG9y
+          dGFudDtcbiAgZm9udC1zaXplOjIxcHggIWltcG9ydGFudDtcbiAgbGluZS1oZWlnaHQ6MSAhaW1wb3J0YW50O1xufVxuXG4vKiBQ
+          cmltYXJ5IGZlYXR1cmUgLyBzZXJ2aWNlIGljb25zICovXG4ucGF0aWVudC1mZWF0dXJlLWNhcmQtaWNvbixcbi5wYXRpZW50LWZl
+          YXR1cmUtdGl0bGUtaWNvbixcbi5zZXJ2aWNlLWh1Yi1pY29uLFxuLnRvb2wtaWNvbixcbi5zZXR0aW5ncy1zZWN0aW9uLWljb24s
+          XG4ubGFiLXBhdGllbnQtcmVnaXN0ZXItaWNvbixcbi5wYXRpZW50LWZpbGUtaWNvbixcbi5wYXRpZW50LWZpbGUtZXZlbnQtaWNv
+          bixcbi52NjYtYWN0aW9uLWljb24sXG4uZG9jdG9yLWljb24tdmlzdWFsLFxuLmRvY3Rvci1zb3VyY2UtaWNvbntcbiAgd2lkdGg6
+          NDhweCAhaW1wb3J0YW50O1xuICBoZWlnaHQ6NDhweCAhaW1wb3J0YW50O1xuICBtaW4td2lkdGg6NDhweCAhaW1wb3J0YW50O1xu
+          ICBmbGV4OjAgMCA0OHB4ICFpbXBvcnRhbnQ7XG4gIGFzcGVjdC1yYXRpbzoxLzE7XG4gIGRpc3BsYXk6Z3JpZCAhaW1wb3J0YW50
+          O1xuICBwbGFjZS1pdGVtczpjZW50ZXIgIWltcG9ydGFudDtcbiAgYm9yZGVyLXJhZGl1czoxMnB4ICFpbXBvcnRhbnQ7XG4gIGZv
+          bnQtc2l6ZToyMnB4ICFpbXBvcnRhbnQ7XG4gIGxpbmUtaGVpZ2h0OjEgIWltcG9ydGFudDtcbiAgYm94LXNpemluZzpib3JkZXIt
+          Ym94O1xufVxuXG4vKiBBY3Rpb24gYnV0dG9uczogZWRpdCAvIGRlbGV0ZSAvIHJlc3RvcmUgLyBvcGVuICovXG4uaWNvbi1hY3Rp
+          b24sXG4uZG9jdG9yLWljb24tYWN0aW9ucyAuaWNvbi1hY3Rpb24sXG4ubGFiLW9yZGVycy10YWJsZSAuaWNvbi1hY3Rpb24sXG4u
+          bnVyc2luZy1vcmRlcnMtdGFibGUgLmljb24tYWN0aW9uLFxuLnBhdGllbnQtbGFiLXNlbGVjdGVkLXNpZGUgLmljb24tYWN0aW9u
+          e1xuICB3aWR0aDo0MnB4ICFpbXBvcnRhbnQ7XG4gIGhlaWdodDo0MnB4ICFpbXBvcnRhbnQ7XG4gIG1pbi13aWR0aDo0MnB4ICFp
+          bXBvcnRhbnQ7XG4gIG1pbi1oZWlnaHQ6NDJweCAhaW1wb3J0YW50O1xuICBwYWRkaW5nOjAgIWltcG9ydGFudDtcbiAgZGlzcGxh
+          eTppbmxpbmUtZ3JpZCAhaW1wb3J0YW50O1xuICBwbGFjZS1pdGVtczpjZW50ZXIgIWltcG9ydGFudDtcbiAgYm9yZGVyLXJhZGl1
+          czoxMHB4ICFpbXBvcnRhbnQ7XG4gIGZvbnQtc2l6ZToxOHB4ICFpbXBvcnRhbnQ7XG4gIGxpbmUtaGVpZ2h0OjEgIWltcG9ydGFu
+          dDtcbn1cblxuLyogV2luZG93IGNvbnRyb2xzIC8gbmF2aWdhdGlvbiBjb250cm9scyAqL1xuLm1vZGFsLWNsb3NlLFxuLm1vZGFs
+          LWJhY2stYXJyb3csXG4ucGFnZS1iYWNrLWJ0bntcbiAgbWluLXdpZHRoOjQycHggIWltcG9ydGFudDtcbiAgd2lkdGg6NDJweCAh
+          aW1wb3J0YW50O1xuICBoZWlnaHQ6NDJweCAhaW1wb3J0YW50O1xuICBtaW4taGVpZ2h0OjQycHggIWltcG9ydGFudDtcbiAgcGFk
+          ZGluZzowICFpbXBvcnRhbnQ7XG4gIGRpc3BsYXk6aW5saW5lLWdyaWQgIWltcG9ydGFudDtcbiAgcGxhY2UtaXRlbXM6Y2VudGVy
+          ICFpbXBvcnRhbnQ7XG4gIGJvcmRlci1yYWRpdXM6MTBweCAhaW1wb3J0YW50O1xuICBmb250LXNpemU6MjFweCAhaW1wb3J0YW50
+          O1xuICBsaW5lLWhlaWdodDoxICFpbXBvcnRhbnQ7XG59XG5cbi8qIERhc2hib2FyZCAvIHN0YXR1cyB2aXN1YWxzICovXG4uc3Rh
+          dC1pY29uLFxuLnY2Ni1zdGF0LWljb24sXG4uZG9jdG9yLWljb24tc3ltYm9sLFxuLmRvY3Rvci1pY29uLXRvZGF5e1xuICB3aWR0
+          aDo0OHB4ICFpbXBvcnRhbnQ7XG4gIGhlaWdodDo0OHB4ICFpbXBvcnRhbnQ7XG4gIG1pbi13aWR0aDo0OHB4ICFpbXBvcnRhbnQ7
+          XG4gIGZsZXg6MCAwIDQ4cHggIWltcG9ydGFudDtcbiAgYXNwZWN0LXJhdGlvOjEvMTtcbiAgZGlzcGxheTpncmlkICFpbXBvcnRh
+          bnQ7XG4gIHBsYWNlLWl0ZW1zOmNlbnRlciAhaW1wb3J0YW50O1xuICBib3JkZXItcmFkaXVzOjEycHggIWltcG9ydGFudDtcbiAg
+          Zm9udC1zaXplOjIycHggIWltcG9ydGFudDtcbiAgbGluZS1oZWlnaHQ6MSAhaW1wb3J0YW50O1xufVxuXG4vKiBTZWFyY2ggLyBM
+          YWIyTGFiIHZpc2libGUgdmlzdWFsIGljb25zICovXG4ubGFiMmxhYi1sb2NrLWljb24sXG4ubGFiMmxhYi1zZWxlY3RlZC1pY29u
+          LFxuLmxhYi1wcmljZXMtc2VhcmNoLWljb24sXG4uZ2xvYmFsLXNlYXJjaC1pY29ue1xuICB3aWR0aDo0NHB4ICFpbXBvcnRhbnQ7
+          XG4gIGhlaWdodDo0NHB4ICFpbXBvcnRhbnQ7XG4gIG1pbi13aWR0aDo0NHB4ICFpbXBvcnRhbnQ7XG4gIGZsZXg6MCAwIDQ0cHgg
+          IWltcG9ydGFudDtcbiAgYXNwZWN0LXJhdGlvOjEvMTtcbiAgZGlzcGxheTpncmlkICFpbXBvcnRhbnQ7XG4gIHBsYWNlLWl0ZW1z
+          OmNlbnRlciAhaW1wb3J0YW50O1xuICBib3JkZXItcmFkaXVzOjExcHggIWltcG9ydGFudDtcbiAgZm9udC1zaXplOjIwcHggIWlt
+          cG9ydGFudDtcbiAgbGluZS1oZWlnaHQ6MSAhaW1wb3J0YW50O1xufVxuXG4vKiBBdmF0YXJzIGtlcHQgc3F1YXJlIGFuZCBjbGVh
+          cmVyICovXG4uZG9jdG9yLWF2YXRhcixcbi5kb2N0b3ItcHJvZmlsZS1hdmF0YXIsXG4ucGF0aWVudC1wcm9maWxlLWF2YXRhcixc
+          bi5nbG9iYWwtcGF0aWVudC1yZXN1bHQtYXZhdGFye1xuICB3aWR0aDo1MHB4ICFpbXBvcnRhbnQ7XG4gIGhlaWdodDo1MHB4ICFp
+          bXBvcnRhbnQ7XG4gIG1pbi13aWR0aDo1MHB4ICFpbXBvcnRhbnQ7XG4gIGZsZXg6MCAwIDUwcHggIWltcG9ydGFudDtcbiAgYXNw
+          ZWN0LXJhdGlvOjEvMTtcbiAgZGlzcGxheTpncmlkICFpbXBvcnRhbnQ7XG4gIHBsYWNlLWl0ZW1zOmNlbnRlciAhaW1wb3J0YW50
+          O1xuICBib3JkZXItcmFkaXVzOjEycHggIWltcG9ydGFudDtcbiAgZm9udC1zaXplOjIwcHggIWltcG9ydGFudDtcbiAgbGluZS1o
+          ZWlnaHQ6MSAhaW1wb3J0YW50O1xufVxuXG4vKiBLZWVwIGljb24gYm94ZXMgcmVhZGFibGUgb24gY29tcGFjdCBzY3JlZW5zICov
+          XG5AbWVkaWEobWF4LXdpZHRoOjkwMHB4KXtcbiAgLm5hdi1pY29ue1xuICAgIHdpZHRoOjQwcHggIWltcG9ydGFudDtcbiAgICBo
+          ZWlnaHQ6NDBweCAhaW1wb3J0YW50O1xuICAgIG1pbi13aWR0aDo0MHB4ICFpbXBvcnRhbnQ7XG4gICAgZmxleC1iYXNpczo0MHB4
+          ICFpbXBvcnRhbnQ7XG4gIH1cblxuICAucGF0aWVudC1mZWF0dXJlLWNhcmQtaWNvbixcbiAgLnBhdGllbnQtZmVhdHVyZS10aXRs
+          ZS1pY29uLFxuICAuc2VydmljZS1odWItaWNvbixcbiAgLnRvb2wtaWNvbixcbiAgLnNldHRpbmdzLXNlY3Rpb24taWNvbixcbiAg
+          LmxhYi1wYXRpZW50LXJlZ2lzdGVyLWljb24sXG4gIC5wYXRpZW50LWZpbGUtaWNvbixcbiAgLnBhdGllbnQtZmlsZS1ldmVudC1p
+          Y29uLFxuICAudjY2LWFjdGlvbi1pY29uLFxuICAuZG9jdG9yLWljb24tdmlzdWFsLFxuICAuZG9jdG9yLXNvdXJjZS1pY29uLFxu
+          ICAuc3RhdC1pY29uLFxuICAudjY2LXN0YXQtaWNvbntcbiAgICB3aWR0aDo0NHB4ICFpbXBvcnRhbnQ7XG4gICAgaGVpZ2h0OjQ0
+          cHggIWltcG9ydGFudDtcbiAgICBtaW4td2lkdGg6NDRweCAhaW1wb3J0YW50O1xuICAgIGZsZXgtYmFzaXM6NDRweCAhaW1wb3J0
+          YW50O1xuICB9XG5cbiAgLmljb24tYWN0aW9uLFxuICAubW9kYWwtY2xvc2UsXG4gIC5tb2RhbC1iYWNrLWFycm93LFxuICAucGFn
+          ZS1iYWNrLWJ0bntcbiAgICB3aWR0aDo0MHB4ICFpbXBvcnRhbnQ7XG4gICAgaGVpZ2h0OjQwcHggIWltcG9ydGFudDtcbiAgICBt
+          aW4td2lkdGg6NDBweCAhaW1wb3J0YW50O1xuICAgIG1pbi1oZWlnaHQ6NDBweCAhaW1wb3J0YW50O1xuICB9XG59XG4nCm1hcmtl
+          ciA9ICIvKiA9PT09PSBWNi44LjQgbGFyZ2Ugc3F1YXJlIHZpc2libGUgaWNvbnMgPT09PT0gKi8iCmlmIG1hcmtlciBub3QgaW4g
+          c3R5bGU6CiAgICBzdHlsZSArPSAiXG4iICsgY3NzLnN0cmlwKCkgKyAiXG4iCnN0eWxlX3BhdGgud3JpdGVfdGV4dChzdHlsZSwg
+          ZW5jb2Rpbmc9InV0Zi04IikKCnBrZ19wYXRoID0gUGF0aCgicGFja2FnZS5qc29uIikKcGtnID0ganNvbi5sb2Fkcyhwa2dfcGF0
+          aC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04IikpCnBrZ1sidmVyc2lvbiJdID0gIjYuOC40Igpwa2dfcGF0aC53cml0ZV90ZXh0
+          KGpzb24uZHVtcHMocGtnLCBlbnN1cmVfYXNjaWk9RmFsc2UsIGluZGVudD0yKSArICJcbiIsIGVuY29kaW5nPSJ1dGYtOCIpCgpj
+          b25mX3BhdGggPSBQYXRoKCJzcmMtdGF1cmkvdGF1cmkuY29uZi5qc29uIikKY29uZiA9IGpzb24ubG9hZHMoY29uZl9wYXRoLnJl
+          YWRfdGV4dChlbmNvZGluZz0idXRmLTgiKSkKY29uZlsidmVyc2lvbiJdID0gIjYuOC40Igpjb25mX3BhdGgud3JpdGVfdGV4dChq
+          c29uLmR1bXBzKGNvbmYsIGVuc3VyZV9hc2NpaT1GYWxzZSwgaW5kZW50PTIpICsgIlxuIiwgZW5jb2Rpbmc9InV0Zi04IikKCmNh
+          cmdvX3BhdGggPSBQYXRoKCJzcmMtdGF1cmkvQ2FyZ28udG9tbCIpCmNhcmdvID0gY2FyZ29fcGF0aC5yZWFkX3RleHQoZW5jb2Rp
+          bmc9InV0Zi04IikKY2FyZ28gPSByZS5zdWIocicoP20pXnZlcnNpb25ccyo9XHMqIjZcLjhcLjMiXHMqJCcsICd2ZXJzaW9uID0g
+          IjYuOC40IicsIGNhcmdvLCBjb3VudD0xKQpjYXJnb19wYXRoLndyaXRlX3RleHQoY2FyZ28sIGVuY29kaW5nPSJ1dGYtOCIpCgpw
+          cmludCgiVjYuOC40IGxhcmdlIHNxdWFyZSBpY29uIHBhdGNoIGFwcGxpZWQiKQo=
+          PATCH
+          tr -d '\r\n ' < "$RUNNER_TEMP/v684.b64" > "$RUNNER_TEMP/v684.clean.b64"
+          python -c "import base64; open('_v684_patch.py','wb').write(base64.b64decode(open(r'$RUNNER_TEMP/v684.clean.b64','rb').read()))"
+          python _v684_patch.py
+
+      - name: Verify functionality untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c "$RUNNER_TEMP/main.sha256"
+          sha256sum -c "$RUNNER_TEMP/labCatalog.sha256"
+          sha256sum -c "$RUNNER_TEMP/lab2labCatalog.sha256"
+          sha256sum -c "$RUNNER_TEMP/lab2labArabic.sha256"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: V6.8.4 icon visibility gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          css = Path("src/style.css").read_text(encoding="utf-8")
+          pkg = json.loads(Path("package.json").read_text(encoding="utf-8"))
+          conf = json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+
+          assert pkg["version"] == "6.8.4"
+          assert conf["version"] == "6.8.4"
+          assert "V6.8.4 large square visible icons" in css
+
+          for selector in [
+              ".nav-icon",
+              ".patient-feature-card-icon",
+              ".settings-section-icon",
+              ".icon-action",
+              ".modal-close",
+              ".modal-back-arrow",
+              ".page-back-btn",
+              ".stat-icon",
+              ".lab2lab-lock-icon",
+              ".doctor-avatar"
+          ]:
+              assert selector in css, selector
+
+          assert "width:42px !important" in css
+          assert "width:48px !important" in css
+          assert "aspect-ratio:1/1" in css
+          print("V6.8.4 large square icon gate passed")
+          PY
+
+      - name: Build V6.8.4 Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify self-contained installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          Write-Host "Installer: $($installer.FullName)"
+          Write-Host "Size: $($installer.Length) bytes"
+          if ($installer.Length -lt 80000000) { throw "Offline WebView2 installer missing or setup too small" }
+
+      - name: Upload V6.8.4 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V6.8.4-Large-Square-Icons
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated V6.8.4 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add src/style.css package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          [ -f package-lock.json ] && git add package-lock.json || true
+          [ -f src-tauri/Cargo.lock ] && git add src-tauri/Cargo.lock || true
+
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V6.8.4: larger square icons for visibility"
+          fi
+
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
