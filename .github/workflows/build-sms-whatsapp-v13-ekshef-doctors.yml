@@ -1,0 +1,164 @@
+name: Build Hagz AlHalat V2.1 Ekshef Doctor Names
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Restore V2.0 project from V12 workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=".github/workflows/build-sms-whatsapp-v12-daily-reports-2358.yml"
+          test -f "$SRC"
+          mkdir -p "$RUNNER_TEMP/hagzapp"
+          sed -n "/<<'PROJECT_B64'/,/^[[:space:]]*PROJECT_B64[[:space:]]*$/p" "$SRC" \
+            | sed '1d;$d;s/^[[:space:]]*//' \
+            > "$RUNNER_TEMP/project.b64"
+          test -s "$RUNNER_TEMP/project.b64"
+          base64 -d "$RUNNER_TEMP/project.b64" > "$RUNNER_TEMP/project.zip"
+          unzip -q "$RUNNER_TEMP/project.zip" -d "$RUNNER_TEMP/hagzapp"
+
+      - name: Add Ekshef clinic to doctor mapping
+        shell: bash
+        working-directory: ${{ runner.temp }}/hagzapp
+        env:
+          MAPPER_B64: "cGFja2FnZSBjb20uYWxha2FkLnNtc2ZvcndhcmRlcgoKaW1wb3J0IGphdmEudXRpbC5Mb2NhbGUKCm9iamVjdCBFa3NoZWZEb2N0b3JNYXBwZXIgewogICAgcHJpdmF0ZSB2YWwgZG9jdG9yc0J5Q2xpbmljID0gbWFwT2YoCiAgICAgICAgIjU4MDI1IiB0byAi2K8uINij2K3ZhdivINin2YTYudmE2YjZiiIsCiAgICAgICAgIjU3OTY1IiB0byAi2K8uINit2LPYp9mFINin2YTZhdi62LHYqNmKIiwKICAgICAgICAiNTc5MjkiIHRvICLYry4g2YbZh9in2YQg2KfZhNmG2KjZiNmKIiwKICAgICAgICAiNTc2NDIiIHRvICLYry4g2YXYrdmF2K8g2LrYp9iy2YoiLAogICAgICAgICI1NzU2OCIgdG8gItivLiDZhdit2YXYryDYudi12KfZhSDYtNmE2KjZiiIsCiAgICAgICAgIjU3NTIzIiB0byAi2K8uINiz2KfYsdipINin2YTYrNmK2YXZitmE2YoiLAogICAgICAgICI1NzUwMiIgdG8gItivLiDZhdit2YXYryDYudio2K8g2KfZhNmI2YfYp9ioIiwKICAgICAgICAiNTc0MDEiIHRvICLYsdi02Kcg2LLZhdiy2YUiLAogICAgICAgICI1NzM5NCIgdG8gItivLiDZhdi12LfZgdmJINin2YTYrdiz2YrZhtmKIiwKICAgICAgICAiNTczNzYiIHRvICLYry4g2YHYp9i32YXYqSDYtNi52KjYp9mGIiwKICAgICAgICAiNTczNjkiIHRvICLYry4g2LPYp9ix2Kkg2LnZhdin2K8g2KPYqNmIINin2YTYudiy2YUiLAogICAgICAgICI1NzMzNCIgdG8gItivLiDYudmE2YjZiiDYudio2K8g2KfZhNiz2YTYp9mFIiwKICAgICAgICAiNTczMzIiIHRvICLYry4g2K3Ys9in2YUg2LHYtNiv2YoiLAogICAgICAgICI1NzMzMCIgdG8gItivLiDYo9mF2YrYsSDYrtin2YTYryIKICAgICkKCiAgICBwcml2YXRlIHZhbCBjbGluaWNQYXR0ZXJuID0gUmVnZXgoIiIi2LnZitin2K/YqVxzKtix2YLZhVxzKls677yaXT9ccyooWzAtOdmgLdmp27At27ldezQsOH0pIiIiKQoKICAgIGZ1biByZXBsYWNlQ2xpbmljTnVtYmVyKHNlbmRlcjogU3RyaW5nLCBib2R5OiBTdHJpbmcpOiBTdHJpbmcgewogICAgICAgIGlmIChzZW5kZXIudHJpbSgpLmxvd2VyY2FzZShMb2NhbGUuUk9PVCkgIT0gImVrc2hlZiIpIHJldHVybiBib2R5CiAgICAgICAgcmV0dXJuIGNsaW5pY1BhdHRlcm4ucmVwbGFjZShib2R5KSB7IG1hdGNoIC0+CiAgICAgICAgICAgIHZhbCBjbGluaWMgPSBub3JtYWxpemVEaWdpdHMobWF0Y2guZ3JvdXBWYWx1ZXNbMV0pCiAgICAgICAgICAgIHZhbCBkb2N0b3IgPSBkb2N0b3JzQnlDbGluaWNbY2xpbmljXSA/OiByZXR1cm5AcmVwbGFjZSBtYXRjaC52YWx1ZQogICAgICAgICAgICAi2KfZhNi32KjZitioOiAkZG9jdG9yIgogICAgICAgIH0KICAgIH0KCiAgICBwcml2YXRlIGZ1biBub3JtYWxpemVEaWdpdHModmFsdWU6IFN0cmluZyk6IFN0cmluZyA9IGJ1aWxkU3RyaW5nKHZhbHVlLmxlbmd0aCkgewogICAgICAgIHZhbHVlLmZvckVhY2ggeyBjaCAtPgogICAgICAgICAgICBhcHBlbmQoCiAgICAgICAgICAgICAgICB3aGVuIChjaCkgewogICAgICAgICAgICAgICAgICAgICfZoCcsICfbsCcgLT4gJzAnCiAgICAgICAgICAgICAgICAgICAgJ9mhJywgJ9uxJyAtPiAnMScKICAgICAgICAgICAgICAgICAgICAn2aInLCAn27InIC0+ICcyJwogICAgICAgICAgICAgICAgICAgICfZoycsICfbsycgLT4gJzMnCiAgICAgICAgICAgICAgICAgICAgJ9mkJywgJ9u0JyAtPiAnNCcKICAgICAgICAgICAgICAgICAgICAn2aUnLCAn27UnIC0+ICc1JwogICAgICAgICAgICAgICAgICAgICfZpicsICfbticgLT4gJzYnCiAgICAgICAgICAgICAgICAgICAgJ9mnJywgJ9u3JyAtPiAnNycKICAgICAgICAgICAgICAgICAgICAn2agnLCAn27gnIC0+ICc4JwogICAgICAgICAgICAgICAgICAgICfZqScsICfbuScgLT4gJzknCiAgICAgICAgICAgICAgICAgICAgZWxzZSAtPiBjaAogICAgICAgICAgICAgICAgfQogICAgICAgICAgICApCiAgICAgICAgfQogICAgfQp9Cg=="
+        run: |
+          set -euo pipefail
+          printf '%s' "$MAPPER_B64" | base64 -d > app/src/main/java/com/alakad/smsforwarder/EkshefDoctorMapper.kt
+
+          python3 - <<'PY2'
+          from pathlib import Path
+          import re
+
+          p = Path('app/build.gradle.kts')
+          s = p.read_text(encoding='utf-8')
+          s = re.sub(r'versionCode\s*=\s*\d+', 'versionCode = 21', s, count=1)
+          s = re.sub(r'versionName\s*=\s*"[^"]+"', 'versionName = "2.1.0"', s, count=1)
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('app/src/main/java/com/alakad/smsforwarder/MainActivity.kt')
+          s = p.read_text(encoding='utf-8')
+          old = '            text = message.body\n            textSize = 16f'
+          new = '            text = EkshefDoctorMapper.replaceClinicNumber(message.sender, message.body)\n            textSize = 16f'
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif 'text = EkshefDoctorMapper.replaceClinicNumber(message.sender, message.body)' not in s:
+              raise SystemExit('MainActivity body hook not found')
+
+          old = '            setText(message.body)\n            minLines = 6'
+          new = '            setText(EkshefDoctorMapper.replaceClinicNumber(message.sender, message.body))\n            minLines = 6'
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif 'setText(EkshefDoctorMapper.replaceClinicNumber(message.sender, message.body))' not in s:
+              raise SystemExit('MainActivity edit hook not found')
+
+          old = '        val text = "${canonicalSender(message.sender)}\n${message.body}"'
+          new = '        val text = "${canonicalSender(message.sender)}\n${EkshefDoctorMapper.replaceClinicNumber(message.sender, message.body)}"'
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif 'EkshefDoctorMapper.replaceClinicNumber(message.sender, message.body)' not in s:
+              raise SystemExit('MainActivity send hook not found')
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('app/src/main/java/com/alakad/smsforwarder/SmsReceiver.kt')
+          s = p.read_text(encoding='utf-8')
+          if 'val visibleBody = EkshefDoctorMapper.replaceClinicNumber(sender, body)' not in s:
+              marker = '        val notification = NotificationCompat.Builder(context, channelId)'
+              if marker not in s:
+                  raise SystemExit('SmsReceiver notification hook not found')
+              s = s.replace(marker, '        val visibleBody = EkshefDoctorMapper.replaceClinicNumber(sender, body)\n\n' + marker, 1)
+              s = s.replace('.setContentText(body.take(100))', '.setContentText(visibleBody.take(100))', 1)
+              s = s.replace('.setStyle(NotificationCompat.BigTextStyle().bigText(body))', '.setStyle(NotificationCompat.BigTextStyle().bigText(visibleBody))', 1)
+          p.write_text(s, encoding='utf-8')
+          PY2
+
+      - name: Verify Ekshef doctor mappings
+        shell: bash
+        working-directory: ${{ runner.temp }}/hagzapp
+        run: |
+          set -euo pipefail
+          grep -q 'versionName = "2.1.0"' app/build.gradle.kts
+          grep -q 'EkshefDoctorMapper.replaceClinicNumber' app/src/main/java/com/alakad/smsforwarder/MainActivity.kt
+          grep -q 'EkshefDoctorMapper.replaceClinicNumber' app/src/main/java/com/alakad/smsforwarder/SmsReceiver.kt
+          for pair in \
+            '58025|د. أحمد العلوي' \
+            '57965|د. حسام المغربي' \
+            '57929|د. نهال النبوي' \
+            '57642|د. محمد غازي' \
+            '57568|د. محمد عصام شلبي' \
+            '57523|د. سارة الجيميلي' \
+            '57502|د. محمد عبد الوهاب' \
+            '57401|رشا زمزم' \
+            '57394|د. مصطفى الحسيني' \
+            '57376|د. فاطمة شعبان' \
+            '57369|د. سارة عماد أبو العزم' \
+            '57334|د. علوي عبد السلام' \
+            '57332|د. حسام رشدي' \
+            '57330|د. أمير خالد'
+          do
+            n="${pair%%|*}"; d="${pair#*|}"
+            grep -q "\"$n\" to \"$d\"" app/src/main/java/com/alakad/smsforwarder/EkshefDoctorMapper.kt
+          done
+
+          python3 - <<'PY3'
+          import re
+          mapping = {
+              '58025':'د. أحمد العلوي','57965':'د. حسام المغربي','57929':'د. نهال النبوي',
+              '57642':'د. محمد غازي','57568':'د. محمد عصام شلبي','57523':'د. سارة الجيميلي',
+              '57502':'د. محمد عبد الوهاب','57401':'رشا زمزم','57394':'د. مصطفى الحسيني',
+              '57376':'د. فاطمة شعبان','57369':'د. سارة عماد أبو العزم','57334':'د. علوي عبد السلام',
+              '57332':'د. حسام رشدي','57330':'د. أمير خالد'
+          }
+          trans=str.maketrans('٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹','01234567890123456789')
+          pat=re.compile(r'عيادة\s*رقم\s*[:：]?\s*([0-9٠-٩۰-۹]{4,8})')
+          def convert(sender, body):
+              if sender.strip().lower() != 'ekshef': return body
+              return pat.sub(lambda m: 'الطبيب: '+mapping.get(m.group(1).translate(trans), m.group(0)) if m.group(1).translate(trans) in mapping else m.group(0), body)
+          sample='إكشف: لديك حجز جديد: آمنة حسن خيري - 01151402515 - الميعاد: غدا 30/9 من: 8:00 مساءً - الى:11:00 مساءً, عيادة رقم:57642, فيصل'
+          out=convert('ekshef', sample)
+          assert 'الطبيب: د. محمد غازي' in out and 'عيادة رقم:57642' not in out
+          assert convert('CliniDo', sample) == sample
+          assert 'الطبيب: د. أحمد العلوي' in convert('ekshef', 'عيادة رقم:٥٨٠٢٥')
+          print('Ekshef mappings OK')
+          PY3
+
+      - name: Build installable APK
+        shell: bash
+        working-directory: ${{ runner.temp }}/hagzapp
+        run: |
+          set -euo pipefail
+          gradle :app:assembleDebug --stacktrace
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          cp "$APK" "$GITHUB_WORKSPACE/Hagz-AlHalat-v2.1-Ekshef-Doctors.apk"
+          sha256sum "$GITHUB_WORKSPACE/Hagz-AlHalat-v2.1-Ekshef-Doctors.apk" > "$GITHUB_WORKSPACE/Hagz-AlHalat-v2.1-Ekshef-Doctors.sha256"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hagz-AlHalat-v2.1-Ekshef-Doctors
+          path: |
+            Hagz-AlHalat-v2.1-Ekshef-Doctors.apk
+            Hagz-AlHalat-v2.1-Ekshef-Doctors.sha256
+          retention-days: 30
