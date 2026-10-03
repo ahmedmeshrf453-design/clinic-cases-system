@@ -479,7 +479,7 @@ struct AddPatientAttachmentInput { patient_id:String, source_path:String, file_t
 struct CashierQuery { from:String, to:String }
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct CashierItem { service_type:String, service_id:String, patient_id:String, patient_name:String, patient_phone:String, service_label:String, service_date:String, charge:f64, paid:f64, remaining:f64 }
+struct CashierItem { service_type:String, service_id:String, patient_id:String, patient_name:String, patient_phone:String, service_label:String, service_date:String, service_time:String, doctor:String, visit_type:String, booking_source:String, charge:f64, paid:f64, remaining:f64 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CashierPaymentInput { patient_id:String, service_type:String, service_id:String, amount:String, payment_method:String, notes:String }
@@ -2743,23 +2743,65 @@ fn delete_patient_attachment(state:State<AppState>,id:String)->Result<(),String>
 fn open_patient_attachment(state:State<AppState>,id:String)->Result<(),String>{let c=open_db(&state)?; let p:String=c.query_row("SELECT stored_path FROM patient_attachments WHERE id=?1",params![id],|r|r.get(0)).map_err(|_|"المرفق غير موجود".to_string())?; if !PathBuf::from(&p).exists(){return Err("ملف المرفق غير موجود على الجهاز".into())} Command::new("explorer.exe").arg(format!("/select,{}",p)).spawn().map_err(|e|e.to_string())?; Ok(())}
 
 fn validate_cashier_dates(from:&str,to:&str)->Result<(String,String),String>{let f=NaiveDate::parse_from_str(from.trim(),"%Y-%m-%d").map_err(|_|"تاريخ البداية غير صالح".to_string())?; let t=NaiveDate::parse_from_str(to.trim(),"%Y-%m-%d").map_err(|_|"تاريخ النهاية غير صالح".to_string())?; if t<f{return Err("تاريخ النهاية يجب ألا يسبق البداية".into())} Ok((f.format("%Y-%m-%d").to_string(),t.format("%Y-%m-%d").to_string()))}
-fn cashier_items_for_range(c:&Connection,from:&str,to:&str)->Result<Vec<CashierItem>,String>{let (f,t)=validate_cashier_dates(from,to)?; let sql=r#"
-SELECT service_type,service_id,patient_id,patient_name,patient_phone,service_label,service_date,charge,paid FROM (
+fn cashier_items_for_range(c:&Connection,from:&str,to:&str)->Result<Vec<CashierItem>,String>{
+    let (f,t)=validate_cashier_dates(from,to)?;
+    let sql=r#"
+SELECT service_type,service_id,patient_id,patient_name,patient_phone,service_label,service_date,service_time,doctor,visit_type,booking_source,charge,paid FROM (
 SELECT
-'clinic' AS service_type,
-v.id AS service_id,
-p.id AS patient_id,
-p.full_name AS patient_name,
-p.phone AS patient_phone,
-COALESCE(v.visit_type,'كشف / استشارة')||CASE WHEN COALESCE(v.doctor,'')<>'' THEN ' - '||v.doctor ELSE '' END AS service_label,
-v.visit_date AS service_date,
-CAST(COALESCE(NULLIF(v.fee,''),'0') AS REAL) AS charge,
-COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='clinic' AND cp.service_id=v.id),0) AS paid
-FROM visits v JOIN patients p ON p.id=v.patient_id WHERE p.archived=0 AND v.visit_date BETWEEN ?1 AND ?2
-UNION ALL SELECT 'lab',o.id,p.id,p.full_name,p.phone,'تحاليل',o.order_date,CAST(COALESCE(NULLIF(o.net_total,''),'0') AS REAL),CAST(COALESCE(NULLIF(o.paid_amount,''),'0') AS REAL)+COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='lab' AND cp.service_id=o.id),0) FROM lab_orders o JOIN patients p ON p.id=o.patient_id WHERE p.archived=0 AND o.order_date BETWEEN ?1 AND ?2
-UNION ALL SELECT 'nursing',n.id,p.id,p.full_name,p.phone,'تمريض - '||COALESCE(n.service_name,''),n.order_date,CAST(COALESCE(NULLIF(n.price,''),'0') AS REAL),COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='nursing' AND cp.service_id=n.id),0) FROM nursing_orders n JOIN patients p ON p.id=n.patient_id WHERE p.archived=0 AND n.order_date BETWEEN ?1 AND ?2
-UNION ALL SELECT 'radiology',r.id,p.id,p.full_name,p.phone,'أشعة - '||COALESCE(r.radiology_name,''),r.order_date,CAST(COALESCE(NULLIF(r.net_total,''),'0') AS REAL),COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='radiology' AND cp.service_id=r.id),0) FROM radiology_orders r JOIN patients p ON p.id=r.patient_id WHERE p.archived=0 AND r.order_date BETWEEN ?1 AND ?2
-) x ORDER BY service_date DESC,patient_name"#; let mut s=c.prepare(sql).map_err(|e|e.to_string())?; let rows=s.query_map(params![f,t],|r|{let charge:f64=r.get(7)?; let paid:f64=r.get(8)?; Ok(CashierItem{service_type:r.get(0)?,service_id:r.get(1)?,patient_id:r.get(2)?,patient_name:r.get(3)?,patient_phone:r.get(4)?,service_label:r.get(5)?,service_date:r.get(6)?,charge,paid,remaining:(charge-paid).max(0.0)})}).map_err(|e|e.to_string())?; rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())}
+  'clinic' AS service_type,
+  v.id AS service_id,
+  p.id AS patient_id,
+  p.full_name AS patient_name,
+  p.phone AS patient_phone,
+  COALESCE(v.visit_type,'كشف / استشارة')||CASE WHEN COALESCE(v.doctor,'')<>'' THEN ' - '||v.doctor ELSE '' END AS service_label,
+  v.visit_date AS service_date,
+  COALESCE(v.visit_time,'') AS service_time,
+  COALESCE(v.doctor,'') AS doctor,
+  COALESCE(v.visit_type,'') AS visit_type,
+  COALESCE(v.booking_source,'عادي') AS booking_source,
+  CAST(COALESCE(NULLIF(v.fee,''),'0') AS REAL) AS charge,
+  COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='clinic' AND cp.service_id=v.id),0) AS paid
+FROM visits v JOIN patients p ON p.id=v.patient_id
+WHERE p.archived=0 AND v.visit_date BETWEEN ?1 AND ?2
+
+UNION ALL SELECT
+  'lab',o.id,p.id,p.full_name,p.phone,'تحاليل',o.order_date,COALESCE(o.order_time,''),'','','',
+  CAST(COALESCE(NULLIF(o.net_total,''),'0') AS REAL),
+  CAST(COALESCE(NULLIF(o.paid_amount,''),'0') AS REAL)+COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='lab' AND cp.service_id=o.id),0)
+FROM lab_orders o JOIN patients p ON p.id=o.patient_id
+WHERE p.archived=0 AND o.order_date BETWEEN ?1 AND ?2
+
+UNION ALL SELECT
+  'nursing',n.id,p.id,p.full_name,p.phone,'تمريض - '||COALESCE(n.service_name,''),n.order_date,COALESCE(n.order_time,''),'','','',
+  CAST(COALESCE(NULLIF(n.price,''),'0') AS REAL),
+  COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='nursing' AND cp.service_id=n.id),0)
+FROM nursing_orders n JOIN patients p ON p.id=n.patient_id
+WHERE p.archived=0 AND n.order_date BETWEEN ?1 AND ?2
+
+UNION ALL SELECT
+  'radiology',r.id,p.id,p.full_name,p.phone,'أشعة - '||COALESCE(r.radiology_name,''),r.order_date,COALESCE(r.order_time,''),'','','',
+  CAST(COALESCE(NULLIF(r.net_total,''),'0') AS REAL),
+  COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='radiology' AND cp.service_id=r.id),0)
+FROM radiology_orders r JOIN patients p ON p.id=r.patient_id
+WHERE p.archived=0 AND r.order_date BETWEEN ?1 AND ?2
+) x ORDER BY service_date DESC, service_time DESC, patient_name
+"#;
+
+    let mut s=c.prepare(sql).map_err(|e|e.to_string())?;
+    let rows=s.query_map(params![f,t],|r|{
+        let charge:f64=r.get(11)?;
+        let paid:f64=r.get(12)?;
+        Ok(CashierItem{
+            service_type:r.get(0)?,service_id:r.get(1)?,patient_id:r.get(2)?,
+            patient_name:r.get(3)?,patient_phone:r.get(4)?,service_label:r.get(5)?,
+            service_date:r.get(6)?,service_time:r.get(7)?,doctor:r.get(8)?,
+            visit_type:r.get(9)?,booking_source:r.get(10)?,charge,paid,
+            remaining:(charge-paid).max(0.0)
+        })
+    }).map_err(|e|e.to_string())?;
+
+    rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+}
 #[tauri::command]
 fn list_cashier_items(state:State<AppState>,query:CashierQuery)->Result<Vec<CashierItem>,String>{let c=open_db(&state)?; cashier_items_for_range(&c,&query.from,&query.to)}
 #[tauri::command]
@@ -3289,6 +3331,34 @@ mod production_tests {
         let cashier_rows = cashier_items_for_range(&conn, "2026-01-01", "2026-12-31")
             .expect("cashier runtime query failed");
         assert!(cashier_rows.is_empty(), "fresh database cashier should be empty");
+
+        conn.execute(
+            "INSERT INTO patients(id,full_name,phone,created_at,updated_at)
+             VALUES('finance-p1','Finance Test','01000000000','2026-10-03 10:00:00','2026-10-03 10:00:00')",
+            [],
+        ).expect("insert finance patient failed");
+
+        conn.execute(
+            "INSERT INTO visits(
+               id,patient_id,visit_date,visit_time,doctor,fee,visit_type,booking_source,
+               clinic_amount,doctor_amount,created_at,updated_at
+             ) VALUES(
+               'finance-v1','finance-p1','2026-10-03','18:30','د. اختبار','175','استشارة','فيزيتا',
+               '100','75','2026-10-03 18:30:00','2026-10-03 18:30:00'
+             )",
+            [],
+        ).expect("insert finance visit failed");
+
+        let finance_rows = cashier_items_for_range(&conn, "2026-10-03", "2026-10-03")
+            .expect("finance detail runtime query failed");
+        let visit = finance_rows.iter().find(|row| row.service_id == "finance-v1")
+            .expect("finance visit missing");
+        assert_eq!(visit.doctor, "د. اختبار");
+        assert_eq!(visit.visit_type, "استشارة");
+        assert_eq!(visit.booking_source, "فيزيتا");
+        assert_eq!(visit.service_time, "18:30");
+        assert!((visit.charge - 175.0).abs() < 0.001);
+
 
         let security_default: String = conn
             .query_row(

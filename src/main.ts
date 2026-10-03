@@ -356,7 +356,7 @@ type Lab2LabPriceRow = { id: number; testName: string; price: string; updatedAt:
 
 type SecurityStatus={pinSet:boolean;autoLockMinutes:number};
 type PatientAttachment={id:string;patientId:string;originalName:string;fileType:string;note:string;storedPath:string;createdAt:string};
-type CashierItem={serviceType:string;serviceId:string;patientId:string;patientName:string;patientPhone:string;serviceLabel:string;serviceDate:string;charge:number;paid:number;remaining:number};
+type CashierItem={serviceType:string;serviceId:string;patientId:string;patientName:string;patientPhone:string;serviceLabel:string;serviceDate:string;serviceTime:string;doctor:string;visitType:string;bookingSource:string;charge:number;paid:number;remaining:number};
 type FinancialCategory={serviceType:string;label:string;count:number;charges:number;paid:number;remaining:number};
 type FinancialSummary={totalCharges:number;totalPaid:number;totalRemaining:number;categories:FinancialCategory[]};
 type AuditEntry={id:number;action:string;entityType:string;entityId:string;details:string;createdAt:string};
@@ -1984,7 +1984,262 @@ async function openPatientAttachments(patientId:string){
 function cashierTableHtml(rows:CashierItem[]){return `<div class="table-wrap"><table class="v7-cashier-table"><thead><tr><th>التاريخ</th><th>المريض</th><th>الخدمة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>إجراء</th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr><td>${esc(displayDate(r.serviceDate))}</td><td><strong>${esc(r.patientName)}</strong><small class="ltr">${esc(r.patientPhone||'')}</small></td><td>${esc(r.serviceLabel)}</td><td class="ltr">${r.charge.toFixed(2)} ج.م</td><td class="ltr">${r.paid.toFixed(2)} ج.م</td><td class="ltr ${r.remaining>0.009?'v7-due':'v7-paid'}">${r.remaining.toFixed(2)} ج.م</td><td>${r.remaining>0.009?`<button class="btn primary small" data-cashier-pay="${esc(r.serviceType)}" data-service-id="${esc(r.serviceId)}" data-patient-id="${esc(r.patientId)}" data-remaining="${r.remaining}">تحصيل</button>`:'<span class="v7-paid-badge">تم السداد</span>'}</td></tr>`).join(''):'<tr><td colspan="7" class="empty-row">لا توجد خدمات في الفترة</td></tr>'}</tbody></table></div>`}
 function openCashierPaymentModal(item:{patientId:string;serviceType:string;serviceId:string;remaining:number},onSaved:()=>Promise<void>){const root=document.querySelector<HTMLDivElement>('#modalRoot')!;root.innerHTML=`<div class="modal-backdrop"><section class="modal compact"><div class="modal-head"><div><h2>تحصيل مبلغ</h2><p>المتبقي ${item.remaining.toFixed(2)} ج.م</p></div><button class="modal-close" id="closeCashierPayment">×</button></div><form id="cashierPaymentForm"><div class="form-grid one"><label>المبلغ<input class="ltr" name="amount" type="number" min="0.01" max="${item.remaining}" step="0.01" value="${item.remaining.toFixed(2)}"></label><label>طريقة الدفع<select name="paymentMethod"><option>نقدي</option><option>فيزا</option><option>إنستاباي</option><option>محفظة</option><option>أخرى</option></select></label><label>ملاحظات<input name="notes" maxlength="300"></label></div><div class="form-actions"><button type="button" class="btn ghost" id="cancelCashierPayment">إلغاء</button><button class="btn primary">✓ حفظ التحصيل</button></div></form></section></div>`;const close=()=>root.innerHTML='';document.querySelector<HTMLButtonElement>('#closeCashierPayment')!.onclick=close;document.querySelector<HTMLButtonElement>('#cancelCashierPayment')!.onclick=close;document.querySelector<HTMLFormElement>('#cashierPaymentForm')!.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget as HTMLFormElement);try{await invoke('record_cashier_payment',{input:{patientId:item.patientId,serviceType:item.serviceType,serviceId:item.serviceId,amount:String(fd.get('amount')||''),paymentMethod:String(fd.get('paymentMethod')||''),notes:String(fd.get('notes')||'').trim()}});close();toast('تم تسجيل التحصيل');await onSaved()}catch(err){toast(`تعذر تسجيل التحصيل: ${String(err)}`,'error')}}}
 async function renderCashier(){const day=businessDay();shell(`<section class="card"><div class="card-head toolbar"><div><h2>الكاشير والحسابات</h2><p>تحصيل ومتابعة المتبقي لكل خدمات المريض</p></div><div class="filters"><label>من<input id="cashierFrom" type="date" value="${day}"></label><label>إلى<input id="cashierTo" type="date" value="${day}"></label><button class="btn primary small" id="cashierRefresh">عرض</button></div></div><div id="cashierSummary"></div><div id="cashierRows"></div></section>`,'الكاشير','حساب موحد لكل الخدمات');const from=document.querySelector<HTMLInputElement>('#cashierFrom')!,to=document.querySelector<HTMLInputElement>('#cashierTo')!,host=document.querySelector<HTMLDivElement>('#cashierRows')!,summary=document.querySelector<HTMLDivElement>('#cashierSummary')!;const load=async()=>{const rows=await invoke<CashierItem[]>('list_cashier_items',{query:{from:from.value,to:to.value}});const charges=rows.reduce((s,r)=>s+r.charge,0),paid=rows.reduce((s,r)=>s+r.paid,0),remaining=rows.reduce((s,r)=>s+r.remaining,0);summary.innerHTML=`<div class="v7-money-grid"><div><span>إجمالي الخدمات</span><strong>${charges.toFixed(2)} ج.م</strong></div><div><span>المدفوع</span><strong>${paid.toFixed(2)} ج.م</strong></div><div><span>المتبقي</span><strong>${remaining.toFixed(2)} ج.م</strong></div></div>`;host.innerHTML=cashierTableHtml(rows);host.querySelectorAll<HTMLButtonElement>('[data-cashier-pay]').forEach(b=>b.onclick=()=>openCashierPaymentModal({patientId:b.dataset.patientId||'',serviceType:b.dataset.cashierPay||'',serviceId:b.dataset.serviceId||'',remaining:Number(b.dataset.remaining||0)},load))};document.querySelector<HTMLButtonElement>('#cashierRefresh')!.onclick=()=>load().catch(err=>toast(String(err),'error'));await load()}
-async function renderFinance(){const day=businessDay();shell(`<section class="card"><div class="card-head toolbar"><div><h2>التقارير المالية المنفصلة</h2><p>العيادة • التحاليل • التمريض • الأشعة</p></div><div class="filters"><label>من<input id="financeFrom" type="date" value="${day}"></label><label>إلى<input id="financeTo" type="date" value="${day}"></label><button class="btn primary small" id="financeRun">عرض</button></div></div><div id="financeHost"></div></section>`,'التقارير المالية','الإجمالي والمدفوع والمتبقي حسب الخدمة');const run=async()=>{const from=document.querySelector<HTMLInputElement>('#financeFrom')!.value,to=document.querySelector<HTMLInputElement>('#financeTo')!.value,r=await invoke<FinancialSummary>('financial_report',{query:{from,to}});document.querySelector<HTMLDivElement>('#financeHost')!.innerHTML=`<div class="v7-money-grid"><div><span>إجمالي الخدمات</span><strong>${r.totalCharges.toFixed(2)} ج.م</strong></div><div><span>إجمالي المدفوع</span><strong>${r.totalPaid.toFixed(2)} ج.م</strong></div><div><span>إجمالي المتبقي</span><strong>${r.totalRemaining.toFixed(2)} ج.م</strong></div></div><div class="v7-finance-grid">${r.categories.map(c=>`<article><strong>${esc(c.label)}</strong><span>${c.count} حالة</span><b>الإجمالي ${c.charges.toFixed(2)} ج.م</b><b>المدفوع ${c.paid.toFixed(2)} ج.م</b><b class="${c.remaining>0?'v7-due':''}">المتبقي ${c.remaining.toFixed(2)} ج.م</b></article>`).join('')}</div>`};document.querySelector<HTMLButtonElement>('#financeRun')!.onclick=()=>run().catch(err=>toast(String(err),'error'));await run()}
+function financeServiceLabel(serviceType: string) {
+  return ({
+    clinic: 'كشف / استشارة',
+    lab: 'تحاليل',
+    nursing: 'خدمات تمريض',
+    radiology: 'أشعة'
+  } as Record<string,string>)[serviceType] || serviceType || 'خدمة';
+}
+
+function financeBookingSourceLabel(raw: string) {
+  const value = String(raw || '').trim().toLocaleLowerCase();
+  if (!value || value === 'عادي' || value.includes('direct') || value.includes('مباشر')) return 'حجز مباشر';
+  if (value.includes('فيزيت') || value.includes('vezeeta')) return 'Vezeeta';
+  if (value.includes('كلينيد') || value.includes('clinido')) return 'Clinido';
+  if (value.includes('اكشف') || value.includes('إكشف') || value.includes('ekshef')) return 'Ekshef';
+  return raw || 'حجز مباشر';
+}
+
+function financePriceLabel(rows: CashierItem[]) {
+  const prices = [...new Set(rows.map(row => row.charge.toFixed(2)))];
+  return prices.length === 1 ? `${prices[0]} ج.م` : prices.length > 1 ? 'أسعار متعددة' : '—';
+}
+
+function financeRowsTableHtml(rows: CashierItem[]) {
+  return `
+    <div class="finance-detail-table-wrap">
+      <table class="finance-detail-table">
+        <thead>
+          <tr>
+            <th>التاريخ</th><th>الوقت</th><th>المريض</th><th>الطبيب</th>
+            <th>نوع الخدمة</th><th>نوع الكشف</th><th>المصدر</th>
+            <th>السعر</th><th>المدفوع</th><th>المتبقي</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length ? rows.map(row => `
+            <tr>
+              <td>${esc(displayDate(row.serviceDate))}</td>
+              <td class="ltr">${esc(row.serviceTime || '—')}</td>
+              <td>${esc(row.patientName || '—')}</td>
+              <td>${esc(row.doctor || '—')}</td>
+              <td>${esc(financeServiceLabel(row.serviceType))}</td>
+              <td>${esc(row.serviceType === 'clinic' ? (row.visitType || 'كشف / استشارة') : '—')}</td>
+              <td>${esc(row.serviceType === 'clinic' ? financeBookingSourceLabel(row.bookingSource) : '—')}</td>
+              <td class="ltr">${row.charge.toFixed(2)} ج.م</td>
+              <td class="ltr">${row.paid.toFixed(2)} ج.م</td>
+              <td class="ltr ${row.remaining > 0.009 ? 'v7-due' : 'v7-paid'}">${row.remaining.toFixed(2)} ج.م</td>
+            </tr>
+          `).join('') : '<tr><td colspan="10" class="empty-row">لا توجد بيانات مطابقة للفلاتر</td></tr>'}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function financeReportBodyHtml(rows: CashierItem[], from: string, to: string, doctor: string, service: string, source: string) {
+  const totalCharges = rows.reduce((sum,row) => sum + row.charge, 0);
+  const totalPaid = rows.reduce((sum,row) => sum + row.paid, 0);
+  const totalRemaining = rows.reduce((sum,row) => sum + row.remaining, 0);
+  const clinicRows = rows.filter(row => row.serviceType === 'clinic');
+
+  const doctorMap = new Map<string,{count:number,total:number}>();
+  clinicRows.forEach(row => {
+    const name = row.doctor || 'غير محدد';
+    const item = doctorMap.get(name) || {count:0,total:0};
+    item.count += 1;
+    item.total += row.charge;
+    doctorMap.set(name,item);
+  });
+
+  const visitMap = new Map<string,{visitType:string,source:string,rows:CashierItem[]}>();
+  clinicRows.forEach(row => {
+    const visitType = row.visitType || 'كشف / استشارة';
+    const bookingSource = financeBookingSourceLabel(row.bookingSource);
+    const key = `${visitType}|||${bookingSource}`;
+    const item = visitMap.get(key) || {visitType,source:bookingSource,rows:[]};
+    item.rows.push(row);
+    visitMap.set(key,item);
+  });
+
+  const serviceCards = ['clinic','lab','nursing','radiology'].map(type => {
+    const items = rows.filter(row => row.serviceType === type);
+    const charge = items.reduce((sum,row) => sum + row.charge,0);
+    const paid = items.reduce((sum,row) => sum + row.paid,0);
+    const remaining = items.reduce((sum,row) => sum + row.remaining,0);
+    return `
+      <article class="finance-service-card">
+        <div class="finance-service-card-head"><strong>${esc(financeServiceLabel(type))}</strong><span>${items.length} حالة</span></div>
+        <div><span>الإجمالي</span><b class="ltr">${charge.toFixed(2)} ج.م</b></div>
+        <div><span>المدفوع</span><b class="ltr">${paid.toFixed(2)} ج.م</b></div>
+        <div><span>المتبقي</span><b class="ltr ${remaining > 0.009 ? 'v7-due' : ''}">${remaining.toFixed(2)} ج.م</b></div>
+      </article>`;
+  }).join('');
+
+  const doctorTable = doctorMap.size ? `
+    <section class="finance-report-section">
+      <div class="finance-section-title"><h3>ملخص الأطباء</h3><span>الكشوفات والاستشارات فقط</span></div>
+      <div class="table-wrap"><table class="finance-summary-table">
+        <thead><tr><th>الطبيب</th><th>عدد الحالات</th><th>إجمالي قيمة الكشوفات</th></tr></thead>
+        <tbody>${[...doctorMap.entries()].sort((a,b)=>b[1].total-a[1].total).map(([name,item]) =>
+          `<tr><td>${esc(name)}</td><td>${item.count}</td><td class="ltr">${item.total.toFixed(2)} ج.م</td></tr>`
+        ).join('')}</tbody>
+      </table></div>
+    </section>` : '';
+
+  const visitTable = visitMap.size ? `
+    <section class="finance-report-section">
+      <div class="finance-section-title"><h3>الكشف / الاستشارة حسب مصدر الحجز</h3><span>الأسعار الفعلية المسجلة لكل حالة</span></div>
+      <div class="table-wrap"><table class="finance-summary-table">
+        <thead><tr><th>نوع الزيارة</th><th>المصدر</th><th>العدد</th><th>السعر</th><th>الإجمالي</th></tr></thead>
+        <tbody>${[...visitMap.values()].sort((a,b)=>a.visitType.localeCompare(b.visitType,'ar')||a.source.localeCompare(b.source,'ar')).map(item => {
+          const total = item.rows.reduce((sum,row)=>sum+row.charge,0);
+          return `<tr><td>${esc(item.visitType)}</td><td>${esc(item.source)}</td><td>${item.rows.length}</td><td class="ltr">${esc(financePriceLabel(item.rows))}</td><td class="ltr">${total.toFixed(2)} ج.م</td></tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </section>` : '';
+
+  const filtersText = [
+    doctor ? `الطبيب: ${doctor}` : 'كل الأطباء',
+    service ? `الخدمة: ${financeServiceLabel(service)}` : 'كل الخدمات',
+    source ? `المصدر: ${source}` : 'كل مصادر الحجز'
+  ].join(' • ');
+
+  return `
+    <div class="finance-export-meta">
+      <div><span>الفترة</span><strong>${esc(reportPeriodLabel(from,to))}</strong></div>
+      <div class="wide"><span>الفلاتر</span><strong>${esc(filtersText)}</strong></div>
+    </div>
+
+    <div class="finance-kpi-grid">
+      <article><span>عدد الحالات</span><strong>${rows.length}</strong></article>
+      <article><span>إجمالي المستحق</span><strong class="ltr">${totalCharges.toFixed(2)} ج.م</strong></article>
+      <article><span>المدفوع</span><strong class="ltr">${totalPaid.toFixed(2)} ج.م</strong></article>
+      <article><span>المتبقي</span><strong class="ltr ${totalRemaining > 0.009 ? 'v7-due' : ''}">${totalRemaining.toFixed(2)} ج.م</strong></article>
+    </div>
+
+    <div class="finance-services-grid">${serviceCards}</div>
+    ${doctorTable}
+    ${visitTable}
+
+    <section class="finance-report-section">
+      <div class="finance-section-title"><h3>التفاصيل</h3><span>${rows.length} سجل</span></div>
+      ${financeRowsTableHtml(rows)}
+    </section>`;
+}
+
+function financeExportSheet(rows: CashierItem[], from: string, to: string, doctor: string, service: string, source: string) {
+  return exportSheet('التقرير المالي الشامل', reportPeriodLabel(from,to), financeReportBodyHtml(rows,from,to,doctor,service,source));
+}
+
+function printFinancialReport(html: string) {
+  const host = document.createElement('div');
+  host.className = 'finance-print-host';
+  host.innerHTML = html;
+  document.body.appendChild(host);
+  const cleanup = () => host.remove();
+  window.addEventListener('afterprint', cleanup, {once:true});
+  window.print();
+  window.setTimeout(() => { if (host.isConnected) cleanup(); }, 8000);
+}
+
+async function renderFinance(){
+  const day = businessDay();
+
+  shell(`
+    <section class="card finance-pro-card">
+      <div class="finance-pro-head">
+        <div><h2>التقرير المالي الشامل</h2><p>كل الإيرادات من الأسعار الفعلية المسجلة لكل حالة</p></div>
+        <div class="finance-export-actions">
+          <button class="btn ghost" id="financePrint">🖨️ طباعة التقرير</button>
+          <button class="btn primary" id="financeDownload">⬇️ تنزيل</button>
+        </div>
+      </div>
+
+      <div class="finance-filter-bar">
+        <button class="finance-today-btn" id="financeToday" type="button">اليوم</button>
+        <label>من<input id="financeFrom" type="date" value="${day}"></label>
+        <label>إلى<input id="financeTo" type="date" value="${day}"></label>
+        <label>الطبيب<select id="financeDoctor"><option value="">كل الأطباء</option>${doctors.map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}</select></label>
+        <label>نوع الخدمة<select id="financeService">
+          <option value="">كل الخدمات</option><option value="clinic">كشف / استشارة</option><option value="lab">تحاليل</option><option value="nursing">خدمات تمريض</option><option value="radiology">أشعة</option>
+        </select></label>
+        <label>مصدر الحجز<select id="financeSource">
+          <option value="">كل المصادر</option><option value="Vezeeta">Vezeeta</option><option value="Clinido">Clinido</option><option value="Ekshef">Ekshef</option><option value="حجز مباشر">حجز مباشر</option>
+        </select></label>
+        <button class="btn primary small finance-apply-btn" id="financeRun">عرض التقرير</button>
+      </div>
+
+      <div id="financeHost"><div class="finance-loading">جاري إعداد التقرير...</div></div>
+    </section>
+  `,'التقارير المالية','كشف تفصيلي للإيرادات والمدفوع والمتبقي');
+
+  const fromInput = document.querySelector<HTMLInputElement>('#financeFrom')!;
+  const toInput = document.querySelector<HTMLInputElement>('#financeTo')!;
+  const doctorInput = document.querySelector<HTMLSelectElement>('#financeDoctor')!;
+  const serviceInput = document.querySelector<HTMLSelectElement>('#financeService')!;
+  const sourceInput = document.querySelector<HTMLSelectElement>('#financeSource')!;
+  const host = document.querySelector<HTMLDivElement>('#financeHost')!;
+  let currentRows: CashierItem[] = [];
+
+  const filteredRows = (rows: CashierItem[]) => rows.filter(row => {
+    if (doctorInput.value && row.doctor !== doctorInput.value) return false;
+    if (serviceInput.value && row.serviceType !== serviceInput.value) return false;
+    if (sourceInput.value) {
+      if (row.serviceType !== 'clinic') return false;
+      if (financeBookingSourceLabel(row.bookingSource) !== sourceInput.value) return false;
+    }
+    return true;
+  });
+
+  const load = async () => {
+    const allRows = await invoke<CashierItem[]>('list_cashier_items',{query:{from:fromInput.value,to:toInput.value}});
+    currentRows = filteredRows(allRows);
+    host.innerHTML = financeReportBodyHtml(currentRows,fromInput.value,toInput.value,doctorInput.value,serviceInput.value,sourceInput.value);
+  };
+
+  document.querySelector<HTMLButtonElement>('#financeToday')!.onclick = async () => {
+    const v = businessDay(); fromInput.value = v; toInput.value = v; await load();
+  };
+  document.querySelector<HTMLButtonElement>('#financeRun')!.onclick = () => load().catch(err => toast(`تعذر إعداد التقرير: ${String(err)}`,'error'));
+
+  document.querySelector<HTMLButtonElement>('#financePrint')!.onclick = () => {
+    if (!currentRows.length && !confirm('التقرير الحالي لا يحتوي على بيانات. هل تريد طباعته؟')) return;
+    printFinancialReport(financeExportSheet(currentRows,fromInput.value,toInput.value,doctorInput.value,serviceInput.value,sourceInput.value));
+  };
+
+  document.querySelector<HTMLButtonElement>('#financeDownload')!.onclick = () => {
+    const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+    root.innerHTML = `
+      <div class="modal-backdrop" id="financeDownloadBackdrop">
+        <section class="modal compact finance-download-modal">
+          <div class="modal-head"><div><h2>تنزيل التقرير المالي</h2><p>اختار صيغة الملف</p></div><button class="modal-close" id="closeFinanceDownload">×</button></div>
+          <div class="finance-download-options">
+            <button class="btn primary" id="financeDownloadPdf">PDF — A4</button>
+            <button class="btn ghost" id="financeDownloadPng">PNG — صورة</button>
+          </div>
+        </section>
+      </div>`;
+    const close = () => root.innerHTML = '';
+    document.querySelector<HTMLButtonElement>('#closeFinanceDownload')!.onclick = close;
+    document.querySelector<HTMLDivElement>('#financeDownloadBackdrop')!.onclick = e => { if (e.target === e.currentTarget) close(); };
+
+    const download = async (format: ExportFormat) => {
+      close();
+      await captureAndSaveExport(
+        financeExportSheet(currentRows,fromInput.value,toInput.value,doctorInput.value,serviceInput.value,sourceInput.value),
+        `التقرير المالي - ${fromInput.value} - ${toInput.value}`,
+        format
+      );
+    };
+    document.querySelector<HTMLButtonElement>('#financeDownloadPdf')!.onclick = () => download('pdf');
+    document.querySelector<HTMLButtonElement>('#financeDownloadPng')!.onclick = () => download('png');
+  };
+
+  await load();
+}
+
 async function renderAudit(){const rows=await invoke<AuditEntry[]>('list_audit_logs',{limit:500});shell(`<section class="card"><div class="card-head"><div><h2>Audit Log</h2><p>سجل قراءة فقط للعمليات</p></div></div><div class="table-wrap"><table><thead><tr><th>التاريخ والوقت</th><th>العملية</th><th>النوع</th><th>المعرف</th><th>التفاصيل</th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td class="ltr">${esc(x.createdAt)}</td><td>${esc(x.action)}</td><td>${esc(x.entityType)}</td><td class="ltr">${esc(x.entityId)}</td><td>${esc(x.details)}</td></tr>`).join(''):'<tr><td colspan="5" class="empty-row">لا توجد عمليات بعد</td></tr>'}</tbody></table></div></section>`,'Audit Log','من أضاف أو عدّل أو حذف أو حصّل')}
 async function renderAlerts(){const rows=await invoke<SystemAlert[]>('list_system_alerts');shell(`<section class="card"><div class="card-head"><div><h2>التنبيهات</h2><p>متبقيات وحالات حماية تحتاج متابعة</p></div><span class="v7-alert-count">${rows.length}</span></div><div class="v7-alert-list">${rows.length?rows.map(a=>`<article class="v7-alert-row"><span class="v7-alert-icon">${a.kind==='حماية'?'🔐':'🔔'}</span><div><strong>${esc(a.title)}</strong><p>${esc(a.detail)}</p></div>${a.patientId?`<button class="btn ghost small" data-alert-patient="${esc(a.patientId)}">ملف المريض</button>`:''}</article>`).join(''):'<div class="empty-block">لا توجد تنبيهات حالية ✅</div>'}</div></section>`,'التنبيهات','ما يحتاج متابعة داخل النظام');document.querySelectorAll<HTMLButtonElement>('[data-alert-patient]').forEach(b=>b.onclick=()=>openPatient(b.dataset.alertPatient||''))}
 
