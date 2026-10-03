@@ -4072,3 +4072,26 @@ table td{font-size:13px !important}
   .finance-export-meta{grid-template-columns:1fr}
 }
 
+
+
+/* ===== V7.0 FIX8 Today Statistics sidebar page ===== */
+.today-stats-page{display:grid;gap:14px}
+.today-stats-hero{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:17px 18px;border:1px solid #dfe8ef;border-radius:14px;background:linear-gradient(135deg,#ffffff,#f5fafc);box-shadow:0 7px 20px rgba(21,52,78,.045)}
+.today-stats-kicker{display:inline-block;margin-bottom:4px;color:#168b91;font-size:8px;font-weight:900}
+.today-stats-hero h2{margin:0;color:#15344e;font-size:19px}
+.today-stats-hero p{margin:5px 0 0;color:#7c8e9d;font-size:9px}
+.today-stats-date{min-width:180px;padding:10px 12px;border:1px solid #dce7ed;border-radius:11px;background:#fff;text-align:center}
+.today-stats-date span,.today-stats-date strong,.today-stats-date small{display:block}
+.today-stats-date span{color:#8997a4;font-size:7.5px}
+.today-stats-date strong{margin-top:3px;color:#173d5a;font-size:14px}
+.today-stats-date small{margin-top:3px;color:#8494a2;font-size:7px}
+.today-stats-grid{margin:0!important}
+.today-stats-grid .v66-stat-card{min-height:96px!important}
+.today-stats-note{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #e2eaf0;border-radius:10px;background:#f9fbfc;color:#728596}
+.today-stats-note span{color:#177b83;font-size:14px}
+.today-stats-note p{margin:0;font-size:8.5px}
+@media(max-width:850px){
+  .today-stats-hero{align-items:stretch;flex-direction:column}
+  .today-stats-date{width:100%}
+}
+

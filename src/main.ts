@@ -363,7 +363,7 @@ type AuditEntry={id:number;action:string;entityType:string;entityId:string;detai
 type UnifiedSearchResult={kind:string;patientId:string;title:string;subtitle:string};
 type SystemAlert={kind:string;title:string;detail:string;patientId:string;serviceType:string;serviceId:string};
 
-type Screen = 'dashboard' | 'patients' | 'today' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'radiology' | 'cashier' | 'finance' | 'alerts' | 'audit' | 'security' | 'reports' | 'archive' | 'backups' | 'settings';
+type Screen = 'dashboard' | 'patients' | 'today' | 'todaystats' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'radiology' | 'cashier' | 'finance' | 'alerts' | 'audit' | 'security' | 'reports' | 'archive' | 'backups' | 'settings';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 let screen: Screen = 'dashboard';
@@ -1661,6 +1661,7 @@ function shell(content: string, title: string, subtitle: string) {
           ${navButton('dashboard','⌂','الرئيسية')}
           ${navButton('patients','👥','المرضى', sidebarPatientsTotal)}
           ${navButton('today','◷','حالات اليوم')}
+          ${navButton('todaystats','▥','إحصائيات اليوم')}
           ${navButton('doctors','⚕','الأطباء')}
           ${navButton('labs','🧪','التحاليل')}
           ${navButton('lab2lab','L2L','أسعار Lab 2 Lab')}
@@ -2253,6 +2254,7 @@ async function renderScreen() {
   if (screen === 'patients') return renderPatients(false);
   if (screen === 'archive') return renderPatients(true);
   if (screen === 'today') return renderToday();
+  if (screen === 'todaystats') return renderTodayStats();
   if (screen === 'doctors') return renderDoctors();
   if (screen === 'labs') return renderLabPrices();
   if (screen === 'lab2lab') return renderLab2Lab();
@@ -2453,29 +2455,6 @@ async function renderDashboard() {
         </button>
       </div>
 
-      <div class="v66-stats-grid">
-        <button class="v66-stat-card" data-v66-stat-filter="clinic">
-          <span class="v66-stat-icon clinic">🩺</span>
-          <span><small>تسجيلات العيادة اليوم</small><strong>${clinicToday}</strong></span>
-        </button>
-        <button class="v66-stat-card" data-v66-stat-filter="lab">
-          <span class="v66-stat-icon labs">🧪</span>
-          <span><small>تسجيلات التحاليل اليوم</small><strong>${labPatientsToday}</strong></span>
-        </button>
-        <button class="v66-stat-card" data-v66-stat-filter="nursing">
-          <span class="v66-stat-icon nursing">✚</span>
-          <span><small>تسجيلات التمريض اليوم</small><strong>${nursingPatientsToday}</strong></span>
-        </button>
-        <button class="v66-stat-card" data-v66-stat-filter="radiology">
-          <span class="v66-stat-icon radiology">🩻</span>
-          <span><small>تسجيلات الأشعة اليوم</small><strong>${radiologyPatientsToday}</strong></span>
-        </button>
-        <button class="v66-stat-card total" data-v66-stat-filter="all">
-          <span class="v66-stat-icon total">▥</span>
-          <span><small>إجمالي تسجيلات اليوم</small><strong>${totalToday}</strong></span>
-        </button>
-      </div>
-
       <section class="v66-today-card">
         <div class="v66-today-card-head">
           <div>
@@ -2598,11 +2577,75 @@ async function renderDashboard() {
     tab.onclick = () => setFilter(tab.dataset.v66Filter || 'all');
   });
 
-  document.querySelectorAll<HTMLButtonElement>('[data-v66-stat-filter]').forEach(card => {
-    card.onclick = () => setFilter(card.dataset.v66StatFilter || 'all');
-  });
-
   search.oninput = apply;
+}
+
+async function renderTodayStats() {
+  const dayKey = businessDay();
+
+  const [todayReport, todayLabOrders, todayNursingOrders, todayRadiologyOrders] = await Promise.all([
+    invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } }),
+    invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } }),
+    invoke<NursingOrder[]>('list_nursing_orders', { query: { from: dayKey, to: dayKey } }),
+    invoke<RadiologyOrder[]>('list_radiology_orders', { query: { from: dayKey, to: dayKey } })
+  ]);
+
+  const clinicToday = todayReport.rows.length;
+  const labPatientsToday = todayLabOrders.length;
+  const nursingPatientsToday = todayNursingOrders.length;
+  const radiologyPatientsToday = todayRadiologyOrders.length;
+  const totalToday = clinicToday + labPatientsToday + nursingPatientsToday + radiologyPatientsToday;
+
+  shell(`
+    <section class="today-stats-page">
+      <div class="today-stats-hero">
+        <div>
+          <span class="today-stats-kicker">اليوم التشغيلي</span>
+          <h2>إحصائيات اليوم</h2>
+          <p>ملخص سريع لكل التسجيلات الموجودة اليوم في النظام.</p>
+        </div>
+        <div class="today-stats-date">
+          <span>التاريخ</span>
+          <strong>${displayDate(dayKey)}</strong>
+          <small>يبدأ اليوم التشغيلي ${operationalStartLabel()}</small>
+        </div>
+      </div>
+
+      <div class="v66-stats-grid today-stats-grid">
+        <button class="v66-stat-card" id="todayStatsClinic">
+          <span class="v66-stat-icon clinic">🩺</span>
+          <span><small>تسجيلات العيادة اليوم</small><strong>${clinicToday}</strong></span>
+        </button>
+        <button class="v66-stat-card" id="todayStatsLabs">
+          <span class="v66-stat-icon labs">🧪</span>
+          <span><small>تسجيلات التحاليل اليوم</small><strong>${labPatientsToday}</strong></span>
+        </button>
+        <button class="v66-stat-card" id="todayStatsNursing">
+          <span class="v66-stat-icon nursing">✚</span>
+          <span><small>تسجيلات التمريض اليوم</small><strong>${nursingPatientsToday}</strong></span>
+        </button>
+        <button class="v66-stat-card" id="todayStatsRadiology">
+          <span class="v66-stat-icon radiology">🩻</span>
+          <span><small>تسجيلات الأشعة اليوم</small><strong>${radiologyPatientsToday}</strong></span>
+        </button>
+        <button class="v66-stat-card total" id="todayStatsAll">
+          <span class="v66-stat-icon total">▥</span>
+          <span><small>إجمالي تسجيلات اليوم</small><strong>${totalToday}</strong></span>
+        </button>
+      </div>
+
+      <div class="today-stats-note">
+        <span>ⓘ</span>
+        <p>اضغط على أي إحصائية لفتح القسم المرتبط بها.</p>
+      </div>
+    </section>
+  `, 'إحصائيات اليوم', 'ملخص تسجيلات العيادة والتحاليل والتمريض والأشعة');
+
+  document.querySelector<HTMLButtonElement>('#todayStatsClinic')!.onclick = () => navigate('today');
+  document.querySelector<HTMLButtonElement>('#todayStatsLabs')!.onclick = () => navigate('labs');
+  document.querySelector<HTMLButtonElement>('#todayStatsNursing')!.onclick = () => navigate('nursing');
+  document.querySelector<HTMLButtonElement>('#todayStatsRadiology')!.onclick = () => navigate('radiology');
+  document.querySelector<HTMLButtonElement>('#todayStatsAll')!.onclick = () => navigate('today');
 }
 
 async function renderPatients(archived: boolean) {
