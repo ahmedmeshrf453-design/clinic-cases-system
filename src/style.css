@@ -3954,3 +3954,47 @@ table td{font-size:13px !important}
   }
 }
 
+
+
+/* ===== V7.0 FIX6 editable ordinary lab prices ===== */
+.lab-price-actions{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 34px;
+  gap:6px;
+  align-items:center;
+}
+.lab-main-edit-price-btn{
+  width:32px;
+  height:32px;
+  border:1px solid #cfdde6;
+  border-radius:8px;
+  background:#fff;
+  color:#174866;
+  font-size:15px;
+  font-weight:900;
+  cursor:pointer;
+}
+.lab-main-edit-price-btn:hover{
+  background:#eef6fa;
+  border-color:#9fbccc;
+}
+.lab-main-price-edit-modal label{
+  display:grid;
+  gap:6px;
+  color:#50657a;
+  font-size:11px;
+}
+.lab-main-price-edit-modal .modal-head small{
+  display:block;
+  margin-top:4px;
+  color:#6f8294;
+  font-size:10px;
+}
+.lab2lab-edit-btn{
+  width:auto!important;
+  min-width:92px!important;
+  padding:7px 10px!important;
+  font-size:10px!important;
+  white-space:nowrap;
+}
+

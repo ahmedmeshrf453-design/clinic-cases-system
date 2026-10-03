@@ -48,6 +48,14 @@ struct Lab2LabPriceRow { id: i64, test_name: String, price: String, updated_at: 
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct LabPriceOverrideInput { catalog_id: i64, price: String }
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct LabPriceOverrideRow { catalog_id: i64, price: String, updated_at: String }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AddCaseInput {
     full_name: String,
     phone: String,
@@ -897,6 +905,11 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         updated_at TEXT NOT NULL DEFAULT ''
       );
       CREATE INDEX IF NOT EXISTS idx_lab2lab_prices_name ON lab2lab_prices(test_name COLLATE NOCASE);
+      CREATE TABLE IF NOT EXISTS lab_price_overrides(
+        catalog_id INTEGER PRIMARY KEY,
+        price TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL DEFAULT ''
+      );
     "#,
     )
     .map_err(|e| e.to_string())?;
@@ -2536,6 +2549,79 @@ fn verify_lab2lab_pin_value(conn: &Connection, pin: &str) -> Result<bool, String
     }
 }
 
+fn list_lab_price_overrides_conn(conn: &Connection) -> Result<Vec<LabPriceOverrideRow>, String> {
+    let mut stmt = conn
+        .prepare("SELECT catalog_id,price,updated_at FROM lab_price_overrides ORDER BY catalog_id ASC")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| Ok(LabPriceOverrideRow {
+            catalog_id: row.get(0)?,
+            price: row.get(1)?,
+            updated_at: row.get(2)?,
+        }))
+        .map_err(|e| e.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+fn set_lab_price_override_conn(
+    conn: &Connection,
+    catalog_id: i64,
+    price: &str,
+) -> Result<LabPriceOverrideRow, String> {
+    if catalog_id <= 0 || catalog_id > 100000 {
+        return Err("رقم التحليل غير صالح".into());
+    }
+
+    let clean = price.trim();
+    if clean.len() > 64 || clean.chars().any(|c| c.is_control()) {
+        return Err("السعر غير صالح".into());
+    }
+
+    conn.execute(
+        "INSERT INTO lab_price_overrides(catalog_id,price,updated_at)
+         VALUES(?1,?2,datetime('now','localtime'))
+         ON CONFLICT(catalog_id) DO UPDATE SET
+           price=excluded.price,
+           updated_at=excluded.updated_at",
+        params![catalog_id, clean],
+    )
+    .map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "INSERT INTO audit_log(action,entity_type,entity_id,details)
+         VALUES('تعديل سعر','تحاليل',?1,?2)",
+        params![catalog_id.to_string(), format!("السعر الجديد={}", clean)],
+    )
+    .map_err(|e| e.to_string())?;
+
+    conn.query_row(
+        "SELECT catalog_id,price,updated_at FROM lab_price_overrides WHERE catalog_id=?1",
+        params![catalog_id],
+        |row| Ok(LabPriceOverrideRow {
+            catalog_id: row.get(0)?,
+            price: row.get(1)?,
+            updated_at: row.get(2)?,
+        }),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_lab_price_overrides(state: State<AppState>) -> Result<Vec<LabPriceOverrideRow>, String> {
+    let conn = open_db(&state)?;
+    list_lab_price_overrides_conn(&conn)
+}
+
+#[tauri::command]
+fn update_lab_price_override(
+    state: State<AppState>,
+    input: LabPriceOverrideInput,
+) -> Result<LabPriceOverrideRow, String> {
+    let conn = open_db(&state)?;
+    set_lab_price_override_conn(&conn, input.catalog_id, &input.price)
+}
+
 #[tauri::command]
 fn lab2lab_auth_status(state: State<AppState>) -> Result<Lab2LabAuthStatus, String> {
     let conn = open_db(&state)?;
@@ -3142,6 +3228,8 @@ pub fn run() {
             save_doctor,
             delete_doctor,
             run_report,
+            list_lab_price_overrides,
+            update_lab_price_override,
             lab2lab_auth_status,
             setup_lab2lab_pin,
             verify_lab2lab_pin,
@@ -3211,7 +3299,18 @@ mod production_tests {
             .expect("security default missing");
         assert_eq!(security_default, "10");
 
-        for table in ["patients", "visits", "doctors", "patient_labs", "lab_orders", "lab_order_items", "nursing_orders", "radiology_orders", "app_meta", "lab2lab_prices", "patient_attachments", "cashier_payments", "audit_log"] {
+        // Ordinary lab prices must be editable and persistent at runtime.
+        let changed_price = set_lab_price_override_conn(&conn, 101, "175")
+            .expect("normal lab price update failed");
+        assert_eq!(changed_price.catalog_id, 101);
+        assert_eq!(changed_price.price, "175");
+
+        let overrides = list_lab_price_overrides_conn(&conn)
+            .expect("normal lab price list failed");
+        assert!(overrides.iter().any(|row| row.catalog_id == 101 && row.price == "175"));
+
+
+        for table in ["patients", "visits", "doctors", "patient_labs", "lab_orders", "lab_order_items", "nursing_orders", "radiology_orders", "app_meta", "lab2lab_prices", "lab_price_overrides", "patient_attachments", "cashier_payments", "audit_log"] {
             let count: i64 = conn
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",

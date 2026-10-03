@@ -120,6 +120,12 @@ type LabOrderDetails = {
   items: LabOrderItem[];
 };
 
+type LabPriceOverrideRow = {
+  catalogId: number;
+  price: string;
+  updatedAt: string;
+};
+
 type PatientFileSnapshot = {
   details: PatientDetails;
   labOrders: LabOrderDetails[];
@@ -381,6 +387,7 @@ let activeBusinessDay = '';
 let sidebarPatientsTotal = 0;
 let screenHistory: Screen[] = [];
 let lab2labSessionPin = '';
+let labPriceOverridesLoaded = false;
 let v7SecurityStatus:SecurityStatus={pinSet:false,autoLockMinutes:10};
 let v7LastActivityAt=Date.now();
 let v7SecurityTimer:number|undefined;
@@ -1983,7 +1990,7 @@ async function renderAlerts(){const rows=await invoke<SystemAlert[]>('list_syste
 
 async function renderSecurity(){v7SecurityStatus=await invoke<SecurityStatus>('security_status');shell(`<section class="card v7-security-card"><div class="card-head"><div><h2>حماية البيانات</h2><p>PIN وقفل تلقائي للجلسة</p></div><span class="v7-security-state">${v7SecurityStatus.pinSet?'🔐 مفعّل':'🔓 غير مفعّل'}</span></div><form id="securityForm" class="v7-security-form">${v7SecurityStatus.pinSet?'<label>PIN الحالي<input name="currentPin" type="password" inputmode="numeric" maxlength="8"></label>':''}<label>PIN الجديد<input name="newPin" type="password" inputmode="numeric" maxlength="8" placeholder="4 إلى 8 أرقام"></label><label>القفل التلقائي بعد<select name="autoLockMinutes">${[1,5,10,15,30,60,120].map(x=>`<option value="${x}" ${x===v7SecurityStatus.autoLockMinutes?'selected':''}>${x} دقيقة</option>`).join('')}</select></label><button class="btn primary">حفظ إعدادات الحماية</button></form><div class="v7-security-notes">PIN لا يُحفظ كنص صريح؛ يتم حفظ Hash مع Salt محلي.</div></section>`,'الحماية','قفل النظام تلقائيًا عند عدم الاستخدام');document.querySelector<HTMLFormElement>('#securityForm')!.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget as HTMLFormElement);try{v7SecurityStatus=await invoke<SecurityStatus>('set_security_pin',{input:{currentPin:String(fd.get('currentPin')||''),newPin:String(fd.get('newPin')||''),autoLockMinutes:Number(fd.get('autoLockMinutes')||10)}});v7LastActivityAt=Date.now();toast('تم حفظ إعدادات الحماية');await renderSecurity()}catch(err){toast(`تعذر الحفظ: ${String(err)}`,'error')}}}
 function showV7LockScreen(){app.innerHTML=`<div class="v7-lock-screen"><div class="v7-lock-card"><div class="v7-lock-icon">🔐</div><h1>النظام مقفول</h1><p>أدخل PIN الحماية للمتابعة</p><form id="v7UnlockForm"><input id="v7UnlockPin" type="password" inputmode="numeric" maxlength="8" autofocus placeholder="PIN"><button class="btn primary">فتح النظام</button></form><div id="v7LockError"></div></div></div>`;document.querySelector<HTMLFormElement>('#v7UnlockForm')!.onsubmit=async e=>{e.preventDefault();const pin=document.querySelector<HTMLInputElement>('#v7UnlockPin')!.value.trim();try{const ok=await invoke<boolean>('verify_security_pin',{input:{pin}});if(!ok){document.querySelector<HTMLDivElement>('#v7LockError')!.textContent='PIN غير صحيح';return}v7LastActivityAt=Date.now();await renderScreen()}catch(err){document.querySelector<HTMLDivElement>('#v7LockError')!.textContent=String(err)}}}
-async function startV7App(){v7SecurityStatus=await invoke<SecurityStatus>('security_status');const activity=()=>{v7LastActivityAt=Date.now()};['pointerdown','keydown','touchstart'].forEach(name=>window.addEventListener(name,activity,{passive:true}));window.clearInterval(v7SecurityTimer);v7SecurityTimer=window.setInterval(()=>{if(!v7SecurityStatus.pinSet)return;const idle=Date.now()-v7LastActivityAt;if(idle>=v7SecurityStatus.autoLockMinutes*60000&&!document.querySelector('.v7-lock-screen'))showV7LockScreen()},15000);if(v7SecurityStatus.pinSet)showV7LockScreen();else await renderScreen()}
+async function startV7App(){await loadLabPriceOverrides();v7SecurityStatus=await invoke<SecurityStatus>('security_status');const activity=()=>{v7LastActivityAt=Date.now()};['pointerdown','keydown','touchstart'].forEach(name=>window.addEventListener(name,activity,{passive:true}));window.clearInterval(v7SecurityTimer);v7SecurityTimer=window.setInterval(()=>{if(!v7SecurityStatus.pinSet)return;const idle=Date.now()-v7LastActivityAt;if(idle>=v7SecurityStatus.autoLockMinutes*60000&&!document.querySelector('.v7-lock-screen'))showV7LockScreen()},15000);if(v7SecurityStatus.pinSet)showV7LockScreen();else await renderScreen()}
 
 async function renderScreen() {
   await Promise.all([loadDoctors(), loadSettings(), loadSidebarPatientsTotal()]);
@@ -3068,7 +3075,9 @@ async function renderNursingServices() {
   bindNursingOrderActions();
 }
 
-function renderLabPrices() {
+async function renderLabPrices() {
+  await loadLabPriceOverrides(true);
+
   const priceRowsHtml = (rows: LabTestItem[]) => {
     if (!rows.length) {
       return `<div class="lab-prices-empty">لا يوجد تحليل مطابق للبحث</div>`;
@@ -3080,8 +3089,17 @@ function renderLabPrices() {
           <strong class="ltr">${esc(item.name)}</strong>
           ${item.arabic ? `<small>${esc(item.arabic)}</small>` : ''}
         </div>
-        <div class="lab-price-value ${item.price ? '' : 'missing'}">
-          ${item.price ? `${esc(item.price)} ج.م` : 'غير محدد'}
+        <div class="lab-price-actions">
+          <div class="lab-price-value ${item.price ? '' : 'missing'}">
+            ${item.price ? `${esc(item.price)} ج.م` : 'غير محدد'}
+          </div>
+          <button
+            class="lab-main-edit-price-btn"
+            type="button"
+            data-edit-main-lab-price="${item.id}"
+            title="تعديل سعر التحليل"
+            aria-label="تعديل سعر التحليل"
+          >✎</button>
         </div>
       </div>
     `).join('');
@@ -3092,7 +3110,7 @@ function renderLabPrices() {
       <div class="card-head lab-prices-head">
         <div>
           <h2>أسعار التحاليل</h2>
-          <p>قائمة أسعار التحاليل فقط</p>
+          <p>يمكن تعديل أي سعر وحفظه على الجهاز تلقائيًا</p>
         </div>
 
         <div class="lab-prices-head-actions">
@@ -3118,23 +3136,98 @@ function renderLabPrices() {
 
       <div class="lab-price-table-head">
         <span>اسم التحليل</span>
-        <span>السعر</span>
+        <span>السعر / تعديل</span>
       </div>
 
       <div class="lab-price-list" id="mainLabPriceList">
         ${priceRowsHtml(LAB_TESTS)}
       </div>
     </section>
-  `, 'التحاليل', 'أسعار التحاليل');
+  `, 'التحاليل', 'أسعار التحاليل وتعديلها');
 
   const input = document.querySelector<HTMLInputElement>('#mainLabPriceSearch')!;
   const list = document.querySelector<HTMLDivElement>('#mainLabPriceList')!;
 
+  const openPriceEditor = (catalogId: number) => {
+    const item = LAB_TESTS.find(row => row.id === catalogId);
+    if (!item) return;
+
+    const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+    root.innerHTML = `
+      <div class="modal-backdrop" id="mainLabPriceEditBackdrop">
+        <section class="modal compact lab-main-price-edit-modal">
+          <div class="modal-head">
+            <div>
+              <h2>تعديل سعر التحليل</h2>
+              <p class="ltr">${esc(item.name)}</p>
+              ${item.arabic ? `<small>${esc(item.arabic)}</small>` : ''}
+            </div>
+            <button class="modal-close" id="closeMainLabPriceEdit">×</button>
+          </div>
+
+          <form id="mainLabPriceEditForm">
+            <label>السعر الجديد
+              <input
+                id="mainLabPriceEditInput"
+                class="ltr"
+                value="${esc(item.price)}"
+                maxlength="64"
+                autocomplete="off"
+                placeholder="اكتب السعر"
+              >
+            </label>
+            <div class="form-actions">
+              <button class="btn primary" type="submit">حفظ السعر</button>
+              <button class="btn ghost" type="button" id="cancelMainLabPriceEdit">إلغاء</button>
+            </div>
+          </form>
+        </section>
+      </div>`;
+
+    const close = () => root.innerHTML = '';
+    document.querySelector<HTMLButtonElement>('#closeMainLabPriceEdit')!.onclick = close;
+    document.querySelector<HTMLButtonElement>('#cancelMainLabPriceEdit')!.onclick = close;
+    document.querySelector<HTMLDivElement>('#mainLabPriceEditBackdrop')!.onclick = event => {
+      if (event.target === event.currentTarget) close();
+    };
+
+    const priceInput = document.querySelector<HTMLInputElement>('#mainLabPriceEditInput')!;
+    setTimeout(() => priceInput.select(), 0);
+
+    document.querySelector<HTMLFormElement>('#mainLabPriceEditForm')!.onsubmit = async event => {
+      event.preventDefault();
+      try {
+        const updated = await invoke<LabPriceOverrideRow>('update_lab_price_override', {
+          input: {
+            catalogId: item.id,
+            price: priceInput.value.trim()
+          }
+        });
+
+        item.price = updated.price;
+        labPriceOverridesLoaded = true;
+        close();
+        renderRows();
+        toast('تم تعديل سعر التحليل');
+      } catch (err) {
+        toast(`تعذر تعديل السعر: ${String(err)}`, 'error');
+      }
+    };
+  };
+
+  const bindPriceEditors = () => {
+    list.querySelectorAll<HTMLButtonElement>('[data-edit-main-lab-price]').forEach(button => {
+      button.onclick = () => openPriceEditor(Number(button.dataset.editMainLabPrice || 0));
+    });
+  };
+
   const renderRows = () => {
     list.innerHTML = priceRowsHtml(searchLabTests(input.value));
+    bindPriceEditors();
   };
 
   input.oninput = renderRows;
+  bindPriceEditors();
 
   document.querySelector<HTMLButtonElement>('#registerLabPatient')!.onclick = () => {
     openLabPatientRegistrationModal();
@@ -3313,7 +3406,7 @@ async function renderLab2Lab() {
         <span>سعر Lab 2 Lab</span>
         <strong class="ltr">${esc(selected.price)}</strong>
       </div>
-      <button class="lab2lab-edit-btn" id="editLab2LabPrice" title="تعديل السعر" aria-label="تعديل السعر">✎</button>
+      <button class="lab2lab-edit-btn" id="editLab2LabPrice" title="تعديل السعر" aria-label="تعديل السعر">✎ تعديل السعر</button>
     `;
 
     document.querySelector<HTMLButtonElement>('#editLab2LabPrice')!.onclick = () => {
@@ -3988,6 +4081,20 @@ function labSearchScore(item: LabTestItem, rawQuery: string) {
 
 function labPriceLabel(item: LabTestItem) {
   return item.price ? `${esc(item.price)} ج.م` : 'غير محدد';
+}
+
+async function loadLabPriceOverrides(force = false) {
+  if (labPriceOverridesLoaded && !force) return;
+
+  const rows = await invoke<LabPriceOverrideRow[]>('list_lab_price_overrides');
+  const byId = new Map(rows.map(row => [row.catalogId, row]));
+
+  for (const item of LAB_TESTS) {
+    const override = byId.get(item.id);
+    if (override) item.price = override.price;
+  }
+
+  labPriceOverridesLoaded = true;
 }
 
 function searchLabTests(rawQuery: string) {
