@@ -1,11 +1,21 @@
 use base64::{engine::general_purpose, Engine as _};
+use argon2::{
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
+use rand_core::OsRng;
 use chrono::{Duration, Local, NaiveDate, NaiveTime, Timelike};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{fs, path::PathBuf, process::Command};
+use std::{fs, io::Read, path::{Path, PathBuf}, process::Command};
 use tauri::{Manager, State};
 use uuid::Uuid;
+
+const CLINIC_APPLICATION_ID: i64 = 1129072974;
+const MAX_BACKUP_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const PIN_MAX_FAILURES: i64 = 5;
+const PIN_LOCK_SECONDS: i64 = 300;
 
 struct AppState {
     db_path: PathBuf,
@@ -532,6 +542,43 @@ fn get_backup_hour(conn: &Connection) -> Result<u32, String> {
     Ok(raw.parse::<u32>().unwrap_or(4).min(23))
 }
 
+fn meta_set(conn:&Connection,key:&str,value:&str)->Result<(),String>{
+    conn.execute("INSERT INTO app_meta(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![key,value]).map_err(|e|e.to_string())?;
+    Ok(())
+}
+fn argon2_hash_pin(pin:&str)->Result<String,String>{
+    let salt=SaltString::generate(&mut OsRng);
+    Argon2::default().hash_password(pin.as_bytes(),&salt).map(|x|x.to_string()).map_err(|e|format!("تعذر تأمين الرقم السري: {}",e))
+}
+fn argon2_verify_pin(pin:&str,saved:&str)->bool{
+    PasswordHash::new(saved).ok().map(|p|Argon2::default().verify_password(pin.as_bytes(),&p).is_ok()).unwrap_or(false)
+}
+fn legacy_pin_hash(domain:&[u8],pin:&str,salt:&str)->String{
+    let mut h=Sha256::new(); h.update(domain); h.update(salt.as_bytes()); h.update(b"|"); h.update(pin.as_bytes());
+    h.finalize().iter().map(|b|format!("{:02x}",b)).collect()
+}
+fn pin_rate_limit_check(conn:&Connection,scope:&str)->Result<(),String>{
+    let until=meta_value(conn,&format!("{}_lock_until",scope),"0")?.parse::<i64>().unwrap_or(0);
+    let now=Local::now().timestamp();
+    if until>now{return Err(format!("تم إيقاف محاولات الرقم السري مؤقتًا. حاول بعد {} ثانية",until-now))}
+    Ok(())
+}
+fn pin_rate_limit_record(conn:&Connection,scope:&str,success:bool)->Result<(),String>{
+    let ck=format!("{}_failed_count",scope); let lk=format!("{}_lock_until",scope);
+    if success{meta_set(conn,&ck,"0")?;meta_set(conn,&lk,"0")?;return Ok(())}
+    let count=meta_value(conn,&ck,"0")?.parse::<i64>().unwrap_or(0).saturating_add(1);
+    if count>=PIN_MAX_FAILURES{meta_set(conn,&ck,"0")?;meta_set(conn,&lk,&Local::now().timestamp().saturating_add(PIN_LOCK_SECONDS).to_string())?}else{meta_set(conn,&ck,&count.to_string())?}
+    Ok(())
+}
+fn verify_stored_pin(conn:&Connection,scope:&str,pin:&str,hash_key:&str,salt_key:&str,legacy_domain:&[u8])->Result<bool,String>{
+    let saved:Option<String>=conn.query_row("SELECT value FROM app_meta WHERE key=?1",params![hash_key],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    let saved=match saved{Some(v) if !v.is_empty()=>v,_=>return Ok(false)};
+    pin_rate_limit_check(conn,scope)?;
+    let ok=if saved.starts_with("$argon2"){argon2_verify_pin(pin,&saved)}else{let salt=meta_value(conn,salt_key,"")?;!salt.is_empty()&&legacy_pin_hash(legacy_domain,pin,&salt)==saved};
+    if ok&&!saved.starts_with("$argon2"){meta_set(conn,hash_key,&argon2_hash_pin(pin)?)?;meta_set(conn,salt_key,"")?}
+    pin_rate_limit_record(conn,scope,ok)?; Ok(ok)
+}
+
 fn validate_patient_fields(
     full_name: &str,
     phone: &str,
@@ -627,7 +674,7 @@ fn open_db(state: &AppState) -> Result<Connection, String> {
 
 fn init_db(path: &PathBuf) -> Result<(), String> {
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
-    conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; PRAGMA wal_autocheckpoint=1000;")
+    conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; PRAGMA wal_autocheckpoint=1000; PRAGMA application_id=1129072974;")
         .map_err(|e| e.to_string())?;
 
     conn.execute_batch(
@@ -2509,11 +2556,14 @@ fn checkpoint_and_copy(state: &AppState, target: &PathBuf) -> Result<(), String>
     Ok(())
 }
 
+fn prune_backup_prefix(dir:&Path,prefix:&str,keep:usize)->Result<(),String>{let mut items:Vec<(u64,PathBuf)>=Vec::new();for e in fs::read_dir(dir).map_err(|e|e.to_string())?{let e=e.map_err(|e|e.to_string())?;let p=e.path();let n=p.file_name().and_then(|x|x.to_str()).unwrap_or("");if !n.starts_with(prefix)||p.extension().and_then(|x|x.to_str())!=Some("db"){continue}let m=e.metadata().ok().and_then(|x|x.modified().ok()).and_then(|t|t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d|d.as_secs()).unwrap_or(0);items.push((m,p));}items.sort_by(|a,b|b.0.cmp(&a.0));for (_,p) in items.into_iter().skip(keep){let _=fs::remove_file(p);}Ok(())}
+
 fn create_safety_backup(state: &AppState, prefix: &str) -> Result<PathBuf, String> {
     fs::create_dir_all(&state.backup_dir).map_err(|e| e.to_string())?;
     let stamp = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
     let target = state.backup_dir.join(format!("{}-{}.db", prefix, stamp));
     checkpoint_and_copy(state, &target)?;
+    let _ = prune_backup_prefix(&state.backup_dir, "before-", 25);
     Ok(target)
 }
 
@@ -2535,18 +2585,9 @@ fn lab2lab_pin_hash(pin: &str, salt: &str) -> String {
     digest.iter().map(|b| format!("{:02x}", b)).collect::<String>()
 }
 
-fn verify_lab2lab_pin_value(conn: &Connection, pin: &str) -> Result<bool, String> {
+fn verify_lab2lab_pin_value(conn:&Connection,pin:&str)->Result<bool,String>{
     validate_lab2lab_pin(pin)?;
-    let salt: Option<String> = conn.query_row(
-        "SELECT value FROM app_meta WHERE key='lab2lab_pin_salt'", [], |row| row.get(0)
-    ).optional().map_err(|e| e.to_string())?;
-    let saved: Option<String> = conn.query_row(
-        "SELECT value FROM app_meta WHERE key='lab2lab_pin_hash'", [], |row| row.get(0)
-    ).optional().map_err(|e| e.to_string())?;
-    match (salt, saved) {
-        (Some(salt), Some(saved)) => Ok(lab2lab_pin_hash(pin.trim(), &salt) == saved),
-        _ => Ok(false),
-    }
+    verify_stored_pin(conn,"lab2lab_pin",pin.trim(),"lab2lab_pin_hash","lab2lab_pin_salt",b"clinic-cases-lab2lab-v1|")
 }
 
 fn list_lab_price_overrides_conn(conn: &Connection) -> Result<Vec<LabPriceOverrideRow>, String> {
@@ -2577,6 +2618,7 @@ fn set_lab_price_override_conn(
     if clean.len() > 64 || clean.chars().any(|c| c.is_control()) {
         return Err("السعر غير صالح".into());
     }
+    if !clean.is_empty() { parse_lab_money(clean, "السعر")?; }
 
     conn.execute(
         "INSERT INTO lab_price_overrides(catalog_id,price,updated_at)
@@ -2639,8 +2681,8 @@ fn setup_lab2lab_pin(state: State<AppState>, input: Lab2LabPinInput) -> Result<(
         "SELECT COUNT(*) FROM app_meta WHERE key='lab2lab_pin_hash' AND length(value)>0", [], |row| row.get(0)
     ).map_err(|e| e.to_string())?;
     if count > 0 { return Err("تم إنشاء رقم سري لهذا القسم بالفعل".into()); }
-    let salt = Uuid::new_v4().to_string();
-    let hash = lab2lab_pin_hash(input.pin.trim(), &salt);
+    let salt = String::new();
+    let hash = argon2_hash_pin(input.pin.trim())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     tx.execute("INSERT INTO app_meta(key,value) VALUES('lab2lab_pin_salt',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![salt]).map_err(|e| e.to_string())?;
     tx.execute("INSERT INTO app_meta(key,value) VALUES('lab2lab_pin_hash',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![hash]).map_err(|e| e.to_string())?;
@@ -2659,8 +2701,8 @@ fn change_lab2lab_pin(state: State<AppState>, input: Lab2LabChangePinInput) -> R
     validate_lab2lab_pin(&input.new_pin)?;
     let mut conn = open_db(&state)?;
     if !verify_lab2lab_pin_value(&conn, &input.current_pin)? { return Err("الرقم السري الحالي غير صحيح".into()); }
-    let salt = Uuid::new_v4().to_string();
-    let hash = lab2lab_pin_hash(input.new_pin.trim(), &salt);
+    let salt = String::new();
+    let hash = argon2_hash_pin(input.new_pin.trim())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     tx.execute("INSERT INTO app_meta(key,value) VALUES('lab2lab_pin_salt',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![salt]).map_err(|e| e.to_string())?;
     tx.execute("INSERT INTO app_meta(key,value) VALUES('lab2lab_pin_hash',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![hash]).map_err(|e| e.to_string())?;
@@ -2710,6 +2752,7 @@ fn update_lab2lab_price(state: State<AppState>, input: Lab2LabPriceUpdateInput) 
     if !verify_lab2lab_pin_value(&conn, &input.pin)? { return Err("الرقم السري غير صحيح".into()); }
     let price = input.price.trim();
     if price.is_empty() || price.len() > 64 || price.chars().any(|c| c.is_control()) { return Err("السعر غير صالح".into()); }
+    parse_lab_money(price, "السعر")?;
     let changed = conn.execute(
         "UPDATE lab2lab_prices SET price=?1,updated_at=datetime('now','localtime') WHERE id=?2",
         params![price, input.id],
@@ -2722,25 +2765,43 @@ fn update_lab2lab_price(state: State<AppState>, input: Lab2LabPriceUpdateInput) 
 }
 
 
-fn security_pin_hash(pin:&str,salt:&str)->String { let mut h=Sha256::new(); h.update(b"clinic-cases-security-v1|"); h.update(salt.as_bytes()); h.update(b"|"); h.update(pin.as_bytes()); h.finalize().iter().map(|b|format!("{:02x}",b)).collect() }
-fn validate_security_pin(pin:&str)->Result<(),String>{let p=pin.trim(); if p.len()<4||p.len()>8||!p.chars().all(|c|c.is_ascii_digit()){return Err("رقم الحماية يجب أن يكون من 4 إلى 8 أرقام".into())} Ok(())}
-fn verify_security_pin_value(conn:&Connection,pin:&str)->Result<bool,String>{validate_security_pin(pin)?; let s:Option<String>=conn.query_row("SELECT value FROM app_meta WHERE key='security_pin_salt'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?; let h:Option<String>=conn.query_row("SELECT value FROM app_meta WHERE key='security_pin_hash'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?; match(s,h){(Some(s),Some(h))=>Ok(security_pin_hash(pin.trim(),&s)==h),_=>Ok(false)}}
+fn security_pin_hash(pin:&str,salt:&str)->String{legacy_pin_hash(b"clinic-cases-security-v1|",pin,salt)}
+fn validate_security_pin(pin:&str)->Result<(),String>{let p=pin.trim();if p.len()<4||p.len()>8||!p.chars().all(|c|c.is_ascii_digit()){return Err("رقم الحماية يجب أن يكون من 4 إلى 8 أرقام".into())}Ok(())}
+fn verify_security_pin_value(conn:&Connection,pin:&str)->Result<bool,String>{validate_security_pin(pin)?;verify_stored_pin(conn,"security_pin",pin.trim(),"security_pin_hash","security_pin_salt",b"clinic-cases-security-v1|")}
 #[tauri::command]
-fn security_status(state:State<AppState>)->Result<SecurityStatus,String>{let c=open_db(&state)?; let n:i64=c.query_row("SELECT COUNT(*) FROM app_meta WHERE key='security_pin_hash' AND value<>''",[],|r|r.get(0)).map_err(|e|e.to_string())?; let m=meta_value(&c,"security_auto_lock_minutes","10")?.parse::<u32>().unwrap_or(10).clamp(1,120); Ok(SecurityStatus{pin_set:n>0,auto_lock_minutes:m})}
+fn security_status(state:State<AppState>)->Result<SecurityStatus,String>{let c=open_db(&state)?;let n:i64=c.query_row("SELECT COUNT(*) FROM app_meta WHERE key='security_pin_hash' AND value<>''",[],|r|r.get(0)).map_err(|e|e.to_string())?;let m=meta_value(&c,"security_auto_lock_minutes","10")?.parse::<u32>().unwrap_or(10).clamp(1,120);Ok(SecurityStatus{pin_set:n>0,auto_lock_minutes:m})}
 #[tauri::command]
-fn verify_security_pin(state:State<AppState>,input:VerifySecurityPinInput)->Result<bool,String>{let c=open_db(&state)?; verify_security_pin_value(&c,&input.pin)}
+fn verify_security_pin(state:State<AppState>,input:VerifySecurityPinInput)->Result<bool,String>{let c=open_db(&state)?;verify_security_pin_value(&c,&input.pin)}
 #[tauri::command]
-fn set_security_pin(state:State<AppState>,input:SecurityPinInput)->Result<SecurityStatus,String>{ if input.auto_lock_minutes<1||input.auto_lock_minutes>120{return Err("مدة القفل التلقائي يجب أن تكون من 1 إلى 120 دقيقة".into())} validate_security_pin(&input.new_pin)?; let mut c=open_db(&state)?; let n:i64=c.query_row("SELECT COUNT(*) FROM app_meta WHERE key='security_pin_hash' AND value<>''",[],|r|r.get(0)).map_err(|e|e.to_string())?; if n>0&&!verify_security_pin_value(&c,&input.current_pin)?{return Err("رقم الحماية الحالي غير صحيح".into())} let salt=Uuid::new_v4().to_string(); let hash=security_pin_hash(input.new_pin.trim(),&salt); let tx=c.transaction().map_err(|e|e.to_string())?; for (k,v) in [("security_pin_salt",salt),("security_pin_hash",hash),("security_auto_lock_minutes",input.auto_lock_minutes.to_string())]{tx.execute("INSERT INTO app_meta(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![k,v]).map_err(|e|e.to_string())?;} tx.execute("INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('تعديل','حماية','system','تم تحديث PIN والقفل التلقائي')",[]).map_err(|e|e.to_string())?; tx.commit().map_err(|e|e.to_string())?; drop(c); security_status(state)}
+fn set_security_pin(state:State<AppState>,input:SecurityPinInput)->Result<SecurityStatus,String>{
+    if input.auto_lock_minutes<1||input.auto_lock_minutes>120{return Err("مدة القفل التلقائي يجب أن تكون من 1 إلى 120 دقيقة".into())}
+    validate_security_pin(&input.new_pin)?;let mut c=open_db(&state)?;
+    let n:i64=c.query_row("SELECT COUNT(*) FROM app_meta WHERE key='security_pin_hash' AND value<>''",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+    if n>0&&!verify_security_pin_value(&c,&input.current_pin)?{return Err("رقم الحماية الحالي غير صحيح".into())}
+    let hash=argon2_hash_pin(input.new_pin.trim())?;let tx=c.transaction().map_err(|e|e.to_string())?;
+    for (k,v) in [("security_pin_salt",String::new()),("security_pin_hash",hash),("security_auto_lock_minutes",input.auto_lock_minutes.to_string()),("security_pin_failed_count","0".to_string()),("security_pin_lock_until","0".to_string())]{tx.execute("INSERT INTO app_meta(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![k,v]).map_err(|e|e.to_string())?;}
+    tx.execute("INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('تعديل','حماية','system','تم تحديث PIN والقفل التلقائي')",[]).map_err(|e|e.to_string())?;tx.commit().map_err(|e|e.to_string())?;drop(c);security_status(state)
+}
+
+fn attachment_signature_ok(path:&Path,ext:&str)->Result<bool,String>{let mut f=fs::File::open(path).map_err(|e|e.to_string())?;let mut h=[0u8;8];let n=f.read(&mut h).map_err(|e|e.to_string())?;Ok(match ext{"pdf"=>n>=5&&&h[..5]==b"%PDF-","png"=>n>=8&&h==[0x89,b'P',b'N',b'G',0x0D,0x0A,0x1A,0x0A],"jpg"|"jpeg"=>n>=3&&h[0]==0xFF&&h[1]==0xD8&&h[2]==0xFF,_=>false})}
+fn attachment_patient_storage_key(v:&str)->String{let mut h=Sha256::new();h.update(v.as_bytes());h.finalize().iter().take(16).map(|b|format!("{:02x}",b)).collect()}
+fn stored_attachment_path_is_safe(state:&AppState,candidate:&Path)->Result<bool,String>{let root=fs::canonicalize(&state.attachments_dir).map_err(|e|e.to_string())?;let path=fs::canonicalize(candidate).map_err(|e|e.to_string())?;Ok(path.starts_with(root))}
 
 fn map_patient_attachment(row:&rusqlite::Row<'_>)->rusqlite::Result<PatientAttachment>{Ok(PatientAttachment{id:row.get(0)?,patient_id:row.get(1)?,original_name:row.get(2)?,file_type:row.get(3)?,note:row.get(4)?,stored_path:row.get(5)?,created_at:row.get(6)?})}
 #[tauri::command]
-fn add_patient_attachment(state:State<AppState>,input:AddPatientAttachmentInput)->Result<PatientAttachment,String>{let c=open_db(&state)?; let n:i64=c.query_row("SELECT COUNT(*) FROM patients WHERE id=?1",params![input.patient_id],|r|r.get(0)).map_err(|e|e.to_string())?; if n==0{return Err("ملف المريض غير موجود".into())} let src=PathBuf::from(input.source_path.trim()); if !src.exists()||!src.is_file(){return Err("الملف المختار غير موجود".into())} let meta=fs::metadata(&src).map_err(|e|e.to_string())?; if meta.len()==0||meta.len()>30*1024*1024{return Err("حجم المرفق يجب ألا يتجاوز 30 ميجابايت".into())} let ext=src.extension().and_then(|x|x.to_str()).unwrap_or("").to_ascii_lowercase(); if !["pdf","png","jpg","jpeg"].contains(&ext.as_str()){return Err("المسموح PDF أو PNG أو JPG فقط".into())} let original=src.file_name().and_then(|x|x.to_str()).ok_or_else(||"اسم الملف غير صالح".to_string())?.to_string(); let dir=state.attachments_dir.join(&input.patient_id); fs::create_dir_all(&dir).map_err(|e|e.to_string())?; let id=Uuid::new_v4().to_string(); let target=dir.join(format!("{}.{}",id,ext)); fs::copy(&src,&target).map_err(|e|format!("تعذر حفظ المرفق: {}",e))?; let now=Local::now().format("%Y-%m-%d %H:%M:%S").to_string(); let typ=input.file_type.trim().chars().take(80).collect::<String>(); let note=input.note.trim().chars().take(500).collect::<String>(); c.execute("INSERT INTO patient_attachments(id,patient_id,original_name,file_type,note,stored_path,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![id,input.patient_id,original,typ,note,target.to_string_lossy().to_string(),now]).map_err(|e|e.to_string())?; Ok(PatientAttachment{id,patient_id:input.patient_id,original_name:original,file_type:typ,note,stored_path:target.to_string_lossy().to_string(),created_at:now})}
+fn add_patient_attachment(state:State<AppState>,input:AddPatientAttachmentInput)->Result<PatientAttachment,String>{
+    let c=open_db(&state)?;let n:i64=c.query_row("SELECT COUNT(*) FROM patients WHERE id=?1",params![input.patient_id],|r|r.get(0)).map_err(|e|e.to_string())?;if n==0{return Err("ملف المريض غير موجود".into())}
+    let src=PathBuf::from(input.source_path.trim());if !src.exists()||!src.is_file(){return Err("الملف المختار غير موجود".into())}let meta=fs::metadata(&src).map_err(|e|e.to_string())?;if meta.len()==0||meta.len()>30*1024*1024{return Err("حجم المرفق يجب ألا يتجاوز 30 ميجابايت".into())}
+    let ext=src.extension().and_then(|x|x.to_str()).unwrap_or("").to_ascii_lowercase();if !["pdf","png","jpg","jpeg"].contains(&ext.as_str()){return Err("المسموح PDF أو PNG أو JPG فقط".into())}if !attachment_signature_ok(&src,&ext)?{return Err("محتوى الملف لا يطابق امتداده أو الملف غير صالح".into())}
+    let original=src.file_name().and_then(|x|x.to_str()).ok_or_else(||"اسم الملف غير صالح".to_string())?.chars().take(240).collect::<String>();let dir=state.attachments_dir.join(attachment_patient_storage_key(&input.patient_id));fs::create_dir_all(&dir).map_err(|e|e.to_string())?;let id=Uuid::new_v4().to_string();let target=dir.join(format!("{}.{}",id,ext));fs::copy(&src,&target).map_err(|e|format!("تعذر حفظ المرفق: {}",e))?;if !stored_attachment_path_is_safe(&state,&target)?{let _=fs::remove_file(&target);return Err("تم إيقاف مسار مرفق غير آمن".into())}
+    let now=Local::now().format("%Y-%m-%d %H:%M:%S").to_string();let typ=input.file_type.trim().chars().take(80).collect::<String>();let note=input.note.trim().chars().take(500).collect::<String>();c.execute("INSERT INTO patient_attachments(id,patient_id,original_name,file_type,note,stored_path,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![id,input.patient_id,original,typ,note,target.to_string_lossy().to_string(),now]).map_err(|e|e.to_string())?;Ok(PatientAttachment{id,patient_id:input.patient_id,original_name:original,file_type:typ,note,stored_path:target.to_string_lossy().to_string(),created_at:now})
+}
 #[tauri::command]
-fn list_patient_attachments(state:State<AppState>,patient_id:String)->Result<Vec<PatientAttachment>,String>{let c=open_db(&state)?; let mut s=c.prepare("SELECT id,patient_id,original_name,file_type,note,stored_path,created_at FROM patient_attachments WHERE patient_id=?1 ORDER BY created_at DESC").map_err(|e|e.to_string())?; let rows=s.query_map(params![patient_id],map_patient_attachment).map_err(|e|e.to_string())?; rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())}
+fn list_patient_attachments(state:State<AppState>,patient_id:String)->Result<Vec<PatientAttachment>,String>{let c=open_db(&state)?;let mut s=c.prepare("SELECT id,patient_id,original_name,file_type,note,stored_path,created_at FROM patient_attachments WHERE patient_id=?1 ORDER BY created_at DESC").map_err(|e|e.to_string())?;let rows=s.query_map(params![patient_id],map_patient_attachment).map_err(|e|e.to_string())?;rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())}
 #[tauri::command]
-fn delete_patient_attachment(state:State<AppState>,id:String)->Result<(),String>{create_safety_backup(&state,"before-delete-attachment")?; let c=open_db(&state)?; let p:Option<String>=c.query_row("SELECT stored_path FROM patient_attachments WHERE id=?1",params![id.clone()],|r|r.get(0)).optional().map_err(|e|e.to_string())?; c.execute("DELETE FROM patient_attachments WHERE id=?1",params![id]).map_err(|e|e.to_string())?; if let Some(p)=p{let _=fs::remove_file(p);} Ok(())}
+fn delete_patient_attachment(state:State<AppState>,id:String)->Result<(),String>{create_safety_backup(&state,"before-delete-attachment")?;let c=open_db(&state)?;let p:Option<String>=c.query_row("SELECT stored_path FROM patient_attachments WHERE id=?1",params![id.clone()],|r|r.get(0)).optional().map_err(|e|e.to_string())?;if let Some(ref stored)=p{let candidate=PathBuf::from(stored);if candidate.exists()&&!stored_attachment_path_is_safe(&state,&candidate)?{return Err("تم منع حذف ملف خارج مجلد المرفقات".into())}}c.execute("DELETE FROM patient_attachments WHERE id=?1",params![id]).map_err(|e|e.to_string())?;if let Some(stored)=p{let candidate=PathBuf::from(stored);if candidate.exists(){let _=fs::remove_file(candidate);}}Ok(())}
 #[tauri::command]
-fn open_patient_attachment(state:State<AppState>,id:String)->Result<(),String>{let c=open_db(&state)?; let p:String=c.query_row("SELECT stored_path FROM patient_attachments WHERE id=?1",params![id],|r|r.get(0)).map_err(|_|"المرفق غير موجود".to_string())?; if !PathBuf::from(&p).exists(){return Err("ملف المرفق غير موجود على الجهاز".into())} Command::new("explorer.exe").arg(format!("/select,{}",p)).spawn().map_err(|e|e.to_string())?; Ok(())}
+fn open_patient_attachment(state:State<AppState>,id:String)->Result<(),String>{let c=open_db(&state)?;let p:String=c.query_row("SELECT stored_path FROM patient_attachments WHERE id=?1",params![id],|r|r.get(0)).map_err(|_|"المرفق غير موجود".to_string())?;let candidate=PathBuf::from(&p);if !candidate.exists(){return Err("ملف المرفق غير موجود على الجهاز".into())}if !stored_attachment_path_is_safe(&state,&candidate)?{return Err("تم منع فتح ملف خارج مجلد المرفقات".into())}Command::new("explorer.exe").arg(format!("/select,{}",p)).spawn().map_err(|e|e.to_string())?;Ok(())}
 
 fn validate_cashier_dates(from:&str,to:&str)->Result<(String,String),String>{let f=NaiveDate::parse_from_str(from.trim(),"%Y-%m-%d").map_err(|_|"تاريخ البداية غير صالح".to_string())?; let t=NaiveDate::parse_from_str(to.trim(),"%Y-%m-%d").map_err(|_|"تاريخ النهاية غير صالح".to_string())?; if t<f{return Err("تاريخ النهاية يجب ألا يسبق البداية".into())} Ok((f.format("%Y-%m-%d").to_string(),t.format("%Y-%m-%d").to_string()))}
 fn cashier_items_for_range(c:&Connection,from:&str,to:&str)->Result<Vec<CashierItem>,String>{
@@ -2805,7 +2866,8 @@ WHERE p.archived=0 AND r.order_date BETWEEN ?1 AND ?2
 #[tauri::command]
 fn list_cashier_items(state:State<AppState>,query:CashierQuery)->Result<Vec<CashierItem>,String>{let c=open_db(&state)?; cashier_items_for_range(&c,&query.from,&query.to)}
 #[tauri::command]
-fn record_cashier_payment(state:State<AppState>,input:CashierPaymentInput)->Result<(),String>{if !["clinic","lab","nursing","radiology"].contains(&input.service_type.as_str()){return Err("نوع الخدمة غير صالح".into())} let amount=parse_lab_money(&input.amount,"المبلغ")?; if amount<=0.0{return Err("المبلغ يجب أن يكون أكبر من صفر".into())} let method=input.payment_method.trim(); if method.is_empty(){return Err("طريقة الدفع مطلوبة".into())} let c=open_db(&state)?; let item=cashier_items_for_range(&c,"2000-01-01","2099-12-31")?.into_iter().find(|x|x.service_type==input.service_type&&x.service_id==input.service_id).ok_or_else(||"الخدمة غير موجودة".to_string())?; if item.patient_id!=input.patient_id{return Err("بيانات المريض غير متطابقة".into())} if amount>item.remaining+0.001{return Err("المبلغ أكبر من المتبقي".into())} c.execute("INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![Uuid::new_v4().to_string(),input.patient_id,input.service_type,input.service_id,format!("{:.2}",amount),method,input.notes.trim(),Local::now().format("%Y-%m-%d %H:%M:%S").to_string()]).map_err(|e|e.to_string())?; Ok(())}
+fn record_cashier_payment(state:State<AppState>,input:CashierPaymentInput)->Result<(),String>{if !["clinic","lab","nursing","radiology"].contains(&input.service_type.as_str()){return Err("نوع الخدمة غير صالح".into())}if input.patient_id.len()>128||input.service_id.len()>128{return Err("معرف الخدمة غير صالح".into())}let amount=parse_lab_money(&input.amount,"المبلغ")?;if amount<=0.0{return Err("المبلغ يجب أن يكون أكبر من صفر".into())}let method=input.payment_method.trim();if method.is_empty()||method.len()>80||method.chars().any(|c|c.is_control()){return Err("طريقة الدفع غير صالحة".into())}if input.notes.len()>500{return Err("ملاحظات الدفع أطول من المسموح".into())}let c=open_db(&state)?;let item=cashier_items_for_range(&c,"2000-01-01","2099-12-31")?.into_iter().find(|x|x.service_type==input.service_type&&x.service_id==input.service_id).ok_or_else(||"الخدمة غير موجودة".to_string())?;if item.patient_id!=input.patient_id{return Err("بيانات المريض غير متطابقة".into())}if amount>item.remaining+0.001{return Err("المبلغ أكبر من المتبقي".into())}c.execute("INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![Uuid::new_v4().to_string(),input.patient_id,input.service_type,input.service_id,format!("{:.2}",amount),method,input.notes.trim(),Local::now().format("%Y-%m-%d %H:%M:%S").to_string()]).map_err(|e|e.to_string())?;Ok(())}
+
 #[tauri::command]
 fn financial_report(state:State<AppState>,query:CashierQuery)->Result<FinancialSummary,String>{let c=open_db(&state)?; let items=cashier_items_for_range(&c,&query.from,&query.to)?; let defs=[("clinic","الكشف والاستشارات"),("lab","التحاليل"),("nursing","التمريض"),("radiology","الأشعة")]; let mut cats=Vec::new(); for (k,l) in defs{let s=items.iter().filter(|x|x.service_type==k).collect::<Vec<_>>(); cats.push(FinancialCategory{service_type:k.into(),label:l.into(),count:s.len() as i64,charges:s.iter().map(|x|x.charge).sum(),paid:s.iter().map(|x|x.paid).sum(),remaining:s.iter().map(|x|x.remaining).sum()});} Ok(FinancialSummary{total_charges:items.iter().map(|x|x.charge).sum(),total_paid:items.iter().map(|x|x.paid).sum(),total_remaining:items.iter().map(|x|x.remaining).sum(),categories:cats})}
 #[tauri::command]
@@ -2961,68 +3023,15 @@ fn list_backups(state: State<AppState>) -> Result<Vec<BackupItem>, String> {
     Ok(items)
 }
 
+fn backup_table_has_columns(conn:&Connection,table:&str,required:&[&str])->Result<bool,String>{let sql=match table{"patients"=>"PRAGMA table_info(patients)","visits"=>"PRAGMA table_info(visits)",_=>return Err("جدول فحص غير مسموح".into())};let mut s=conn.prepare(sql).map_err(|e|e.to_string())?;let cols=s.query_map([],|r|r.get::<_,String>(1)).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;Ok(required.iter().all(|x|cols.iter().any(|c|c==x)))}
+fn backup_schema_compatible(conn:&Connection)->Result<bool,String>{Ok(backup_table_has_columns(conn,"patients",&["id","full_name","phone","created_at","updated_at"])?&&backup_table_has_columns(conn,"visits",&["id","patient_id","visit_date","doctor","fee","created_at"])?)}
 #[tauri::command]
-fn restore_backup(state: State<AppState>, path: String) -> Result<(), String> {
-    let backup_root = fs::canonicalize(&state.backup_dir)
-        .map_err(|_| "تعذر الوصول إلى مجلد النسخ الاحتياطية".to_string())?;
-
-    let source =
-        fs::canonicalize(PathBuf::from(path)).map_err(|_| "ملف النسخة غير موجود".to_string())?;
-
-    if !source.starts_with(&backup_root) {
-        return Err("لأسباب الأمان يمكن استعادة النسخ الموجودة داخل مجلد النسخ الاحتياطية فقط".into());
-    }
-
-    if source
-        .extension()
-        .and_then(|x| x.to_str())
-        .map(|x| x.eq_ignore_ascii_case("db"))
-        != Some(true)
-    {
-        return Err("امتداد ملف النسخة غير صالح".into());
-    }
-
-    let test = Connection::open(&source).map_err(|_| "ملف النسخة غير صالح".to_string())?;
-
-    let quick_check: String = test
-        .query_row("PRAGMA quick_check", [], |row| row.get(0))
-        .map_err(|_| "تعذر فحص سلامة النسخة".to_string())?;
-
-    if !quick_check.eq_ignore_ascii_case("ok") {
-        return Err("النسخة الاحتياطية تالفة ولا يمكن استعادتها".into());
-    }
-
-    for required_table in ["patients", "visits"] {
-        let exists: Option<String> = test
-            .query_row(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name=?1",
-                params![required_table],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| e.to_string())?;
-
-        if exists.is_none() {
-            return Err("الملف ليس نسخة صالحة للنظام".into());
-        }
-    }
-
-    drop(test);
-
-    let safety = state.backup_dir.join(format!(
-        "before-restore-{}.db",
-        Local::now().format("%Y-%m-%d_%H-%M-%S")
-    ));
-    checkpoint_and_copy(&state, &safety)?;
-
-    let wal = PathBuf::from(format!("{}-wal", state.db_path.to_string_lossy()));
-    let shm = PathBuf::from(format!("{}-shm", state.db_path.to_string_lossy()));
-    let _ = fs::remove_file(&wal);
-    let _ = fs::remove_file(&shm);
-
-    fs::copy(&source, &state.db_path).map_err(|e| e.to_string())?;
-    init_db(&state.db_path)?;
-    Ok(())
+fn restore_backup(state:State<AppState>,path:String)->Result<(),String>{
+    let root=fs::canonicalize(&state.backup_dir).map_err(|_|"تعذر الوصول إلى مجلد النسخ الاحتياطية".to_string())?;let source=fs::canonicalize(PathBuf::from(path)).map_err(|_|"ملف النسخة غير موجود".to_string())?;if !source.starts_with(&root){return Err("لأسباب الأمان يمكن استعادة النسخ الموجودة داخل مجلد النسخ الاحتياطية فقط".into())}if source.extension().and_then(|x|x.to_str()).map(|x|x.eq_ignore_ascii_case("db"))!=Some(true){return Err("امتداد ملف النسخة غير صالح".into())}
+    let meta=fs::metadata(&source).map_err(|e|e.to_string())?;if meta.len()==0||meta.len()>MAX_BACKUP_BYTES{return Err("حجم ملف النسخة الاحتياطية غير صالح".into())}
+    let test=Connection::open(&source).map_err(|_|"ملف النسخة غير صالح".to_string())?;let app_id:i64=test.query_row("PRAGMA application_id",[],|r|r.get(0)).map_err(|_|"تعذر قراءة هوية النسخة".to_string())?;if app_id!=0&&app_id!=CLINIC_APPLICATION_ID{return Err("الملف لا ينتمي إلى نظام عيادات العقاد".into())}let integrity:String=test.query_row("PRAGMA integrity_check",[],|r|r.get(0)).map_err(|_|"تعذر فحص سلامة النسخة".to_string())?;if !integrity.eq_ignore_ascii_case("ok"){return Err("النسخة الاحتياطية تالفة ولا يمكن استعادتها".into())}if !backup_schema_compatible(&test)?{return Err("بنية النسخة الاحتياطية غير متوافقة مع النظام".into())}
+    let mut fk=test.prepare("PRAGMA foreign_key_check").map_err(|e|e.to_string())?;let mut rows=fk.query_map([],|_|Ok(())).map_err(|e|e.to_string())?;if rows.next().is_some(){return Err("النسخة الاحتياطية تحتوي على روابط بيانات غير سليمة".into())}drop(rows);drop(fk);drop(test);
+    let safety=state.backup_dir.join(format!("before-restore-{}.db",Local::now().format("%Y-%m-%d_%H-%M-%S")));checkpoint_and_copy(&state,&safety)?;let _=prune_backup_prefix(&state.backup_dir,"before-",25);let wal=PathBuf::from(format!("{}-wal",state.db_path.to_string_lossy()));let shm=PathBuf::from(format!("{}-shm",state.db_path.to_string_lossy()));let _=fs::remove_file(&wal);let _=fs::remove_file(&shm);fs::copy(&source,&state.db_path).map_err(|e|e.to_string())?;init_db(&state.db_path)?;let verify=Connection::open(&state.db_path).map_err(|e|e.to_string())?;let check:String=verify.query_row("PRAGMA quick_check",[],|r|r.get(0)).map_err(|e|e.to_string())?;if !check.eq_ignore_ascii_case("ok"){return Err("فشل فحص قاعدة البيانات بعد الاستعادة".into())}Ok(())
 }
 
 #[tauri::command]
@@ -3173,6 +3182,7 @@ fn automatic_backup_due(state: &AppState) -> Result<bool, String> {
     if daily.exists() { return Ok(false); }
 
     checkpoint_and_copy(state, &daily)?;
+    let _ = prune_backup_prefix(&state.backup_dir, "clinic-cases-auto-", 30);
     Ok(true)
 }
 
@@ -3429,6 +3439,12 @@ mod production_tests {
         drop(conn);
         cleanup(&path);
     }
+
+    #[test]
+    fn security_hardening_argon2_rate_limit_and_app_identity(){let path=test_db_path("security-hardening");init_db(&path).expect("init failed");let c=Connection::open(&path).expect("open failed");let app_id:i64=c.query_row("PRAGMA application_id",[],|r|r.get(0)).expect("app id");assert_eq!(app_id,CLINIC_APPLICATION_ID);let h=argon2_hash_pin("1234").expect("argon2");assert!(h.starts_with("$argon2"));assert!(argon2_verify_pin("1234",&h));assert!(!argon2_verify_pin("9999",&h));for _ in 0..PIN_MAX_FAILURES{pin_rate_limit_record(&c,"test_scope",false).expect("rate")};assert!(pin_rate_limit_check(&c,"test_scope").is_err());drop(c);cleanup(&path);}
+
+    #[test]
+    fn attachment_signature_checks_real_content(){let d=std::env::temp_dir().join(format!("clinic-attachment-{}",Uuid::new_v4()));fs::create_dir_all(&d).expect("mkdir");let ok=d.join("ok.pdf");fs::write(&ok,b"%PDF-1.7\nsecure").expect("write");assert!(attachment_signature_ok(&ok,"pdf").expect("sig"));let fake=d.join("fake.pdf");fs::write(&fake,b"not-pdf").expect("write");assert!(!attachment_signature_ok(&fake,"pdf").expect("sig"));let _=fs::remove_dir_all(&d);}
 
     #[test]
     fn patient_validation_rejects_empty_identity() {
