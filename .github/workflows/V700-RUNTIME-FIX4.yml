@@ -1,0 +1,161 @@
+name: Clinic Cases V7.0 Runtime SQL FIX4
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply FIX4 cashier SQL aliases and runtime tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path("src-tauri/src/lib.rs")
+          s = p.read_text(encoding="utf-8")
+
+          old = "SELECT 'clinic',v.id,p.id,p.full_name,p.phone,COALESCE(v.visit_type,'كشف / استشارة')||CASE WHEN COALESCE(v.doctor,'')<>'' THEN ' - '||v.doctor ELSE '' END,v.visit_date,CAST(COALESCE(NULLIF(v.fee,''),'0') AS REAL),COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='clinic' AND cp.service_id=v.id),0) FROM visits v JOIN patients p ON p.id=v.patient_id WHERE p.archived=0 AND v.visit_date BETWEEN ?1 AND ?2"
+          new = """SELECT
+  'clinic' AS service_type,
+  v.id AS service_id,
+  p.id AS patient_id,
+  p.full_name AS patient_name,
+  p.phone AS patient_phone,
+  COALESCE(v.visit_type,'كشف / استشارة')||CASE WHEN COALESCE(v.doctor,'')<>'' THEN ' - '||v.doctor ELSE '' END AS service_label,
+  v.visit_date AS service_date,
+  CAST(COALESCE(NULLIF(v.fee,''),'0') AS REAL) AS charge,
+  COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='clinic' AND cp.service_id=v.id),0) AS paid
+FROM visits v JOIN patients p ON p.id=v.patient_id WHERE p.archived=0 AND v.visit_date BETWEEN ?1 AND ?2"""
+
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif "'clinic' AS service_type" not in s:
+              raise RuntimeError("Cashier SQL marker not found; source changed unexpectedly")
+
+          old_tables = 'for table in ["patients", "visits", "doctors", "patient_labs", "lab_orders", "lab_order_items", "nursing_orders", "radiology_orders", "app_meta", "lab2lab_prices"] {'
+          new_tables = 'for table in ["patients", "visits", "doctors", "patient_labs", "lab_orders", "lab_order_items", "nursing_orders", "radiology_orders", "app_meta", "lab2lab_prices", "patient_attachments", "cashier_payments", "audit_log"] {'
+          if old_tables in s:
+              s = s.replace(old_tables, new_tables, 1)
+
+          smoke_marker = 'let conn = Connection::open(&path).expect("open failed");'
+          smoke = '''let conn = Connection::open(&path).expect("open failed");
+
+        // V7 runtime smoke test: this query powers Cashier, Finance and Alerts.
+        let cashier_rows = cashier_items_for_range(&conn, "2026-01-01", "2026-12-31")
+            .expect("cashier runtime query failed");
+        assert!(cashier_rows.is_empty(), "fresh database cashier should be empty");
+
+        let security_default: String = conn
+            .query_row(
+                "SELECT value FROM app_meta WHERE key='security_auto_lock_minutes'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("security default missing");
+        assert_eq!(security_default, "10");'''
+          if "cashier runtime query failed" not in s:
+              if smoke_marker not in s:
+                  raise RuntimeError("Production test insertion marker not found")
+              s = s.replace(smoke_marker, smoke, 1)
+
+          p.write_text(s, encoding="utf-8")
+          print("FIX4 applied: cashier SQL columns aliased + V7 runtime smoke coverage added.")
+          PY
+
+      - name: Verify FIX4 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          s = Path("src-tauri/src/lib.rs").read_text(encoding="utf-8")
+          for term in [
+              "'clinic' AS service_type",
+              "v.id AS service_id",
+              "p.id AS patient_id",
+              "p.full_name AS patient_name",
+              "p.phone AS patient_phone",
+              "AS service_label",
+              "AS service_date",
+              "AS charge",
+              "AS paid",
+              "cashier runtime query failed",
+              '"patient_attachments", "cashier_payments", "audit_log"',
+          ]:
+              assert term in s, term
+          print("FIX4 source gates passed")
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests including V7 runtime smoke
+        shell: bash
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify self-contained installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          Write-Host "Installer: $($installer.FullName)"
+          Write-Host "Size: $($installer.Length) bytes"
+          if ($installer.Length -lt 80000000) { throw "Offline installer missing or setup too small" }
+
+      - name: Upload FIX4 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.0-Runtime-FIX4
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated FIX4 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add src-tauri/src/lib.rs
+
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V7.0 FIX4: fix cashier runtime SQL aliases and add smoke tests"
+          fi
+
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
