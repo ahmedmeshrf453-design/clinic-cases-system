@@ -3723,3 +3723,234 @@ table td{font-size:13px !important}
 .v7-lock-screen{position:fixed;inset:0;z-index:99999;background:linear-gradient(145deg,#07192f,#113b65);display:grid;place-items:center;padding:20px}.v7-lock-card{width:min(420px,94vw);background:#fff;border-radius:20px;padding:28px;text-align:center;box-shadow:0 30px 80px #0005}.v7-lock-icon{font-size:48px}.v7-lock-card h1{margin:8px 0}.v7-lock-card p{color:#6d7d90}.v7-lock-card form{display:grid;gap:10px}.v7-lock-card input{min-height:48px;text-align:center;font-size:22px;letter-spacing:5px}.v7-lock-card #v7LockError{color:#a52424;margin-top:10px;font-weight:800}
 @media(max-width:1250px){.patient-feature-grid-compact{grid-template-columns:repeat(2,minmax(200px,1fr))!important}.v7-finance-grid{grid-template-columns:repeat(2,1fr)}.v7-security-form{grid-template-columns:1fr}}
 
+
+
+/* ===== V7.0 UI CLEAN FIX5 — organized patient file ===== */
+.patient-full-file-modal{
+  width:min(1120px,94vw)!important;
+  max-height:92vh!important;
+  padding:15px 17px 16px!important;
+}
+.patient-full-file-modal .patient-file-clinic-banner{
+  margin-bottom:8px;
+}
+.patient-file-overview-clean{
+  margin:0 0 10px;
+  border:1px solid #e1e8ee;
+  border-radius:12px;
+  background:#f9fbfc;
+  overflow:hidden;
+}
+.patient-overview-info-clean{
+  display:grid;
+  grid-template-columns:78px 92px minmax(240px,1.6fr) 150px 150px 92px;
+  align-items:stretch;
+}
+.patient-overview-info-clean>div{
+  min-height:52px;
+  padding:8px 10px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  border-left:1px solid #e5ebf0;
+  min-width:0;
+}
+.patient-overview-info-clean>div:last-child{
+  border-left:0;
+}
+.patient-overview-info-clean span{
+  font-size:8.5px;
+  color:#8795a5;
+  margin-bottom:3px;
+}
+.patient-overview-info-clean strong{
+  font-size:11px;
+  color:#173650;
+  line-height:1.3;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.patient-overview-info-clean .activity{
+  text-align:center;
+  background:#f1f7f8;
+}
+.patient-overview-info-clean .activity strong{
+  font-size:18px;
+  color:#0a6471;
+}
+
+.patient-clean-section-head{
+  display:flex;
+  align-items:baseline;
+  gap:8px;
+  margin:2px 2px 6px;
+}
+.patient-clean-section-head h3{
+  margin:0;
+  color:#173650;
+  font-size:14px;
+}
+.patient-clean-section-head small{
+  color:#8a97a6;
+  font-size:8.5px;
+}
+
+.patient-service-grid-clean{
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:8px;
+  margin-bottom:9px;
+}
+.patient-service-clean{
+  min-width:0;
+  height:58px;
+  border:1px solid #dfe7ed;
+  border-radius:11px;
+  background:#fff;
+  padding:7px 9px;
+  display:grid;
+  grid-template-columns:38px minmax(0,1fr) auto;
+  align-items:center;
+  gap:8px;
+  text-align:right;
+  color:#173650;
+  cursor:pointer;
+  box-shadow:0 2px 8px rgba(21,55,82,.035);
+}
+.patient-service-clean:hover{
+  border-color:#b9cbd7;
+  background:#fbfdfe;
+}
+.patient-service-clean-icon{
+  width:36px;
+  height:36px;
+  display:grid;
+  place-items:center;
+  border-radius:10px;
+  background:#eef5f8;
+  font-size:18px;
+}
+.patient-service-clean.visit .patient-service-clean-icon{background:#eaf5fb}
+.patient-service-clean.labs .patient-service-clean-icon{background:#e8f6f4}
+.patient-service-clean.nursing .patient-service-clean-icon{background:#eaf6f1}
+.patient-service-clean.radiology .patient-service-clean-icon{background:#f2eafb}
+.patient-service-clean.attachments .patient-service-clean-icon{background:#edf1fb}
+.patient-service-clean-copy{
+  min-width:0;
+}
+.patient-service-clean-copy strong{
+  display:block;
+  font-size:11.5px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.patient-service-clean-count{
+  min-width:25px;
+  height:25px;
+  padding:0 6px;
+  display:grid;
+  place-items:center;
+  border-radius:999px;
+  background:#f1f5f8;
+  color:#49657a;
+  font-size:9px;
+  font-weight:800;
+}
+
+.patient-file-primary-actions-clean{
+  position:relative;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  margin:0 0 10px;
+  padding:7px 8px;
+  border:1px solid #e5ebf0;
+  border-radius:10px;
+  background:#f8fafb;
+}
+.patient-file-primary-actions-clean>.btn{
+  min-height:32px;
+  padding:5px 10px;
+  font-size:9.5px;
+}
+.patient-file-more-actions-clean{
+  margin-inline-start:auto;
+  position:relative;
+}
+.patient-file-more-actions-clean>summary{
+  list-style:none;
+  min-height:32px;
+  padding:7px 11px;
+  border:1px solid #dbe4eb;
+  border-radius:8px;
+  background:#fff;
+  color:#405a70;
+  font-size:9.5px;
+  font-weight:800;
+  cursor:pointer;
+  user-select:none;
+}
+.patient-file-more-actions-clean>summary::-webkit-details-marker{
+  display:none;
+}
+.patient-file-more-menu-clean{
+  position:absolute;
+  top:38px;
+  left:0;
+  z-index:30;
+  width:190px;
+  padding:7px;
+  display:grid;
+  gap:6px;
+  border:1px solid #dbe4eb;
+  border-radius:11px;
+  background:#fff;
+  box-shadow:0 14px 35px rgba(15,42,64,.16);
+}
+.patient-file-more-menu-clean .btn{
+  width:100%;
+  justify-content:center;
+  min-height:32px;
+  font-size:9px;
+}
+
+.patient-full-record-head{
+  margin:4px 0 6px!important;
+  padding-top:2px!important;
+  border-top:1px solid #edf1f4;
+}
+.patient-full-record-wrap{
+  max-height:390px!important;
+}
+.patient-file-event{
+  padding:8px 10px!important;
+}
+
+@media(max-width:1050px){
+  .patient-overview-info-clean{
+    grid-template-columns:repeat(3,1fr);
+  }
+  .patient-overview-info-clean>div{
+    border-bottom:1px solid #e5ebf0;
+  }
+  .patient-service-grid-clean{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+}
+@media(max-width:720px){
+  .patient-overview-info-clean{
+    grid-template-columns:repeat(2,1fr);
+  }
+  .patient-service-grid-clean{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .patient-file-primary-actions-clean{
+    flex-wrap:wrap;
+  }
+  .patient-file-more-actions-clean{
+    margin-inline-start:0;
+  }
+}
+

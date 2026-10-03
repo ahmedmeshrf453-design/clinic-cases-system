@@ -4547,79 +4547,74 @@ async function openPatient(id: string) {
 
         ${patientFileClinicHeaderHtml(p)}
 
-        <div class="patient-file-meta-strip">
-          <div><span>تاريخ إنشاء الملف</span><strong>${esc(displaySavedDateTime(p.createdAt))}</strong></div>
-          <div><span>آخر تحديث</span><strong>${esc(displaySavedDateTime(p.updatedAt))}</strong></div>
-          <div><span>إجمالي الأنشطة</span><strong>${totalActivities}</strong></div>
+        <div class="patient-file-overview-clean">
+          <div class="patient-overview-info-clean">
+            <div><span>السن</span><strong>${p.age ?? '—'}</strong></div>
+            <div><span>النوع</span><strong>${esc(p.gender || '—')}</strong></div>
+            <div class="wide"><span>عنوان المريض</span><strong>${esc(p.address || '—')}</strong></div>
+            <div><span>إنشاء الملف</span><strong>${esc(displaySavedDateTime(p.createdAt))}</strong></div>
+            <div><span>آخر تحديث</span><strong>${esc(displaySavedDateTime(p.updatedAt))}</strong></div>
+            <div class="activity"><span>إجمالي الأنشطة</span><strong>${totalActivities}</strong></div>
+          </div>
         </div>
 
-        <div class="patient-summary patient-summary-compact patient-file-summary">
-          <div><span>السن</span><strong>${p.age ?? '—'}</strong></div>
-          <div><span>النوع</span><strong>${esc(p.gender || '—')}</strong></div>
-          <div class="patient-summary-address"><span>عنوان المريض</span><strong>${esc(p.address || '—')}</strong></div>
-          <div><span>كشف / استشارة</span><strong>${details.visits.length}</strong></div>
-          <div><span>تحاليل</span><strong>${patientFile.labOrders.length}</strong></div>
-          <div><span>تمريض</span><strong>${patientFile.nursingOrders.length}</strong></div>
-          <div><span>أشعة</span><strong>${patientFile.radiologyOrders.length}</strong></div>
+        <div class="patient-clean-section-head">
+          <h3>الخدمات</h3>
+          <small>اختار الخدمة المطلوبة</small>
         </div>
 
-        <div class="patient-feature-grid patient-feature-grid-compact">
-          <button class="patient-feature-card visit" id="addVisitToPatient">
-            <span class="patient-feature-card-icon">🩺</span>
-            <span class="patient-feature-card-copy">
-              <strong>كشف / استشارة</strong>
-              <small>إضافة زيارة جديدة للملف</small>
-            </span>
-            <span class="patient-feature-card-arrow">‹</span>
+        <div class="patient-service-grid-clean">
+          <button class="patient-service-clean visit" id="addVisitToPatient">
+            <span class="patient-service-clean-icon">🩺</span>
+            <span class="patient-service-clean-copy"><strong>كشف / استشارة</strong></span>
+            <span class="patient-service-clean-count">${details.visits.length}</span>
           </button>
 
-          <button class="patient-feature-card labs" id="patientLabTests">
-            <span class="patient-feature-card-icon">🧪</span>
-            <span class="patient-feature-card-copy">
-              <strong>تحاليل</strong>
-              <small>إضافة أو فتح سجل التحاليل</small>
-            </span>
-            <span class="patient-feature-card-arrow">‹</span>
+          <button class="patient-service-clean labs" id="patientLabTests">
+            <span class="patient-service-clean-icon">🧪</span>
+            <span class="patient-service-clean-copy"><strong>تحاليل</strong></span>
+            <span class="patient-service-clean-count">${patientFile.labOrders.length}</span>
           </button>
 
-          <button class="patient-feature-card nursing" id="patientNursingServices">
-            <span class="patient-feature-card-icon">✚</span>
-            <span class="patient-feature-card-copy">
-              <strong>خدمات تمريض</strong>
-              <small>إضافة أو فتح سجل التمريض</small>
-            </span>
-            <span class="patient-feature-card-arrow">‹</span>
+          <button class="patient-service-clean nursing" id="patientNursingServices">
+            <span class="patient-service-clean-icon">✚</span>
+            <span class="patient-service-clean-copy"><strong>تمريض</strong></span>
+            <span class="patient-service-clean-count">${patientFile.nursingOrders.length}</span>
           </button>
 
-          <button class="patient-feature-card radiology" id="patientRadiologyServices">
-            <span class="patient-feature-card-icon">🩻</span>
-            <span class="patient-feature-card-copy">
-              <strong>الأشعة</strong>
-              <small>إضافة أو فتح سجل الأشعة</small>
-            </span>
-            <span class="patient-feature-card-arrow">‹</span>
+          <button class="patient-service-clean radiology" id="patientRadiologyServices">
+            <span class="patient-service-clean-icon">🩻</span>
+            <span class="patient-service-clean-copy"><strong>أشعة</strong></span>
+            <span class="patient-service-clean-count">${patientFile.radiologyOrders.length}</span>
           </button>
-          <button class="patient-feature-card attachments" id="patientAttachments">
-            <span class="patient-feature-card-icon">📎</span>
-            <span class="patient-feature-card-copy"><strong>المرفقات</strong><small>PDF وصور وتقارير داخل ملف المريض</small></span>
-            <span class="patient-feature-card-arrow">‹</span>
+
+          <button class="patient-service-clean attachments" id="patientAttachments">
+            <span class="patient-service-clean-icon">📎</span>
+            <span class="patient-service-clean-copy"><strong>المرفقات</strong></span>
+            <span class="patient-service-clean-count">فتح</span>
           </button>
         </div>
 
-        <div class="profile-actions patient-profile-actions patient-file-actions-bar">
+        <div class="patient-file-primary-actions-clean">
           <button class="btn ghost small" id="editPatientFromDetails">✎ تعديل البيانات</button>
           <button class="btn primary small" id="patientExportPdf">PDF الملف الكامل</button>
           <button class="btn ghost small" id="patientExportImage">صورة الملف</button>
-          <button class="btn ${p.blacklisted ? 'ghost' : 'danger-outline'} small" id="toggleBlacklist">
-            ${p.blacklisted ? 'إزالة Black List' : '⛔ Black List'}
-          </button>
-          ${p.archived
-            ? '<button class="btn ghost small archive-action" id="archivePatientFromDetails">↶ استعادة</button>'
-            : '<button class="btn ghost small archive-action" id="archivePatientFromDetails">▣ أرشفة</button>'
-          }
-          <button class="btn ghost small patient-nav-action" id="patientGoToday">◷ حالات اليوم</button>
-          <button class="btn ghost small patient-nav-action" id="patientGoReports">▤ التقارير</button>
-          <button class="btn danger-outline small" id="deletePatient">🗑 حذف المريض نهائيًا</button>
+
+          <details class="patient-file-more-actions-clean">
+            <summary>إدارة الملف ⋯</summary>
+            <div class="patient-file-more-menu-clean">
+              <button class="btn ${p.blacklisted ? 'ghost' : 'danger-outline'} small" id="toggleBlacklist">
+                ${p.blacklisted ? 'إزالة Black List' : '⛔ Black List'}
+              </button>
+              ${p.archived
+                ? '<button class="btn ghost small archive-action" id="archivePatientFromDetails">↶ استعادة</button>'
+                : '<button class="btn ghost small archive-action" id="archivePatientFromDetails">▣ أرشفة</button>'
+              }
+              <button class="btn ghost small patient-nav-action" id="patientGoToday">◷ حالات اليوم</button>
+              <button class="btn ghost small patient-nav-action" id="patientGoReports">▤ التقارير</button>
+              <button class="btn danger-outline small" id="deletePatient">🗑 حذف المريض نهائيًا</button>
+            </div>
+          </details>
         </div>
 
         <div class="patient-full-record-head">
