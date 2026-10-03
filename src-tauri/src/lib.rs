@@ -2659,7 +2659,17 @@ fn open_patient_attachment(state:State<AppState>,id:String)->Result<(),String>{l
 fn validate_cashier_dates(from:&str,to:&str)->Result<(String,String),String>{let f=NaiveDate::parse_from_str(from.trim(),"%Y-%m-%d").map_err(|_|"تاريخ البداية غير صالح".to_string())?; let t=NaiveDate::parse_from_str(to.trim(),"%Y-%m-%d").map_err(|_|"تاريخ النهاية غير صالح".to_string())?; if t<f{return Err("تاريخ النهاية يجب ألا يسبق البداية".into())} Ok((f.format("%Y-%m-%d").to_string(),t.format("%Y-%m-%d").to_string()))}
 fn cashier_items_for_range(c:&Connection,from:&str,to:&str)->Result<Vec<CashierItem>,String>{let (f,t)=validate_cashier_dates(from,to)?; let sql=r#"
 SELECT service_type,service_id,patient_id,patient_name,patient_phone,service_label,service_date,charge,paid FROM (
-SELECT 'clinic',v.id,p.id,p.full_name,p.phone,COALESCE(v.visit_type,'كشف / استشارة')||CASE WHEN COALESCE(v.doctor,'')<>'' THEN ' - '||v.doctor ELSE '' END,v.visit_date,CAST(COALESCE(NULLIF(v.fee,''),'0') AS REAL),COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='clinic' AND cp.service_id=v.id),0) FROM visits v JOIN patients p ON p.id=v.patient_id WHERE p.archived=0 AND v.visit_date BETWEEN ?1 AND ?2
+SELECT
+'clinic' AS service_type,
+v.id AS service_id,
+p.id AS patient_id,
+p.full_name AS patient_name,
+p.phone AS patient_phone,
+COALESCE(v.visit_type,'كشف / استشارة')||CASE WHEN COALESCE(v.doctor,'')<>'' THEN ' - '||v.doctor ELSE '' END AS service_label,
+v.visit_date AS service_date,
+CAST(COALESCE(NULLIF(v.fee,''),'0') AS REAL) AS charge,
+COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='clinic' AND cp.service_id=v.id),0) AS paid
+FROM visits v JOIN patients p ON p.id=v.patient_id WHERE p.archived=0 AND v.visit_date BETWEEN ?1 AND ?2
 UNION ALL SELECT 'lab',o.id,p.id,p.full_name,p.phone,'تحاليل',o.order_date,CAST(COALESCE(NULLIF(o.net_total,''),'0') AS REAL),CAST(COALESCE(NULLIF(o.paid_amount,''),'0') AS REAL)+COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='lab' AND cp.service_id=o.id),0) FROM lab_orders o JOIN patients p ON p.id=o.patient_id WHERE p.archived=0 AND o.order_date BETWEEN ?1 AND ?2
 UNION ALL SELECT 'nursing',n.id,p.id,p.full_name,p.phone,'تمريض - '||COALESCE(n.service_name,''),n.order_date,CAST(COALESCE(NULLIF(n.price,''),'0') AS REAL),COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='nursing' AND cp.service_id=n.id),0) FROM nursing_orders n JOIN patients p ON p.id=n.patient_id WHERE p.archived=0 AND n.order_date BETWEEN ?1 AND ?2
 UNION ALL SELECT 'radiology',r.id,p.id,p.full_name,p.phone,'أشعة - '||COALESCE(r.radiology_name,''),r.order_date,CAST(COALESCE(NULLIF(r.net_total,''),'0') AS REAL),COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='radiology' AND cp.service_id=r.id),0) FROM radiology_orders r JOIN patients p ON p.id=r.patient_id WHERE p.archived=0 AND r.order_date BETWEEN ?1 AND ?2
@@ -3187,7 +3197,21 @@ mod production_tests {
 
         let conn = Connection::open(&path).expect("open failed");
 
-        for table in ["patients", "visits", "doctors", "patient_labs", "lab_orders", "lab_order_items", "nursing_orders", "radiology_orders", "app_meta", "lab2lab_prices"] {
+        // V7 runtime smoke: Cashier / Finance / Alerts share this query.
+        let cashier_rows = cashier_items_for_range(&conn, "2026-01-01", "2026-12-31")
+            .expect("cashier runtime query failed");
+        assert!(cashier_rows.is_empty(), "fresh database cashier should be empty");
+
+        let security_default: String = conn
+            .query_row(
+                "SELECT value FROM app_meta WHERE key='security_auto_lock_minutes'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("security default missing");
+        assert_eq!(security_default, "10");
+
+        for table in ["patients", "visits", "doctors", "patient_labs", "lab_orders", "lab_order_items", "nursing_orders", "radiology_orders", "app_meta", "lab2lab_prices", "patient_attachments", "cashier_payments", "audit_log"] {
             let count: i64 = conn
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
