@@ -1,0 +1,88 @@
+name: Clinic Cases V7.0 Runtime SQL FIX4 Corrected
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply FIX4 corrected patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -c "import base64; exec(base64.b64decode('ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpwID0gUGF0aCgic3JjLXRhdXJpL3NyYy9saWIucnMiKQpzID0gcC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04IikKCm9sZCA9ICJTRUxFQ1QgJ2NsaW5pYycsdi5pZCxwLmlkLHAuZnVsbF9uYW1lLHAucGhvbmUsQ09BTEVTQ0Uodi52aXNpdF90eXBlLCfZg9i02YEgLyDYp9iz2KrYtNin2LHYqScpfHxDQVNFIFdIRU4gQ09BTEVTQ0Uodi5kb2N0b3IsJycpPD4nJyBUSEVOICcgLSAnfHx2LmRvY3RvciBFTFNFICcnIEVORCx2LnZpc2l0X2RhdGUsQ0FTVChDT0FMRVNDRShOVUxMSUYodi5mZWUsJycpLCcwJykgQVMgUkVBTCksQ09BTEVTQ0UoKFNFTEVDVCBTVU0oQ0FTVChjcC5hbW91bnQgQVMgUkVBTCkpIEZST00gY2FzaGllcl9wYXltZW50cyBjcCBXSEVSRSBjcC5zZXJ2aWNlX3R5cGU9J2NsaW5pYycgQU5EIGNwLnNlcnZpY2VfaWQ9di5pZCksMCkgRlJPTSB2aXNpdHMgdiBKT0lOIHBhdGllbnRzIHAgT04gcC5pZD12LnBhdGllbnRfaWQgV0hFUkUgcC5hcmNoaXZlZD0wIEFORCB2LnZpc2l0X2RhdGUgQkVUV0VFTiA/MSBBTkQgPzIiCgpuZXcgPSAoCiAgICAiU0VMRUNUXG4iCiAgICAiJ2NsaW5pYycgQVMgc2VydmljZV90eXBlLFxuIgogICAgInYuaWQgQVMgc2VydmljZV9pZCxcbiIKICAgICJwLmlkIEFTIHBhdGllbnRfaWQsXG4iCiAgICAicC5mdWxsX25hbWUgQVMgcGF0aWVudF9uYW1lLFxuIgogICAgInAucGhvbmUgQVMgcGF0aWVudF9waG9uZSxcbiIKICAgICJDT0FMRVNDRSh2LnZpc2l0X3R5cGUsJ9mD2LTZgSAvINin2LPYqti02KfYsdipJyl8fENBU0UgV0hFTiBDT0FMRVNDRSh2LmRvY3RvciwnJyk8PicnIFRIRU4gJyAtICd8fHYuZG9jdG9yIEVMU0UgJycgRU5EIEFTIHNlcnZpY2VfbGFiZWwsXG4iCiAgICAidi52aXNpdF9kYXRlIEFTIHNlcnZpY2VfZGF0ZSxcbiIKICAgICJDQVNUKENPQUxFU0NFKE5VTExJRih2LmZlZSwnJyksJzAnKSBBUyBSRUFMKSBBUyBjaGFyZ2UsXG4iCiAgICAiQ09BTEVTQ0UoKFNFTEVDVCBTVU0oQ0FTVChjcC5hbW91bnQgQVMgUkVBTCkpIEZST00gY2FzaGllcl9wYXltZW50cyBjcCBXSEVSRSBjcC5zZXJ2aWNlX3R5cGU9J2NsaW5pYycgQU5EIGNwLnNlcnZpY2VfaWQ9di5pZCksMCkgQVMgcGFpZFxuIgogICAgIkZST00gdmlzaXRzIHYgSk9JTiBwYXRpZW50cyBwIE9OIHAuaWQ9di5wYXRpZW50X2lkIFdIRVJFIHAuYXJjaGl2ZWQ9MCBBTkQgdi52aXNpdF9kYXRlIEJFVFdFRU4gPzEgQU5EID8yIgopCgppZiBvbGQgaW4gczoKICAgIHMgPSBzLnJlcGxhY2Uob2xkLCBuZXcsIDEpCmVsaWYgIidjbGluaWMnIEFTIHNlcnZpY2VfdHlwZSIgbm90IGluIHM6CiAgICByYWlzZSBSdW50aW1lRXJyb3IoIkNhc2hpZXIgU1FMIG1hcmtlciBub3QgZm91bmQiKQoKb2xkX3RhYmxlcyA9ICdmb3IgdGFibGUgaW4gWyJwYXRpZW50cyIsICJ2aXNpdHMiLCAiZG9jdG9ycyIsICJwYXRpZW50X2xhYnMiLCAibGFiX29yZGVycyIsICJsYWJfb3JkZXJfaXRlbXMiLCAibnVyc2luZ19vcmRlcnMiLCAicmFkaW9sb2d5X29yZGVycyIsICJhcHBfbWV0YSIsICJsYWIybGFiX3ByaWNlcyJdIHsnCm5ld190YWJsZXMgPSAnZm9yIHRhYmxlIGluIFsicGF0aWVudHMiLCAidmlzaXRzIiwgImRvY3RvcnMiLCAicGF0aWVudF9sYWJzIiwgImxhYl9vcmRlcnMiLCAibGFiX29yZGVyX2l0ZW1zIiwgIm51cnNpbmdfb3JkZXJzIiwgInJhZGlvbG9neV9vcmRlcnMiLCAiYXBwX21ldGEiLCAibGFiMmxhYl9wcmljZXMiLCAicGF0aWVudF9hdHRhY2htZW50cyIsICJjYXNoaWVyX3BheW1lbnRzIiwgImF1ZGl0X2xvZyJdIHsnCmlmIG9sZF90YWJsZXMgaW4gczoKICAgIHMgPSBzLnJlcGxhY2Uob2xkX3RhYmxlcywgbmV3X3RhYmxlcywgMSkKCnNtb2tlX21hcmtlciA9ICdsZXQgY29ubiA9IENvbm5lY3Rpb246Om9wZW4oJnBhdGgpLmV4cGVjdCgib3BlbiBmYWlsZWQiKTsnCnNtb2tlID0gKAogICAgJ2xldCBjb25uID0gQ29ubmVjdGlvbjo6b3BlbigmcGF0aCkuZXhwZWN0KCJvcGVuIGZhaWxlZCIpO1xuXG4nCiAgICAnICAgICAgICAvLyBWNyBydW50aW1lIHNtb2tlOiBDYXNoaWVyIC8gRmluYW5jZSAvIEFsZXJ0cyBzaGFyZSB0aGlzIHF1ZXJ5LlxuJwogICAgJyAgICAgICAgbGV0IGNhc2hpZXJfcm93cyA9IGNhc2hpZXJfaXRlbXNfZm9yX3JhbmdlKCZjb25uLCAiMjAyNi0wMS0wMSIsICIyMDI2LTEyLTMxIilcbicKICAgICcgICAgICAgICAgICAuZXhwZWN0KCJjYXNoaWVyIHJ1bnRpbWUgcXVlcnkgZmFpbGVkIik7XG4nCiAgICAnICAgICAgICBhc3NlcnQhKGNhc2hpZXJfcm93cy5pc19lbXB0eSgpLCAiZnJlc2ggZGF0YWJhc2UgY2FzaGllciBzaG91bGQgYmUgZW1wdHkiKTtcblxuJwogICAgJyAgICAgICAgbGV0IHNlY3VyaXR5X2RlZmF1bHQ6IFN0cmluZyA9IGNvbm5cbicKICAgICcgICAgICAgICAgICAucXVlcnlfcm93KFxuJwogICAgJyAgICAgICAgICAgICAgICAiU0VMRUNUIHZhbHVlIEZST00gYXBwX21ldGEgV0hFUkUga2V5PVwnc2VjdXJpdHlfYXV0b19sb2NrX21pbnV0ZXNcJyIsXG4nCiAgICAnICAgICAgICAgICAgICAgIFtdLFxuJwogICAgJyAgICAgICAgICAgICAgICB8cm93fCByb3cuZ2V0KDApLFxuJwogICAgJyAgICAgICAgICAgIClcbicKICAgICcgICAgICAgICAgICAuZXhwZWN0KCJzZWN1cml0eSBkZWZhdWx0IG1pc3NpbmciKTtcbicKICAgICcgICAgICAgIGFzc2VydF9lcSEoc2VjdXJpdHlfZGVmYXVsdCwgIjEwIik7JwopCgppZiAiY2FzaGllciBydW50aW1lIHF1ZXJ5IGZhaWxlZCIgbm90IGluIHM6CiAgICBpZiBzbW9rZV9tYXJrZXIgbm90IGluIHM6CiAgICAgICAgcmFpc2UgUnVudGltZUVycm9yKCJQcm9kdWN0aW9uIHRlc3QgaW5zZXJ0aW9uIG1hcmtlciBub3QgZm91bmQiKQogICAgcyA9IHMucmVwbGFjZShzbW9rZV9tYXJrZXIsIHNtb2tlLCAxKQoKcC53cml0ZV90ZXh0KHMsIGVuY29kaW5nPSJ1dGYtOCIpCnByaW50KCJGSVg0IFNRTC9ydW50aW1lIHBhdGNoIGFwcGxpZWQiKQo=').decode('utf-8'))"
+
+      - name: Verify FIX4 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -c "from pathlib import Path; s=Path('src-tauri/src/lib.rs').read_text(encoding='utf-8'); assert \"'clinic' AS service_type\" in s; assert 'v.id AS service_id' in s; assert 'p.id AS patient_id' in s; assert 'AS service_date' in s; assert 'AS charge' in s; assert 'AS paid' in s; assert 'cashier runtime query failed' in s; print('FIX4 source gates passed')"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests including V7 runtime smoke
+        shell: bash
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify self-contained installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          Write-Host "Installer: $($installer.FullName)"
+          Write-Host "Size: $($installer.Length) bytes"
+          if ($installer.Length -lt 80000000) { throw "Offline installer missing or setup too small" }
+
+      - name: Upload FIX4 installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.0-Runtime-FIX4
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated FIX4 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/src/lib.rs
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "V7.0 FIX4: fix cashier runtime SQL aliases"
+          fi
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
