@@ -183,6 +183,20 @@ struct ArchiveInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct QuickNoteInput {
+    id: String,
+    note: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContactLinkInput {
+    phone: String,
+    kind: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct DoctorQuery {
     active_only: bool,
 }
@@ -223,6 +237,8 @@ struct Patient {
     last_visit_time: String,
     complaint: String,
     visits_count: i64,
+    quick_note: String,
+    deleted_at: String,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -683,6 +699,7 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         id TEXT PRIMARY KEY, full_name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
         age INTEGER, gender TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '',
         archived INTEGER NOT NULL DEFAULT 0, blacklisted INTEGER NOT NULL DEFAULT 0,
+        quick_note TEXT NOT NULL DEFAULT '', deleted_at TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS visits(
@@ -826,6 +843,36 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
     if has_blacklisted == 0 {
         conn.execute(
             "ALTER TABLE patients ADD COLUMN blacklisted INTEGER NOT NULL DEFAULT 0",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    let has_quick_note: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('patients') WHERE name='quick_note'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if has_quick_note == 0 {
+        conn.execute(
+            "ALTER TABLE patients ADD COLUMN quick_note TEXT NOT NULL DEFAULT ''",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    let has_deleted_at: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('patients') WHERE name='deleted_at'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if has_deleted_at == 0 {
+        conn.execute(
+            "ALTER TABLE patients ADD COLUMN deleted_at TEXT NOT NULL DEFAULT ''",
             [],
         )
         .map_err(|e| e.to_string())?;
@@ -1081,6 +1128,7 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
       CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone);
       CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(full_name);
       CREATE INDEX IF NOT EXISTS idx_patients_archived ON patients(archived);
+      CREATE INDEX IF NOT EXISTS idx_patients_deleted_at ON patients(deleted_at);
       CREATE INDEX IF NOT EXISTS idx_visits_patient ON visits(patient_id);
       CREATE INDEX IF NOT EXISTS idx_visits_date ON visits(visit_date);
       CREATE INDEX IF NOT EXISTS idx_visits_doctor ON visits(doctor);
@@ -1100,7 +1148,9 @@ fn patient_select_sql() -> &'static str {
       COALESCE((SELECT v.visit_time FROM visits v WHERE v.patient_id=p.id ORDER BY v.visit_date DESC,v.visit_time DESC,v.created_at DESC LIMIT 1),''),
       COALESCE((SELECT v.complaint FROM visits v WHERE v.patient_id=p.id ORDER BY v.visit_date DESC,v.visit_time DESC,v.created_at DESC LIMIT 1),''),
       (SELECT COUNT(*) FROM visits v WHERE v.patient_id=p.id),
-      p.blacklisted
+      p.blacklisted,
+      COALESCE(p.quick_note,''),
+      COALESCE(p.deleted_at,'')
     FROM patients p
     "#
 }
@@ -1123,6 +1173,8 @@ fn map_patient(row: &rusqlite::Row<'_>) -> rusqlite::Result<Patient> {
         complaint: row.get(13)?,
         visits_count: row.get(14)?,
         blacklisted: row.get::<_, i64>(15)? != 0,
+        quick_note: row.get(16)?,
+        deleted_at: row.get(17)?,
     })
 }
 
@@ -1160,7 +1212,7 @@ fn save_case(state: State<AppState>, input: AddCaseInput) -> Result<String, Stri
         None
     } else {
         tx.query_row(
-            "SELECT id FROM patients WHERE phone=?1 AND archived=0 LIMIT 1",
+            "SELECT id FROM patients WHERE phone=?1 AND archived=0 AND COALESCE(deleted_at,'')='' LIMIT 1",
             params![phone],
             |row| row.get(0),
         )
@@ -1212,7 +1264,7 @@ fn register_patient(
     if !phone.is_empty() {
         let existing: Option<(String, i64)> = conn
             .query_row(
-                "SELECT id,archived FROM patients WHERE phone=?1 ORDER BY updated_at DESC LIMIT 1",
+                "SELECT id,archived FROM patients WHERE phone=?1 AND COALESCE(deleted_at,'')='' ORDER BY updated_at DESC LIMIT 1",
                 params![phone],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -2237,41 +2289,101 @@ fn list_patient_radiology_orders(
 }
 
 
-#[tauri::command]
-fn delete_patient(state: State<AppState>, id: String) -> Result<(), String> {
-    create_safety_backup(&state, "before-delete-patient")?;
-    let mut conn = open_db(&state)?;
+fn purge_patient_data(state: &AppState, id: &str) -> Result<(), String> {
+    let mut conn = open_db(state)?;
     let attachment_paths: Vec<String> = {
-        let mut stmt = conn.prepare("SELECT stored_path FROM patient_attachments WHERE patient_id=?1").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(params![id.clone()], |r| r.get::<_,String>(0)).map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?
+        let mut stmt = conn
+            .prepare("SELECT stored_path FROM patient_attachments WHERE patient_id=?1")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![id], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
     };
+
     let tx = conn.transaction().map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM cashier_payments WHERE patient_id=?1", params![id.clone()]).map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM patient_attachments WHERE patient_id=?1", params![id.clone()]).map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM radiology_orders WHERE patient_id=?1", params![id.clone()])
-        .map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM nursing_orders WHERE patient_id=?1", params![id.clone()])
-        .map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM cashier_payments WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM patient_attachments WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM radiology_orders WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM nursing_orders WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;
     tx.execute(
         "DELETE FROM lab_order_items WHERE order_id IN (SELECT id FROM lab_orders WHERE patient_id=?1)",
-        params![id.clone()],
-    )
-    .map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM lab_orders WHERE patient_id=?1", params![id.clone()])
-        .map_err(|e| e.to_string())?;
-    tx.execute(
-        "DELETE FROM patient_labs WHERE patient_id=?1",
-        params![id.clone()],
-    )
-    .map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM visits WHERE patient_id=?1", params![id.clone()])
-        .map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM patients WHERE id=?1", params![id])
-        .map_err(|e| e.to_string())?;
+        params![id],
+    ).map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM lab_orders WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM patient_labs WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM visits WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM patients WHERE id=?1", params![id]).map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
-    for path in attachment_paths { let _ = fs::remove_file(path); }
+
+    for stored in attachment_paths {
+        let candidate = PathBuf::from(stored);
+        if candidate.exists() && stored_attachment_path_is_safe(state, &candidate).unwrap_or(false) {
+            let _ = fs::remove_file(candidate);
+        }
+    }
     Ok(())
+}
+
+#[tauri::command]
+fn delete_patient(state: State<AppState>, id: String) -> Result<(), String> {
+    create_safety_backup(&state, "before-trash-patient")?;
+    let conn = open_db(&state)?;
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let changed = conn.execute(
+        "UPDATE patients SET deleted_at=?1,archived=1,updated_at=?1
+         WHERE id=?2 AND COALESCE(deleted_at,'')=''",
+        params![now, id],
+    ).map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("ملف المريض غير موجود أو موجود بالفعل في سلة المحذوفات".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn list_deleted_patients(state: State<AppState>) -> Result<Vec<Patient>, String> {
+    let conn = open_db(&state)?;
+    let sql = format!(
+        "{} WHERE COALESCE(p.deleted_at,'')<>'' ORDER BY p.deleted_at DESC LIMIT 5000",
+        patient_select_sql()
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], map_patient).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn restore_deleted_patient(state: State<AppState>, id: String) -> Result<(), String> {
+    let conn = open_db(&state)?;
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let changed = conn.execute(
+        "UPDATE patients SET deleted_at='',archived=0,updated_at=?1
+         WHERE id=?2 AND COALESCE(deleted_at,'')<>''",
+        params![now, id],
+    ).map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("الملف غير موجود في سلة المحذوفات".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn purge_deleted_patient(state: State<AppState>, id: String) -> Result<(), String> {
+    let conn = open_db(&state)?;
+    let deleted_at: Option<String> = conn.query_row(
+        "SELECT deleted_at FROM patients WHERE id=?1",
+        params![id.clone()],
+        |row| row.get(0),
+    ).optional().map_err(|e| e.to_string())?;
+    drop(conn);
+
+    if deleted_at.as_deref().unwrap_or("").is_empty() {
+        return Err("الحذف النهائي مسموح فقط من سلة المحذوفات".into());
+    }
+
+    create_safety_backup(&state, "before-purge-patient")?;
+    purge_patient_data(&state, &id)
 }
 
 #[tauri::command]
@@ -2280,7 +2392,7 @@ fn list_patients(state: State<AppState>, query: PatientQuery) -> Result<Vec<Pati
     let archived = if query.archived_only { 1 } else { 0 };
     let like = format!("%{}%", query.search.trim());
     let limit = query.limit.clamp(1, 5000);
-    let sql = format!("{} WHERE p.archived=?1 AND (?2='%%' OR p.full_name LIKE ?2 OR p.phone LIKE ?2) ORDER BY p.updated_at DESC LIMIT ?3", patient_select_sql());
+    let sql = format!("{} WHERE p.archived=?1 AND COALESCE(p.deleted_at,'')='' AND (?2='%%' OR p.full_name LIKE ?2 OR p.phone LIKE ?2) ORDER BY p.updated_at DESC LIMIT ?3", patient_select_sql());
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map(params![archived, like, limit], map_patient)
@@ -2308,6 +2420,27 @@ fn get_patient_details(state: State<AppState>, id: String) -> Result<PatientDeta
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     Ok(PatientDetails { patient, visits })
+}
+
+#[tauri::command]
+fn update_patient_quick_note(state: State<AppState>, input: QuickNoteInput) -> Result<String, String> {
+    let note = input.note.trim();
+    if note.len() > 500 || note.chars().any(|c| c == '\0') {
+        return Err("الملاحظة السريعة أطول من المسموح".into());
+    }
+
+    let conn = open_db(&state)?;
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let changed = conn.execute(
+        "UPDATE patients SET quick_note=?1,updated_at=?2
+         WHERE id=?3 AND COALESCE(deleted_at,'')=''",
+        params![note, now, input.id],
+    ).map_err(|e| e.to_string())?;
+
+    if changed == 0 {
+        return Err("ملف المريض غير موجود".into());
+    }
+    Ok(note.to_string())
 }
 
 #[tauri::command]
@@ -2882,6 +3015,39 @@ for (sql,kind) in [
 ("SELECT DISTINCT p.id,p.full_name,n.service_name FROM nursing_orders n JOIN patients p ON p.id=n.patient_id WHERE p.archived=0 AND n.service_name LIKE ?1 ORDER BY n.created_at DESC LIMIT ?2","تمريض"),
 ("SELECT DISTINCT p.id,p.full_name,r.radiology_name||' • '||r.center_name FROM radiology_orders r JOIN patients p ON p.id=r.patient_id WHERE p.archived=0 AND (r.radiology_name LIKE ?1 OR r.center_name LIKE ?1) ORDER BY r.created_at DESC LIMIT ?2","أشعة")]{let mut s=c.prepare(sql).map_err(|e|e.to_string())?; let rows=s.query_map(params![like,lim],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e|e.to_string())?; for row in rows{if out.len()>=lim as usize{break} let(id,n,d)=row.map_err(|e|e.to_string())?; if !out.iter().any(|x|x.patient_id==id&&x.kind==kind&&x.subtitle==d){out.push(UnifiedSearchResult{kind:kind.into(),patient_id:id,title:n,subtitle:d});}}}
 out.truncate(lim as usize); Ok(out)}
+fn normalized_phone_digits(raw: &str) -> Result<String, String> {
+    let digits = raw.chars().filter(|c| c.is_ascii_digit()).collect::<String>();
+    if digits.len() < 7 || digits.len() > 15 {
+        return Err("رقم التليفون غير صالح".into());
+    }
+    Ok(digits)
+}
+
+#[tauri::command]
+fn open_patient_contact(input: ContactLinkInput) -> Result<(), String> {
+    let digits = normalized_phone_digits(&input.phone)?;
+    let target = match input.kind.as_str() {
+        "call" => format!("tel:{}", digits),
+        "whatsapp" => {
+            let international = if digits.starts_with("00") {
+                digits.trim_start_matches("00").to_string()
+            } else if digits.starts_with('0') {
+                format!("20{}", &digits[1..])
+            } else {
+                digits.clone()
+            };
+            format!("https://wa.me/{}", international)
+        }
+        _ => return Err("نوع التواصل غير صالح".into()),
+    };
+
+    Command::new("explorer.exe")
+        .arg(target)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 fn list_system_alerts(state:State<AppState>)->Result<Vec<SystemAlert>,String>{let c=open_db(&state)?; let mut a=Vec::new(); for x in cashier_items_for_range(&c,"2000-01-01","2099-12-31")?{if x.remaining>0.009{a.push(SystemAlert{kind:"متبقي".into(),title:format!("{} — {}",x.patient_name,x.service_label),detail:format!("متبقي {:.2} ج.م من إجمالي {:.2} ج.م",x.remaining,x.charge),patient_id:x.patient_id,service_type:x.service_type,service_id:x.service_id});} if a.len()>=100{break}} let backups=fs::read_dir(&state.backup_dir).map(|it|it.filter_map(Result::ok).filter(|e|e.path().extension().and_then(|x|x.to_str())==Some("db")).count()).unwrap_or(0); if backups==0{a.insert(0,SystemAlert{kind:"حماية".into(),title:"لا توجد نسخة احتياطية".into(),detail:"أنشئ نسخة احتياطية من شاشة النسخ الاحتياطية.".into(),patient_id:"".into(),service_type:"".into(),service_id:"".into()});} Ok(a)}
 
@@ -3270,11 +3436,15 @@ pub fn run() {
             list_patient_radiology_orders,
             list_patients,
             get_patient_details,
+            update_patient_quick_note,
             update_patient,
             set_patient_archived,
             set_patient_blacklisted,
             set_visit_status,
             delete_patient,
+            list_deleted_patients,
+            restore_deleted_patient,
+            purge_deleted_patient,
             get_stats,
             list_doctors,
             save_doctor,
@@ -3302,6 +3472,7 @@ pub fn run() {
             list_audit_logs,
             unified_search,
             list_system_alerts,
+            open_patient_contact,
             get_settings,
             save_settings,
             health_check,
@@ -3435,6 +3606,20 @@ mod production_tests {
             )
             .expect("status query failed");
         assert_eq!(has_status, 1);
+
+        for column in ["quick_note", "deleted_at"] {
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('patients') WHERE name=?1",
+                params![column],
+                |row| row.get(0),
+            ).expect("patient column query failed");
+            assert_eq!(count, 1, "{} column missing", column);
+        }
+
+        assert_eq!(
+            normalized_phone_digits("010 1234 5678").expect("phone normalize failed"),
+            "01012345678"
+        );
 
         drop(conn);
         cleanup(&path);

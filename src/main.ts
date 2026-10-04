@@ -25,6 +25,8 @@ type Patient = {
   lastVisitTime: string;
   complaint: string;
   visitsCount: number;
+  quickNote: string;
+  deletedAt: string;
 };
 
 type Visit = {
@@ -160,6 +162,55 @@ async function loadPatientFile(patientId: string): Promise<PatientFileSnapshot> 
     radiologyOrders
   };
 }
+
+function latestPatientService(file: PatientFileSnapshot) {
+  const rows: Array<{key:string;label:string;when:string}> = [];
+
+  file.details.visits.forEach(v => rows.push({
+    key: `${v.visitDate || ''} ${v.visitTime || ''} ${v.createdAt || ''}`,
+    label: `${v.visitType || 'زيارة'}${v.doctor ? ` — ${v.doctor}` : ''}`,
+    when: `${displayDate(v.visitDate)}${v.visitTime ? ` • ${v.visitTime}` : ''}`
+  }));
+
+  file.labOrders.forEach(d => rows.push({
+    key: `${d.order.orderDate || ''} ${d.order.orderTime || ''} ${d.order.createdAt || ''}`,
+    label: `تحاليل — ${d.items.length} تحليل`,
+    when: `${displayDate(d.order.orderDate)}${d.order.orderTime ? ` • ${d.order.orderTime}` : ''}`
+  }));
+
+  file.nursingOrders.forEach(o => rows.push({
+    key: `${o.orderDate || ''} ${o.orderTime || ''} ${o.createdAt || ''}`,
+    label: `تمريض — ${o.serviceName || 'خدمة'}`,
+    when: `${displayDate(o.orderDate)}${o.orderTime ? ` • ${o.orderTime}` : ''}`
+  }));
+
+  file.radiologyOrders.forEach(o => rows.push({
+    key: `${o.orderDate || ''} ${o.orderTime || ''} ${o.createdAt || ''}`,
+    label: `أشعة — ${o.radiologyName || 'أشعة'}`,
+    when: `${displayDate(o.orderDate)}${o.orderTime ? ` • ${o.orderTime}` : ''}`
+  }));
+
+  rows.sort((a,b) => b.key.localeCompare(a.key));
+  return rows[0] || {key:'',label:'لا توجد خدمات مسجلة',when:'—'};
+}
+
+function addIsoDays(dayKey: string, days: number) {
+  const d = new Date(`${dayKey}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function operationalRows(rows: CashierItem[], dayKey: string) {
+  const next = addIsoDays(dayKey, 1);
+  const start = `${dayKey} ${String(appSettings.operationalStartHour).padStart(2,'0')}:00`;
+  const end = `${next} ${String(appSettings.operationalStartHour).padStart(2,'0')}:00`;
+  return rows.filter(row => {
+    const t = row.serviceTime || '00:00';
+    const key = `${row.serviceDate} ${t}`;
+    return key >= start && key < end;
+  });
+}
+
 
 function patientFileTimelineHtml(file: PatientFileSnapshot, interactive = true) {
   const p = file.details.patient;
@@ -363,7 +414,7 @@ type AuditEntry={id:number;action:string;entityType:string;entityId:string;detai
 type UnifiedSearchResult={kind:string;patientId:string;title:string;subtitle:string};
 type SystemAlert={kind:string;title:string;detail:string;patientId:string;serviceType:string;serviceId:string};
 
-type Screen = 'dashboard' | 'patients' | 'today' | 'todaystats' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'radiology' | 'cashier' | 'finance' | 'alerts' | 'audit' | 'security' | 'reports' | 'archive' | 'backups' | 'settings';
+type Screen = 'dashboard' | 'patients' | 'today' | 'todaystats' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'radiology' | 'cashier' | 'finance' | 'alerts' | 'audit' | 'security' | 'reports' | 'archive' | 'trash' | 'backups' | 'settings';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 let screen: Screen = 'dashboard';
@@ -1638,6 +1689,7 @@ function serviceDockHtml() {
         </div>
         <div class="service-hub-buttons system-buttons">
           ${nav('archive','▣','الأرشيف')}
+          ${nav('trash','🗑','سلة المحذوفات')}
           ${nav('backups','⟳','النسخ الاحتياطية')}
           ${nav('settings','⚙','الإعدادات')}
         </div>
@@ -1674,6 +1726,7 @@ function shell(content: string, title: string, subtitle: string) {
           ${navButton('security','🔐','الحماية')}
           ${navButton('reports','▤','التقارير')}
           ${navButton('archive','▣','الأرشيف')}
+          ${navButton('trash','🗑','سلة المحذوفات')}
           ${navButton('backups','⟳','النسخ الاحتياطية')}
           ${navButton('settings','⚙','الإعدادات')}
         </nav>
@@ -1699,7 +1752,7 @@ function shell(content: string, title: string, subtitle: string) {
           <div class="modern-header-tools">
             <div class="global-patient-search-wrap">
               <span class="global-search-icon">⌕</span>
-              <input id="globalPatientSearch" type="search" autocomplete="off" placeholder="البحث عن مريض بالاسم أو الهاتف..." />
+              <input id="globalPatientSearch" type="search" autocomplete="off" placeholder="بحث سريع: الاسم أو الهاتف أو رقم الملف أو الخدمة..." />
               <div class="global-patient-search-results" id="globalPatientSearchResults"></div>
             </div>
 
@@ -1726,6 +1779,7 @@ function shell(content: string, title: string, subtitle: string) {
             <p>${subtitle}</p>
           </div>
           <div class="top-actions">
+            <button class="global-refresh-btn" id="globalRefreshBtn" type="button" title="تحديث الشاشة">↻ تحديث</button>
             ${screen !== 'dashboard' ? `
               <button class="page-back-btn" id="pageBackBtn" type="button" title="رجوع">
                 <span class="back-arrow-glyph">←</span>
@@ -1750,6 +1804,17 @@ function shell(content: string, title: string, subtitle: string) {
   const pageBackBtn = document.querySelector<HTMLButtonElement>('#pageBackBtn');
   if (pageBackBtn) pageBackBtn.onclick = () => goBackScreen();
 
+  const globalRefreshBtn = document.querySelector<HTMLButtonElement>('#globalRefreshBtn');
+  if (globalRefreshBtn) globalRefreshBtn.onclick = async () => {
+    globalRefreshBtn.disabled = true;
+    try {
+      await renderScreen();
+      toast('تم تحديث البيانات');
+    } catch (err) {
+      toast(`تعذر التحديث: ${String(err)}`, 'error');
+    }
+  };
+
   const globalSearch = document.querySelector<HTMLInputElement>('#globalPatientSearch')!;
   const globalResults = document.querySelector<HTMLDivElement>('#globalPatientSearchResults')!;
   let globalSearchTimer: number | undefined;
@@ -1769,7 +1834,7 @@ function shell(content: string, title: string, subtitle: string) {
       }
 
       try {
-        const rows = await invoke<UnifiedSearchResult[]>('unified_search', { input: { search: q, limit: 12 } });
+        const rows = await invoke<UnifiedSearchResult[]>('unified_search', { input: { search: q, limit: 20 } });
         globalResults.innerHTML = rows.length ? rows.map(r => `
           <button type="button" class="global-patient-result" data-global-patient="${esc(r.patientId)}">
             <span class="global-patient-result-avatar">${esc((r.title || 'م').trim().charAt(0) || 'م')}</span>
@@ -1790,7 +1855,13 @@ function shell(content: string, title: string, subtitle: string) {
       } catch {
         closeGlobalSearch();
       }
-    }, 180);
+    }, 80);
+  };
+
+  globalSearch.onkeydown = event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    globalResults.querySelector<HTMLButtonElement>('[data-global-patient]')?.click();
   };
 
   document.addEventListener('click', event => {
@@ -2253,6 +2324,7 @@ async function renderScreen() {
   if (screen === 'dashboard') return renderDashboard();
   if (screen === 'patients') return renderPatients(false);
   if (screen === 'archive') return renderPatients(true);
+  if (screen === 'trash') return renderTrash();
   if (screen === 'today') return renderToday();
   if (screen === 'todaystats') return renderTodayStats();
   if (screen === 'doctors') return renderDoctors();
@@ -2289,12 +2361,12 @@ function patientTable(rows: Patient[], archived: boolean) {
             ${archived
               ? `
                 <button class="icon-action restore" data-restore="${esc(p.id)}" title="استعادة">↶</button>
-                <button class="icon-action delete-patient-card" data-delete-patient-card="${esc(p.id)}" data-delete-patient-name="${esc(p.fullName || 'المريض')}" title="حذف المريض نهائيًا">🗑</button>
+                <button class="icon-action delete-patient-card" data-delete-patient-card="${esc(p.id)}" data-delete-patient-name="${esc(p.fullName || 'المريض')}" title="نقل إلى سلة المحذوفات">🗑</button>
               `
               : `
                 <button class="icon-action edit" data-edit="${esc(p.id)}" title="تعديل">✎</button>
                 <button class="icon-action" data-archive="${esc(p.id)}" title="أرشفة">▣</button>
-                <button class="icon-action delete-patient-card" data-delete-patient-card="${esc(p.id)}" data-delete-patient-name="${esc(p.fullName || 'المريض')}" title="حذف المريض نهائيًا">🗑</button>
+                <button class="icon-action delete-patient-card" data-delete-patient-card="${esc(p.id)}" data-delete-patient-name="${esc(p.fullName || 'المريض')}" title="نقل إلى سلة المحذوفات">🗑</button>
               `
             }
           </div>
@@ -2311,14 +2383,13 @@ function bindPatientActions() {
     const id = b.dataset.deletePatientCard || '';
     const name = b.dataset.deletePatientName || 'المريض';
     if (!id) return;
-    if (!confirm(`حذف ملف ${name} نهائيًا بكل بياناته؟`)) return;
-    if (!confirm('تأكيد أخير: سيتم حذف الزيارات والتحاليل وخدمات التمريض والأشعة الخاصة بالمريض.')) return;
+    if (!confirm(`نقل ملف ${name} إلى سلة المحذوفات؟ يمكن استعادته لاحقًا.`)) return;
     try {
       await invoke('delete_patient', { id });
-      toast('تم حذف ملف المريض نهائيًا');
+      toast('تم نقل ملف المريض إلى سلة المحذوفات');
       await renderScreen();
     } catch (err) {
-      toast(`تعذر حذف المريض: ${String(err)}`, 'error');
+      toast(`تعذر نقل المريض: ${String(err)}`, 'error');
     }
   });
   document.querySelectorAll<HTMLButtonElement>('[data-archive]').forEach(b => b.onclick = async () => {
@@ -2331,6 +2402,61 @@ function bindPatientActions() {
     await invoke('set_patient_archived', { input: { id: b.dataset.restore, archived: false } });
     toast('تمت استعادة ملف المريض');
     await renderScreen();
+  });
+}
+
+async function renderTrash() {
+  const rows = await invoke<Patient[]>('list_deleted_patients');
+
+  shell(`
+    <section class="card trash-card">
+      <div class="card-head toolbar">
+        <div>
+          <h2>سلة المحذوفات</h2>
+          <p>يمكن استعادة الملف أو حذفه نهائيًا</p>
+        </div>
+        <span class="trash-count">${rows.length} ملف</span>
+      </div>
+
+      <div class="trash-list">
+        ${rows.length ? rows.map(p => `
+          <article class="trash-row">
+            <div class="trash-row-main">
+              <span class="trash-icon">🗑</span>
+              <div>
+                <strong>${esc(p.fullName || 'بدون اسم')}</strong>
+                <small class="ltr">${esc(p.phone || 'بدون رقم')}</small>
+                <span>حُذف: ${esc(displaySavedDateTime(p.deletedAt))}</span>
+              </div>
+            </div>
+            <div class="trash-actions">
+              <button class="btn primary small" data-trash-restore="${esc(p.id)}">↶ استعادة</button>
+              <button class="btn danger-outline small" data-trash-purge="${esc(p.id)}" data-trash-name="${esc(p.fullName || 'المريض')}">حذف نهائي</button>
+            </div>
+          </article>
+        `).join('') : '<div class="empty-block">سلة المحذوفات فارغة</div>'}
+      </div>
+    </section>
+  `, 'سلة المحذوفات', 'استعادة الملفات المحذوفة بالخطأ');
+
+  document.querySelectorAll<HTMLButtonElement>('[data-trash-restore]').forEach(button => {
+    button.onclick = async () => {
+      await invoke('restore_deleted_patient', { id: button.dataset.trashRestore || '' });
+      toast('تمت استعادة ملف المريض');
+      await renderTrash();
+    };
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-trash-purge]').forEach(button => {
+    button.onclick = async () => {
+      const id = button.dataset.trashPurge || '';
+      const name = button.dataset.trashName || 'المريض';
+      if (!confirm(`حذف ${name} نهائيًا؟ لا يمكن التراجع.`)) return;
+      if (!confirm('تأكيد أخير للحذف النهائي.')) return;
+      await invoke('purge_deleted_patient', { id });
+      toast('تم الحذف النهائي');
+      await renderTrash();
+    };
   });
 }
 
@@ -2582,19 +2708,20 @@ async function renderDashboard() {
 
 async function renderTodayStats() {
   const dayKey = businessDay();
+  const nextDay = addIsoDays(dayKey, 1);
+  const rows = operationalRows(
+    await invoke<CashierItem[]>('list_cashier_items', { query: { from: dayKey, to: nextDay } }),
+    dayKey
+  );
 
-  const [todayReport, todayLabOrders, todayNursingOrders, todayRadiologyOrders] = await Promise.all([
-    invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } }),
-    invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } }),
-    invoke<NursingOrder[]>('list_nursing_orders', { query: { from: dayKey, to: dayKey } }),
-    invoke<RadiologyOrder[]>('list_radiology_orders', { query: { from: dayKey, to: dayKey } })
-  ]);
-
-  const clinicToday = todayReport.rows.length;
-  const labPatientsToday = todayLabOrders.length;
-  const nursingPatientsToday = todayNursingOrders.length;
-  const radiologyPatientsToday = todayRadiologyOrders.length;
-  const totalToday = clinicToday + labPatientsToday + nursingPatientsToday + radiologyPatientsToday;
+  const clinicToday = rows.filter(x => x.serviceType === 'clinic').length;
+  const labPatientsToday = rows.filter(x => x.serviceType === 'lab').length;
+  const nursingPatientsToday = rows.filter(x => x.serviceType === 'nursing').length;
+  const radiologyPatientsToday = rows.filter(x => x.serviceType === 'radiology').length;
+  const totalToday = rows.length;
+  const totalCharges = rows.reduce((sum,row) => sum + row.charge, 0);
+  const totalPaid = rows.reduce((sum,row) => sum + row.paid, 0);
+  const totalRemaining = rows.reduce((sum,row) => sum + row.remaining, 0);
 
   shell(`
     <section class="today-stats-page">
@@ -2634,12 +2761,25 @@ async function renderTodayStats() {
         </button>
       </div>
 
+      <section class="day-end-simple-summary">
+        <div class="day-end-simple-head">
+          <strong>ملخص نهاية اليوم</strong>
+          <small>ملخص بسيط بدون تفاصيل زائدة</small>
+        </div>
+        <div class="day-end-simple-grid">
+          <div><span>إجمالي الحالات</span><strong>${totalToday}</strong></div>
+          <div><span>إجمالي المستحق</span><strong class="ltr">${totalCharges.toFixed(2)} ج.م</strong></div>
+          <div><span>تم تحصيله</span><strong class="ltr paid">${totalPaid.toFixed(2)} ج.م</strong></div>
+          <div><span>المتبقي</span><strong class="ltr ${totalRemaining > 0.009 ? 'due' : 'paid'}">${totalRemaining.toFixed(2)} ج.م</strong></div>
+        </div>
+      </section>
+
       <div class="today-stats-note">
         <span>ⓘ</span>
         <p>اضغط على أي إحصائية لفتح القسم المرتبط بها.</p>
       </div>
     </section>
-  `, 'إحصائيات اليوم', 'ملخص تسجيلات العيادة والتحاليل والتمريض والأشعة');
+  `, 'إحصائيات اليوم', 'ملخص تسجيلات اليوم والتحصيل والمتبقي');
 
   document.querySelector<HTMLButtonElement>('#todayStatsClinic')!.onclick = () => navigate('today');
   document.querySelector<HTMLButtonElement>('#todayStatsLabs')!.onclick = () => navigate('labs');
@@ -4921,7 +5061,10 @@ const nursingHistory = await invoke<NursingOrder[]>('list_patient_nursing_orders
 }
 
 async function openPatient(id: string) {
-  const patientFile = await loadPatientFile(id);
+  const [patientFile, allCashierRows] = await Promise.all([
+    loadPatientFile(id),
+    invoke<CashierItem[]>('list_cashier_items', { query: { from: '2000-01-01', to: '2099-12-31' } })
+  ]);
   const details = patientFile.details;
   const p = details.patient;
   const totalActivities =
@@ -4929,6 +5072,15 @@ async function openPatient(id: string) {
     patientFile.labOrders.length +
     patientFile.nursingOrders.length +
     patientFile.radiologyOrders.length;
+
+  const financialRows = allCashierRows.filter(row => row.patientId === id);
+  const patientCharges = financialRows.reduce((sum,row) => sum + row.charge, 0);
+  const patientPaid = financialRows.reduce((sum,row) => sum + row.paid, 0);
+  const patientRemaining = financialRows.reduce((sum,row) => sum + row.remaining, 0);
+  const lastService = latestPatientService(patientFile);
+  const lastVisitText = p.lastVisitDate
+    ? `${displayDate(p.lastVisitDate)}${p.lastVisitTime ? ` • ${p.lastVisitTime}` : ''}`
+    : 'لا توجد زيارة';
 
   const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
 
@@ -4945,12 +5097,35 @@ async function openPatient(id: string) {
                 ${p.archived ? '<span class="patient-file-archive-badge">مؤرشف</span>' : ''}
               </div>
               <p class="ltr patient-phone">📞 ${esc(p.phone || "بدون رقم تليفون")}</p>
+              <div class="patient-contact-actions">
+                <button type="button" id="patientCallBtn" ${p.phone ? '' : 'disabled'}>📞 اتصال</button>
+                <button type="button" id="patientWhatsappBtn" ${p.phone ? '' : 'disabled'}>WhatsApp</button>
+                <button type="button" id="patientCopyPhoneBtn" ${p.phone ? '' : 'disabled'}>⧉ نسخ الرقم</button>
+              </div>
             </div>
           </div>
           <button class="modal-close" id="closePatient">×</button>
         </div>
 
         ${patientFileClinicHeaderHtml(p)}
+
+        <div class="patient-pinned-note ${p.quickNote ? 'has-note' : ''}">
+          <div class="patient-pinned-note-copy">
+            <span>📌 ملاحظة سريعة مثبتة</span>
+            <strong>${esc(p.quickNote || 'لا توجد ملاحظة مثبتة')}</strong>
+          </div>
+          <button type="button" class="btn ghost small" id="editPatientQuickNote">✎ تعديل</button>
+        </div>
+
+        <div class="patient-quick-status-strip">
+          <div><span>آخر زيارة</span><strong>${esc(lastVisitText)}</strong></div>
+          <div><span>آخر خدمة</span><strong>${esc(lastService.label)}</strong><small>${esc(lastService.when)}</small></div>
+          <div class="${patientRemaining > 0.009 ? 'has-due' : 'is-paid'}">
+            <span>الحساب</span>
+            <strong>${patientRemaining > 0.009 ? `متبقي ${patientRemaining.toFixed(2)} ج.م` : 'مسدد ✓'}</strong>
+            <small>المدفوع ${patientPaid.toFixed(2)} من ${patientCharges.toFixed(2)} ج.م</small>
+          </div>
+        </div>
 
         <div class="patient-file-overview-clean">
           <div class="patient-overview-info-clean">
@@ -5017,7 +5192,7 @@ async function openPatient(id: string) {
               }
               <button class="btn ghost small patient-nav-action" id="patientGoToday">◷ حالات اليوم</button>
               <button class="btn ghost small patient-nav-action" id="patientGoReports">▤ التقارير</button>
-              <button class="btn danger-outline small" id="deletePatient">🗑 حذف المريض نهائيًا</button>
+              <button class="btn danger-outline small" id="deletePatient">🗑 نقل إلى سلة المحذوفات</button>
             </div>
           </details>
         </div>
@@ -5073,6 +5248,36 @@ async function openPatient(id: string) {
     openEditPatient(id);
   };
 
+  document.querySelector<HTMLButtonElement>('#editPatientQuickNote')!.onclick = async () => {
+    const newQuickNote = window.prompt('اكتب الملاحظة السريعة المثبتة للمريض', p.quickNote || '');
+    if (newQuickNote === null) return;
+    try {
+      await invoke<string>('update_patient_quick_note', { input: { id, note: newQuickNote } });
+      toast('تم حفظ الملاحظة السريعة');
+      close();
+      await openPatient(id);
+    } catch (err) {
+      toast(`تعذر حفظ الملاحظة: ${String(err)}`, 'error');
+    }
+  };
+
+  const openContact = async (kind: 'call'|'whatsapp') => {
+    if (!p.phone) return toast('لا يوجد رقم تليفون مسجل', 'error');
+    try {
+      await invoke('open_patient_contact', { input: { phone: p.phone, kind } });
+    } catch (err) {
+      toast(`تعذر فتح وسيلة التواصل: ${String(err)}`, 'error');
+    }
+  };
+
+  document.querySelector<HTMLButtonElement>('#patientCallBtn')!.onclick = () => openContact('call');
+  document.querySelector<HTMLButtonElement>('#patientWhatsappBtn')!.onclick = () => openContact('whatsapp');
+  document.querySelector<HTMLButtonElement>('#patientCopyPhoneBtn')!.onclick = async () => {
+    if (!p.phone) return toast('لا يوجد رقم تليفون مسجل', 'error');
+    await navigator.clipboard.writeText(p.phone);
+    toast('تم نسخ رقم التليفون');
+  };
+
   document.querySelector<HTMLButtonElement>('#toggleBlacklist')!.onclick = async () => {
     await invoke('set_patient_blacklisted', { input: { id, blacklisted: !p.blacklisted } });
     toast(!p.blacklisted ? 'تمت إضافة المريض إلى Black List' : 'تمت إزالة المريض من Black List');
@@ -5098,11 +5303,10 @@ async function openPatient(id: string) {
   };
 
   document.querySelector<HTMLButtonElement>('#deletePatient')!.onclick = async () => {
-    if (!confirm(`حذف ملف ${p.fullName || 'المريض'} نهائيًا بكل بياناته وسجله؟`)) return;
-    if (!confirm('تأكيد أخير: سيتم حذف الكشوفات والاستشارات والتحاليل وخدمات التمريض والأشعة الخاصة بالمريض.')) return;
+    if (!confirm(`نقل ملف ${p.fullName || 'المريض'} إلى سلة المحذوفات؟ يمكن استعادته لاحقًا.`)) return;
     await invoke('delete_patient', { id });
     close();
-    toast('تم حذف ملف المريض');
+    toast('تم نقل ملف المريض إلى سلة المحذوفات');
     await renderScreen();
   };
 
@@ -5174,6 +5378,8 @@ async function openPatientRegistrationModal() {
             <label class="field-address">العنوان (اختياري)<input name="address"></label>
           </div>
 
+          <div class="duplicate-patient-alert" id="duplicatePatientAlert" hidden></div>
+
           <div class="patient-file-create-note">
             بمجرد الحفظ يتم إنشاء رقم ملف وتسجيل تاريخ ووقت إنشاء الملف تلقائيًا.
           </div>
@@ -5192,6 +5398,50 @@ async function openPatientRegistrationModal() {
 
   document.querySelector<HTMLButtonElement>('#closeCase')!.onclick = close;
   document.querySelector<HTMLButtonElement>('#cancelCase')!.onclick = close;
+
+  const phoneInput = form.querySelector<HTMLInputElement>('input[name="phone"]')!;
+  const duplicateAlert = document.querySelector<HTMLDivElement>('#duplicatePatientAlert')!;
+  let duplicatePhoneTimer: number | undefined;
+
+  phoneInput.oninput = () => {
+    window.clearTimeout(duplicatePhoneTimer);
+    duplicatePhoneTimer = window.setTimeout(async () => {
+      const phone = phoneInput.value.trim();
+      if (phone.length < 7) {
+        duplicateAlert.hidden = true;
+        duplicateAlert.innerHTML = '';
+        return;
+      }
+
+      try {
+        const matches = await invoke<Patient[]>('list_patients', {
+          query: { search: phone, archivedOnly: false, limit: 10 }
+        });
+        const existing = matches.find(p => p.phone.trim() === phone);
+        if (!existing) {
+          duplicateAlert.hidden = true;
+          duplicateAlert.innerHTML = '';
+          return;
+        }
+
+        duplicateAlert.hidden = false;
+        duplicateAlert.innerHTML = `
+          <div>
+            <strong>⚠️ هذا الرقم مسجل بالفعل</strong>
+            <span>${esc(existing.fullName || 'بدون اسم')} • ${esc(existing.phone)}</span>
+            <small>${existing.lastVisitDate ? `آخر زيارة ${esc(displayDate(existing.lastVisitDate))}` : 'لا توجد زيارة سابقة'}</small>
+          </div>
+          <button type="button" class="btn primary small" id="openDuplicatePatient">فتح الملف الموجود</button>
+        `;
+        document.querySelector<HTMLButtonElement>('#openDuplicatePatient')!.onclick = async () => {
+          close();
+          await openPatient(existing.id);
+        };
+      } catch {
+        duplicateAlert.hidden = true;
+      }
+    }, 120);
+  };
 
   const registerFromForm = async () => {
     const fd = new FormData(form);
