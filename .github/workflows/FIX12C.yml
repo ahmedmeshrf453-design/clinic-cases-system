@@ -1,0 +1,123 @@
+name: Clinic Cases V7.0 PIN Recovery FIX12C
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply FIX12C
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$RUNNER_TEMP/fix12c.b64"
+          printf '%s' 'CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKbWFpbl9wYXRoID0gUGF0aCgic3JjL21haW4udHMiKQpydXN0X3BhdGggPSBQYXRoKCJzcmMtdGF1cmkvc3JjL2xpYi5ycyIpCmNzc19wYXRoID0gUGF0aCgic3JjL3N0eWxlLmNzcyIpCgptYWluID0gbWFpbl9wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQpydXN0ID0gcnVzdF9wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQpjc3MgPSBjc3NfcGF0aC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04IikKCmRlZiByZXAodGV4dCwgb2xkLCBuZXcsIGxhYmVsKToKICAgIGlmIG9sZCBub3QgaW4gdGV4dDoKICAgICAgICByYWlzZSBSdW50aW1lRXJyb3IoZiJ7bGFiZWx9IG1hcmtlciBub3QgZm91bmQiKQogICAgcmV0dXJuIHRleHQucmVwbGFjZShvbGQsIG5ldywgMSkKCiMgLS0tLS0tLS0tLSBCQUNLRU5EIC0tLS0tLS0tLS0KcnVzdCA9IHJ1c3QucmVwbGFjZSgKICAgICJzdHJ1Y3QgU2VjdXJpdHlTdGF0dXMgeyBwaW5fc2V0OiBib29sLCBhdXRvX2xvY2tfbWludXRlczogdTMyLCByZWNvdmVyeV9zZXQ6IGJvb2wgfSIsCiAgICAic3RydWN0IFNlY3VyaXR5U3RhdHVzIHsgcGluX3NldDogYm9vbCwgYXV0b19sb2NrX21pbnV0ZXM6IHUzMiwgcmVjb3Zlcnlfc2V0OiBib29sLCByZWNvdmVyeV9maWxlX2F2YWlsYWJsZTogYm9vbCB9IiwKICAgIDEsCikKCmFuY2hvciA9ICcnJ2ZuIHZlcmlmeV9zZWN1cml0eV9yZWNvdmVyeV92YWx1ZShjb25uOiAmQ29ubmVjdGlvbiwgY29kZTogJnN0cikgLT4gUmVzdWx0PGJvb2wsIFN0cmluZz4gewogICAgbGV0IG5vcm1hbGl6ZWQgPSBub3JtYWxpemVfcmVjb3ZlcnlfY29kZShjb2RlKTsKICAgIGlmIG5vcm1hbGl6ZWQubGVuKCkgPCAxMiB8fCBub3JtYWxpemVkLmxlbigpID4gNDAgewogICAgICAgIHJldHVybiBFcnIoItmD2YjYryDYp9mE2KfYs9iq2LHYr9in2K8g2LrZitixINi12KfZhNitIi5pbnRvKCkpOwogICAgfQogICAgbGV0IHNhdmVkID0gbWV0YV92YWx1ZShjb25uLCAic2VjdXJpdHlfcmVjb3ZlcnlfaGFzaCIsICIiKT87CiAgICBpZiBzYXZlZC5pc19lbXB0eSgpIHsKICAgICAgICByZXR1cm4gRXJyKCLZhNmFINmK2KrZhSDYpdmG2LTYp9ihINmD2YjYryDYp9iz2KrYsdiv2KfYryDZhNmH2LDYpyDYp9mE2YbYuNin2YUg2KjYudivIi5pbnRvKCkpOwogICAgfQogICAgcGluX3JhdGVfbGltaXRfY2hlY2soY29ubiwgInNlY3VyaXR5X3JlY292ZXJ5Iik/OwogICAgbGV0IG9rID0gYXJnb24yX3ZlcmlmeV9waW4oJm5vcm1hbGl6ZWQsICZzYXZlZCk7CiAgICBwaW5fcmF0ZV9saW1pdF9yZWNvcmQoY29ubiwgInNlY3VyaXR5X3JlY292ZXJ5Iiwgb2spPzsKICAgIE9rKG9rKQp9CicnJwoKaWYgIlNFQ1VSSVRZX1JFQ09WRVJZX0ZJTEVfTkFNRSIgbm90IGluIHJ1c3Q6CiAgICBoZWxwZXIgPSBhbmNob3IgKyByJycnCmNvbnN0IFNFQ1VSSVRZX1JFQ09WRVJZX0ZJTEVfTkFNRTogJnN0ciA9ICJDbGluaWMtQ2FzZXMtUmVjb3ZlcnktQ29kZS50eHQiOwoKZm4gc2VjdXJpdHlfcmVjb3ZlcnlfZmlsZV9wYXRoKHN0YXRlOiAmQXBwU3RhdGUpIC0+IFBhdGhCdWYgewogICAgc3RhdGUuYmFja3VwX2Rpci5qb2luKFNFQ1VSSVRZX1JFQ09WRVJZX0ZJTEVfTkFNRSkKfQoKZm4gd3JpdGVfc2VjdXJpdHlfcmVjb3ZlcnlfZmlsZShzdGF0ZTogJkFwcFN0YXRlLCBjb2RlOiAmc3RyKSAtPiBSZXN1bHQ8KCksIFN0cmluZz4gewogICAgZnM6OmNyZWF0ZV9kaXJfYWxsKCZzdGF0ZS5iYWNrdXBfZGlyKS5tYXBfZXJyKHxlfCBlLnRvX3N0cmluZygpKT87CiAgICBsZXQgY29udGVudCA9IGZvcm1hdCEoCiAgICAgICAgIkNsaW5pYyBDYXNlcyBTeXN0ZW0gLSBFbWVyZ2VuY3kgUmVjb3ZlcnkgQ29kZVxyXG5cCiAgICAgICAgID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PVxyXG5cclxuXAogICAgICAgICBSRUNPVkVSWSBDT0RFOlxyXG57fVxyXG5cclxuXAogICAgICAgICBLZWVwIHRoaXMgZmlsZSBwcml2YXRlLlxyXG5cCiAgICAgICAgIFVzZSB0aGlzIGNvZGUgb25seSBmcm9tOiBGb3Jnb3QgUElOIC8g2YbYs9mK2KogUElO2J9cclxuIiwKICAgICAgICBjb2RlCiAgICApOwogICAgZnM6OndyaXRlKHNlY3VyaXR5X3JlY292ZXJ5X2ZpbGVfcGF0aChzdGF0ZSksIGNvbnRlbnQuYXNfYnl0ZXMoKSkubWFwX2Vycih8ZXwgZS50b19zdHJpbmcoKSk/OwogICAgT2soKCkpCn0KCmZuIHJvdGF0ZV9zZWN1cml0eV9yZWNvdmVyeV9tYXRlcmlhbChzdGF0ZTogJkFwcFN0YXRlLCBjb25uOiAmQ29ubmVjdGlvbikgLT4gUmVzdWx0PFN0cmluZywgU3RyaW5nPiB7CiAgICBsZXQgY29kZSA9IGdlbmVyYXRlX3JlY292ZXJ5X2NvZGVfdmFsdWUoKTsKICAgIHNhdmVfc2VjdXJpdHlfcmVjb3ZlcnlfY29kZShjb25uLCAmY29kZSk/OwogICAgd3JpdGVfc2VjdXJpdHlfcmVjb3ZlcnlfZmlsZShzdGF0ZSwgJmNvZGUpPzsKICAgIE9rKGNvZGUpCn0KCmZuIGVuc3VyZV9zZWN1cml0eV9yZWNvdmVyeV9tYXRlcmlhbChzdGF0ZTogJkFwcFN0YXRlKSAtPiBSZXN1bHQ8KCksIFN0cmluZz4gewogICAgbGV0IGNvbm4gPSBvcGVuX2RiKHN0YXRlKT87CiAgICBsZXQgcGluX3NldDogaTY0ID0gY29ubi5xdWVyeV9yb3coCiAgICAgICAgIlNFTEVDVCBDT1VOVCgqKSBGUk9NIGFwcF9tZXRhIFdIRVJFIGtleT0nc2VjdXJpdHlfcGluX2hh' >> "$RUNNER_TEMP/fix12c.b64"
+          printf '%s' 'c2gnIEFORCB2YWx1ZTw+JyciLAogICAgICAgIFtdLAogICAgICAgIHxyb3d8IHJvdy5nZXQoMCksCiAgICApLm1hcF9lcnIofGV8IGUudG9fc3RyaW5nKCkpPzsKCiAgICBpZiBwaW5fc2V0ID09IDAgewogICAgICAgIHJldHVybiBPaygoKSk7CiAgICB9CgogICAgbGV0IHJlY292ZXJ5X3NldDogaTY0ID0gY29ubi5xdWVyeV9yb3coCiAgICAgICAgIlNFTEVDVCBDT1VOVCgqKSBGUk9NIGFwcF9tZXRhIFdIRVJFIGtleT0nc2VjdXJpdHlfcmVjb3ZlcnlfaGFzaCcgQU5EIHZhbHVlPD4nJyIsCiAgICAgICAgW10sCiAgICAgICAgfHJvd3wgcm93LmdldCgwKSwKICAgICkubWFwX2Vycih8ZXwgZS50b19zdHJpbmcoKSk/OwoKICAgIGxldCBmaWxlX2V4aXN0cyA9IHNlY3VyaXR5X3JlY292ZXJ5X2ZpbGVfcGF0aChzdGF0ZSkuZXhpc3RzKCk7CgogICAgLy8gTGVnYWN5IEZJWDEyL0ZJWDEyQiBpbnN0YWxsYXRpb25zIG1heSBhbHJlYWR5IGJlIGxvY2tlZCBiZWZvcmUgYQogICAgLy8gcmVjb3ZlcnkgY29kZSB3YXMgZXZlciBnZW5lcmF0ZWQuIENyZWF0ZS9yb3RhdGUgb25lIGxvY2FsbHkgc28KICAgIC8vIEZvcmdvdCBQSU4gaXMgaW1tZWRpYXRlbHkgdXNhYmxlIGFmdGVyIHRoaXMgdXBkYXRlLgogICAgaWYgcmVjb3Zlcnlfc2V0ID09IDAgfHwgIWZpbGVfZXhpc3RzIHsKICAgICAgICBsZXQgXyA9IHJvdGF0ZV9zZWN1cml0eV9yZWNvdmVyeV9tYXRlcmlhbChzdGF0ZSwgJmNvbm4pPzsKICAgIH0KCiAgICBPaygoKSkKfQoKJycnCiAgICBydXN0ID0gcmVwKHJ1c3QsIGFuY2hvciwgaGVscGVyLCAicmVjb3ZlcnkgZmlsZSBoZWxwZXJzIikKCiMgc2VjdXJpdHlfc3RhdHVzCm9sZCA9ICcnJyAgICBPayhTZWN1cml0eVN0YXR1cyB7CiAgICAgICAgcGluX3NldDogcGluX2NvdW50ID4gMCwKICAgICAgICBhdXRvX2xvY2tfbWludXRlcywKICAgICAgICByZWNvdmVyeV9zZXQ6IHJlY292ZXJ5X2NvdW50ID4gMCwKICAgIH0pCn0nJycKbmV3ID0gJycnICAgIE9rKFNlY3VyaXR5U3RhdHVzIHsKICAgICAgICBwaW5fc2V0OiBwaW5fY291bnQgPiAwLAogICAgICAgIGF1dG9fbG9ja19taW51dGVzLAogICAgICAgIHJlY292ZXJ5X3NldDogcmVjb3ZlcnlfY291bnQgPiAwLAogICAgICAgIHJlY292ZXJ5X2ZpbGVfYXZhaWxhYmxlOiBzZWN1cml0eV9yZWNvdmVyeV9maWxlX3BhdGgoJnN0YXRlKS5leGlzdHMoKSwKICAgIH0pCn0nJycKaWYgb2xkIGluIHJ1c3Q6CiAgICBydXN0ID0gcnVzdC5yZXBsYWNlKG9sZCwgbmV3LCAxKQoKIyByZWdlbmVyYXRlIHJlY292ZXJ5IHdyaXRlcyByZWNvdmVyeSBmaWxlIHRvby4Kb2xkID0gJycnICAgIGxldCBjb2RlID0gZ2VuZXJhdGVfcmVjb3ZlcnlfY29kZV92YWx1ZSgpOwogICAgc2F2ZV9zZWN1cml0eV9yZWNvdmVyeV9jb2RlKCZjb25uLCAmY29kZSk/OwogICAgY29ubi5leGVjdXRlKAonJycKbmV3ID0gJycnICAgIGxldCBjb2RlID0gcm90YXRlX3NlY3VyaXR5X3JlY292ZXJ5X21hdGVyaWFsKCZzdGF0ZSwgJmNvbm4pPzsKICAgIGNvbm4uZXhlY3V0ZSgKJycnCmlmIG9sZCBpbiBydXN0OgogICAgcnVzdCA9IHJ1c3QucmVwbGFjZShvbGQsIG5ldywgMSkKCiMgcmVzZXQgcmVjb3Zlcnkgd3JpdGVzIHRoZSByb3RhdGVkIG5ldyBjb2RlIGZpbGUgYWZ0ZXIgdHggY29tbWl0LgpvbGQgPSAnJycgICAgdHguY29tbWl0KCkubWFwX2Vycih8ZXwgZS50b19zdHJpbmcoKSk/OwogICAgT2sobmV3X3JlY292ZXJ5X2NvZGUpCn0KCmZuIGF0dGFjaG1lbnRfc2lnbmF0dXJlX29rJycnCm5ldyA9ICcnJyAgICB0eC5jb21taXQoKS5tYXBfZXJyKHxlfCBlLnRvX3N0cmluZygpKT87CiAgICB3cml0ZV9zZWN1cml0eV9yZWNvdmVyeV9maWxlKCZzdGF0ZSwgJm5ld19yZWNvdmVyeV9jb2RlKT87CiAgICBPayhuZXdfcmVjb3ZlcnlfY29kZSkKfQoKI1t0YXVyaTo6Y29tbWFuZF0KZm4gb3Blbl9zZWN1cml0eV9yZWNvdmVyeV9maWxlKHN0YXRlOiBTdGF0ZTxBcHBTdGF0ZT4pIC0+IFJlc3VsdDwoKSwgU3RyaW5nPiB7CiAgICBlbnN1cmVfc2VjdXJpdHlfcmVjb3ZlcnlfbWF0ZXJpYWwoJnN0YXRlKT87CiAgICBsZXQgcGF0aCA9IHNlY3VyaXR5X3JlY292ZXJ5X2ZpbGVfcGF0aCgmc3RhdGUpOwogICAgaWYgIXBhdGguZXhpc3RzKCkgewogICAgICAgIHJldHVybiBFcnIoItmF2YTZgSDZg9mI2K8g2KfZhNin2LPYqtix2K/Yp9ivINi62YrYsSDZhdmI2KzZiNivIi5pbnRvKCkpOwogICAgfQoKICAgIENvbW1hbmQ6Om5ldygibm90ZXBhZC5leGUiKQogICAgICAgIC5hcmcoJnBhdGgpCiAgICAgICAgLnNwYXduKCkKICAgICAgICAubWFwX2Vycih8ZXwgZm9ybWF0ISgi2KrYudiw2LEg2YHYqtitINmF2YTZgSDZg9mI2K8g2KfZhNin2LPYqtix2K/Yp9ivOiB7fSIsIGUpKT87CiAgICBPaygoKSkKfQoKZm4gYXR0YWNobWVudF9zaWduYXR1cmVfb2snJycKaWYgb2xkIG5vdCBpbiBydXN0OgogICAgcmFpc2UgUnVudGltZUVycm9yKCJyZXNldCByZWNvdmVyeSB0YWlsIG1hcmtlciBub3QgZm91bmQiKQpydXN0ID0gcnVzdC5yZXBsYWNlKG9sZCwgbmV3LCAxKQoKIyBSZWdpc3RlciBjb21tYW5kLgppZiAiICAgICAgICAgICAgb3Blbl9zZWN1cml0eV9yZWNvdmVyeV9maWxlLCIgbm90IGluIHJ1c3Q6CiAgICBydXN0ID0gcmVwKAogICAgICAgIHJ1c3QsCiAgICAgICAgIiAgICAgICAgICAgIHJlc2V0X3NlY3VyaXR5X3Bpbl93aXRoX3Jl' >> "$RUNNER_TEMP/fix12c.b64"
+          printf '%s' 'Y292ZXJ5LFxuIiwKICAgICAgICAiICAgICAgICAgICAgcmVzZXRfc2VjdXJpdHlfcGluX3dpdGhfcmVjb3ZlcnksXG4gICAgICAgICAgICBvcGVuX3NlY3VyaXR5X3JlY292ZXJ5X2ZpbGUsXG4iLAogICAgICAgICJyZWNvdmVyeSBmaWxlIGhhbmRsZXIiLAogICAgKQoKIyBFbnN1cmUgbGVnYWN5IHJlY292ZXJ5IGlzIGNyZWF0ZWQgYmVmb3JlIGxvY2sgc2NyZWVuIGFwcGVhcnMuCm9sZCA9ICcnJyAgICAgICAgICAgIGxldCBzdGF0ZSA9IEFwcFN0YXRlIHsKICAgICAgICAgICAgICAgIGRiX3BhdGgsCiAgICAgICAgICAgICAgICBiYWNrdXBfZGlyLAogICAgICAgICAgICAgICAgZXhwb3J0X2RpciwKICAgICAgICAgICAgICAgIGF0dGFjaG1lbnRzX2RpciwKICAgICAgICAgICAgfTsKCiAgICAgICAgICAgIGlmIGJhY2t1cF9vbmx5IHsnJycKbmV3ID0gJycnICAgICAgICAgICAgbGV0IHN0YXRlID0gQXBwU3RhdGUgewogICAgICAgICAgICAgICAgZGJfcGF0aCwKICAgICAgICAgICAgICAgIGJhY2t1cF9kaXIsCiAgICAgICAgICAgICAgICBleHBvcnRfZGlyLAogICAgICAgICAgICAgICAgYXR0YWNobWVudHNfZGlyLAogICAgICAgICAgICB9OwoKICAgICAgICAgICAgLy8gRklYMTJDOiBndWFyYW50ZWUgYSB1c2FibGUgbG9jYWwgcmVjb3ZlcnkgY29kZSBmb3IgbGVnYWN5CiAgICAgICAgICAgIC8vIGluc3RhbGxhdGlvbnMgYmVmb3JlIHRoZSBsb2NrIHNjcmVlbiBpcyBzaG93bi4KICAgICAgICAgICAgbGV0IF8gPSBlbnN1cmVfc2VjdXJpdHlfcmVjb3ZlcnlfbWF0ZXJpYWwoJnN0YXRlKTsKCiAgICAgICAgICAgIGlmIGJhY2t1cF9vbmx5IHsnJycKaWYgb2xkIG5vdCBpbiBydXN0OgogICAgcmFpc2UgUnVudGltZUVycm9yKCJBcHBTdGF0ZSBzdGFydHVwIG1hcmtlciBub3QgZm91bmQiKQpydXN0ID0gcnVzdC5yZXBsYWNlKG9sZCwgbmV3LCAxKQoKIyAtLS0tLS0tLS0tIEZST05URU5EIC0tLS0tLS0tLS0KbWFpbiA9IG1haW4ucmVwbGFjZSgKICAgICJ0eXBlIFNlY3VyaXR5U3RhdHVzPXtwaW5TZXQ6Ym9vbGVhbjthdXRvTG9ja01pbnV0ZXM6bnVtYmVyO3JlY292ZXJ5U2V0OmJvb2xlYW59OyIsCiAgICAidHlwZSBTZWN1cml0eVN0YXR1cz17cGluU2V0OmJvb2xlYW47YXV0b0xvY2tNaW51dGVzOm51bWJlcjtyZWNvdmVyeVNldDpib29sZWFuO3JlY292ZXJ5RmlsZUF2YWlsYWJsZTpib29sZWFufTsiLAogICAgMSwKKQptYWluID0gbWFpbi5yZXBsYWNlKAogICAgImxldCB2N1NlY3VyaXR5U3RhdHVzOlNlY3VyaXR5U3RhdHVzPXtwaW5TZXQ6ZmFsc2UsYXV0b0xvY2tNaW51dGVzOjEwLHJlY292ZXJ5U2V0OmZhbHNlfTsiLAogICAgImxldCB2N1NlY3VyaXR5U3RhdHVzOlNlY3VyaXR5U3RhdHVzPXtwaW5TZXQ6ZmFsc2UsYXV0b0xvY2tNaW51dGVzOjEwLHJlY292ZXJ5U2V0OmZhbHNlLHJlY292ZXJ5RmlsZUF2YWlsYWJsZTpmYWxzZX07IiwKICAgIDEsCikKCiMgQWRkIG9wZW4tZmlsZSBidXR0b24gdG8gZm9yZ290IFBJTiBtb2RhbC4Kb2xkID0gJycnICAgICAgICAgIDxkaXYgY2xhc3M9ImZvcm0tYWN0aW9ucyI+CiAgICAgICAgICAgIDxidXR0b24gdHlwZT0iYnV0dG9uIiBjbGFzcz0iYnRuIGdob3N0IiBpZD0iY2FuY2VsU2VjdXJpdHlSZWNvdmVyeSI+2KXZhNi62KfYoTwvYnV0dG9uPgogICAgICAgICAgICA8YnV0dG9uIGNsYXNzPSJidG4gcHJpbWFyeSI+2KXYudin2K/YqSDYqti52YrZitmGIFBJTjwvYnV0dG9uPgogICAgICAgICAgPC9kaXY+JycnCm5ldyA9ICcnJyAgICAgICAgICA8ZGl2IGNsYXNzPSJyZWNvdmVyeS1maWxlLWhlbHAiPgogICAgICAgICAgICA8c3Ryb25nPtmF2LQg2YHYp9mD2LEg2YPZiNivINin2YTYp9iz2KrYsdiv2KfYr9ifPC9zdHJvbmc+CiAgICAgICAgICAgIDxzcGFuPtin2LbYuti3INin2YTYstixINin2YTYqtin2YTZiiDZhNmB2KrYrSDZhdmE2YEg2KfZhNmD2YjYryDYp9mE2YXYrdmB2YjYuCDYudmE2Ykg2YfYsNinINin2YTZg9mF2KjZitmI2KrYsS48L3NwYW4+CiAgICAgICAgICAgIDxidXR0b24gdHlwZT0iYnV0dG9uIiBjbGFzcz0iYnRuIGdob3N0IiBpZD0ib3BlblJlY292ZXJ5Q29kZUZpbGUiPvCfk4Qg2YHYqtitINmF2YTZgSDZg9mI2K8g2KfZhNin2LPYqtix2K/Yp9ivPC9idXR0b24+CiAgICAgICAgICA8L2Rpdj4KICAgICAgICAgIDxkaXYgY2xhc3M9ImZvcm0tYWN0aW9ucyI+CiAgICAgICAgICAgIDxidXR0b24gdHlwZT0iYnV0dG9uIiBjbGFzcz0iYnRuIGdob3N0IiBpZD0iY2FuY2VsU2VjdXJpdHlSZWNvdmVyeSI+2KXZhNi62KfYoTwvYnV0dG9uPgogICAgICAgICAgICA8YnV0dG9uIGNsYXNzPSJidG4gcHJpbWFyeSI+2KXYudin2K/YqSDYqti52YrZitmGIFBJTjwvYnV0dG9uPgogICAgICAgICAgPC9kaXY+JycnCmlmIG9sZCBub3QgaW4gbWFpbjoKICAgIHJhaXNlIFJ1bnRpbWVFcnJvcigicmVjb3ZlcnkgbW9kYWwgYWN0aW9ucyBtYXJrZXIgbm90IGZvdW5kIikKbWFpbiA9IG1haW4ucmVwbGFjZShvbGQsIG5ldywgMSkKCm9sZCA9ICcnJyAgZG9jdW1lbnQucXVlcnlTZWxlY3RvcjxIVE1MQnV0dG9uRWxlbWVudD4oJyNjbG9zZVNlY3VyaXR5UmVjb3ZlcnknKSEub25jbGljayA9IGNsb3NlOwogIGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3I8SFRNTEJ1dHRvbkVsZW1lbnQ+KCcjY2FuY2VsU2VjdXJpdHlSZWNvdmVyeScpIS5vbmNsaWNrID0gY2xvc2U7CgogIGRvY3VtZW50' >> "$RUNNER_TEMP/fix12c.b64"
+          printf '%s' 'LnF1ZXJ5U2VsZWN0b3I8SFRNTEZvcm1FbGVtZW50PignI3NlY3VyaXR5UmVjb3ZlcnlGb3JtJykhLm9uc3VibWl0ID0gYXN5bmMgZSA9PiB7JycnCm5ldyA9ICcnJyAgZG9jdW1lbnQucXVlcnlTZWxlY3RvcjxIVE1MQnV0dG9uRWxlbWVudD4oJyNjbG9zZVNlY3VyaXR5UmVjb3ZlcnknKSEub25jbGljayA9IGNsb3NlOwogIGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3I8SFRNTEJ1dHRvbkVsZW1lbnQ+KCcjY2FuY2VsU2VjdXJpdHlSZWNvdmVyeScpIS5vbmNsaWNrID0gY2xvc2U7CiAgZG9jdW1lbnQucXVlcnlTZWxlY3RvcjxIVE1MQnV0dG9uRWxlbWVudD4oJyNvcGVuUmVjb3ZlcnlDb2RlRmlsZScpIS5vbmNsaWNrID0gYXN5bmMgKCkgPT4gewogICAgdHJ5IHsKICAgICAgYXdhaXQgaW52b2tlKCdvcGVuX3NlY3VyaXR5X3JlY292ZXJ5X2ZpbGUnKTsKICAgIH0gY2F0Y2ggKGVycikgewogICAgICB0b2FzdChg2KrYudiw2LEg2YHYqtitINmF2YTZgSDYp9mE2KfYs9iq2LHYr9in2K86ICR7U3RyaW5nKGVycil9YCwgJ2Vycm9yJyk7CiAgICB9CiAgfTsKCiAgZG9jdW1lbnQucXVlcnlTZWxlY3RvcjxIVE1MRm9ybUVsZW1lbnQ+KCcjc2VjdXJpdHlSZWNvdmVyeUZvcm0nKSEub25zdWJtaXQgPSBhc3luYyBlID0+IHsnJycKaWYgb2xkIG5vdCBpbiBtYWluOgogICAgcmFpc2UgUnVudGltZUVycm9yKCJyZWNvdmVyeSBtb2RhbCBoYW5kbGVyIG1hcmtlciBub3QgZm91bmQiKQptYWluID0gbWFpbi5yZXBsYWNlKG9sZCwgbmV3LCAxKQoKIyBGb3Jnb3QgUElOIG11c3QgYWx3YXlzIG9wZW4gdGhlIG1vZGFsIG5vdy4Kb2xkID0gJycnICBkb2N1bWVudC5xdWVyeVNlbGVjdG9yPEhUTUxCdXR0b25FbGVtZW50PignI2ZvcmdvdFN5c3RlbVBpbicpIS5vbmNsaWNrPSgpPT57CiAgICBjb25zdCBlcnJvcj1kb2N1bWVudC5xdWVyeVNlbGVjdG9yPEhUTUxEaXZFbGVtZW50PignI3Y3TG9ja0Vycm9yJykhOwogICAgaWYoIXY3U2VjdXJpdHlTdGF0dXMucmVjb3ZlcnlTZXQpewogICAgICBlcnJvci50ZXh0Q29udGVudD0n2YTZhSDZitiq2YUg2KXZhti02KfYoSDZg9mI2K8g2KfYs9iq2LHYr9in2K8g2KjYudivLiDYp9mB2KrYrSDYp9mE2YbYuNin2YUg2KjYp9mE2YAgUElOINin2YTYrdin2YTZiiDZhdix2Kkg2YjYp9it2K/YqSDZiNiz2YrYuNmH2LEg2YTZgyDZg9mI2K8g2KfZhNin2LPYqtix2K/Yp9ivINmE2K3Zgdi42YcuJzsKICAgICAgcmV0dXJuOwogICAgfQogICAgb3BlblNlY3VyaXR5UmVjb3ZlcnlSZXNldE1vZGFsKCk7CiAgfTsnJycKbmV3ID0gJycnICBkb2N1bWVudC5xdWVyeVNlbGVjdG9yPEhUTUxCdXR0b25FbGVtZW50PignI2ZvcmdvdFN5c3RlbVBpbicpIS5vbmNsaWNrPSgpPT57CiAgICBvcGVuU2VjdXJpdHlSZWNvdmVyeVJlc2V0TW9kYWwoKTsKICB9OycnJwppZiBvbGQgbm90IGluIG1haW46CiAgICByYWlzZSBSdW50aW1lRXJyb3IoImZvcmdvdCBQSU4gaGFuZGxlciBtYXJrZXIgbm90IGZvdW5kIikKbWFpbiA9IG1haW4ucmVwbGFjZShvbGQsIG5ldywgMSkKCiMgU2VjdXJpdHkgc2NyZWVuIHJlY292ZXJ5IG5vdGUuCm1haW4gPSBtYWluLnJlcGxhY2UoCiAgICAi2YrYs9iq2K7Yr9mFINmB2YLYtyDZhNmIINmG2LPZitiqIFBJTi4g2YTYpyDZitiq2YUg2KrYrtiy2YrZhiDYp9mE2YPZiNivINmD2YbYtSDYr9in2K7ZhCDYp9mE2KjYsdmG2KfZhdisLiIsCiAgICAi2YrYs9iq2K7Yr9mFINmB2YLYtyDZhNmIINmG2LPZitiqIFBJTi4g2KrZiNis2K8g2YbYs9iu2Kkg2LfZiNin2LHYpiDZhdit2YTZitipINiv2KfYrtmEINmF2KzZhNivINin2YTZhtiz2K4g2KfZhNin2K3YqtmK2KfYt9mK2Kkg2YTZh9iw2Kcg2KfZhNmD2YXYqNmK2YjYqtixLiIsCiAgICAxLAopCgppZiAiVjcuMCBGSVgxMkMgd29ya2luZyBmb3Jnb3QgUElOIiBub3QgaW4gY3NzOgogICAgY3NzICs9IHInJycKCi8qID09PT09IFY3LjAgRklYMTJDIHdvcmtpbmcgZm9yZ290IFBJTiA9PT09PSAqLwoucmVjb3ZlcnktZmlsZS1oZWxwewogIG1hcmdpbi10b3A6MTJweDsKICBwYWRkaW5nOjEwcHg7CiAgZGlzcGxheTpncmlkOwogIGdhcDo1cHg7CiAgYm9yZGVyOjFweCBzb2xpZCAjZDllNWViOwogIGJvcmRlci1yYWRpdXM6MTBweDsKICBiYWNrZ3JvdW5kOiNmOGZiZmM7Cn0KLnJlY292ZXJ5LWZpbGUtaGVscCBzdHJvbmd7Zm9udC1zaXplOjlweDtjb2xvcjojMjc0ZjY3fQoucmVjb3ZlcnktZmlsZS1oZWxwIHNwYW57Zm9udC1zaXplOjhweDtjb2xvcjojNzE4NDhmO2xpbmUtaGVpZ2h0OjEuNn0KLnJlY292ZXJ5LWZpbGUtaGVscCAuYnRue2p1c3RpZnktc2VsZjpzdGFydH0KI3Y3TG9ja0Vycm9ye21hcmdpbi10b3A6OHB4O21pbi1oZWlnaHQ6MTZweDtmb250LXNpemU6OXB4O2NvbG9yOiNiNDIzMTg7Zm9udC13ZWlnaHQ6ODAwfQonJycKCm1haW5fcGF0aC53cml0ZV90ZXh0KG1haW4sIGVuY29kaW5nPSJ1dGYtOCIpCnJ1c3RfcGF0aC53cml0ZV90ZXh0KHJ1c3QsIGVuY29kaW5nPSJ1dGYtOCIpCmNzc19wYXRoLndyaXRlX3RleHQoY3NzLCBlbmNvZGluZz0idXRmLTgiKQoKcHJpbnQoIkZJWDEyQyBhcHBsaWVkOiBGb3Jnb3QgUElOIG5vdyBoYXMgZ3VhcmFudGVlZCBsZWdhY3kgcmVjb3ZlcnkgKyBsb2NhbCByZWNvdmVyeSBmaWxlLiIpCg==' >> "$RUNNER_TEMP/fix12c.b64"
+          python - "$RUNNER_TEMP/fix12c.b64" <<'PY'
+          import base64, pathlib, sys
+          exec(base64.b64decode(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).decode("utf-8"))
+          PY
+
+      - name: Verify FIX12C source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          m=Path("src/main.ts").read_text(encoding="utf-8")
+          r=Path("src-tauri/src/lib.rs").read_text(encoding="utf-8")
+          c=Path("src/style.css").read_text(encoding="utf-8")
+          required=[
+            "SECURITY_RECOVERY_FILE_NAME",
+            "ensure_security_recovery_material",
+            "write_security_recovery_file",
+            "open_security_recovery_file",
+            "recovery_file_available",
+            "recoveryFileAvailable",
+            "openRecoveryCodeFile",
+            "فتح ملف كود الاسترداد",
+            "V7.0 FIX12C working forgot PIN",
+            "openSecurityRecoveryResetModal();"
+          ]
+          missing=[x for x in required if x not in m+r+c]
+          assert not missing, missing
+          assert "if(!v7SecurityStatus.recoverySet)" not in m[m.find("function showV7LockScreen"):m.find("async function startV7App")]
+          for fn in [
+            "function showV7LockScreen()",
+            "function openSecurityRecoveryResetModal()",
+            "async function renderSecurity()",
+            "async function renderLab2Lab()",
+            "async function renderToday("
+          ]:
+              assert fn in m, fn
+          print("FIX12C source gates passed")
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          if ($installer.Length -lt 80000000) { throw "Installer too small" }
+
+      - name: Upload FIX12C installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.0-PIN-Recovery-FIX12C
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated FIX12C source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src/style.css src-tauri/src/lib.rs
+          if git diff --cached --quiet; then
+            echo "No FIX12C changes to commit"
+          else
+            git commit -m "V7.0 FIX12C: make forgot PIN recovery work for legacy installs"
+          fi
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
