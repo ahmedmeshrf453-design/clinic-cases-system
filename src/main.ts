@@ -2659,7 +2659,20 @@ async function showRecoveryCodeModal(code: string, afterClose?: () => void | Pro
 }
 
 function openSecurityRecoveryResetModal() {
-  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+  let root = document.querySelector<HTMLDivElement>('#modalRoot');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'modalRoot';
+    app.appendChild(root);
+  }
+
+  let toastRoot = document.querySelector<HTMLDivElement>('#toastRoot');
+  if (!toastRoot) {
+    toastRoot = document.createElement('div');
+    toastRoot.id = 'toastRoot';
+    app.appendChild(toastRoot);
+  }
+
   root.innerHTML = `
     <div class="modal-backdrop" id="securityRecoveryBackdrop">
       <section class="modal compact">
@@ -2801,9 +2814,18 @@ function showV7LockScreen(){
         <button class="forgot-pin-btn" id="forgotSystemPin" type="button">نسيت PIN؟</button>
         <div id="v7LockError"></div>
       </div>
-    </div>`;
+    </div>
+    <div id="modalRoot"></div>
+    <div id="toastRoot"></div>`;
 
-  document.querySelector<HTMLButtonElement>('#forgotSystemPin')!.onclick=()=>openSecurityRecoveryResetModal();
+  document.querySelector<HTMLButtonElement>('#forgotSystemPin')!.onclick=()=>{
+    const error=document.querySelector<HTMLDivElement>('#v7LockError')!;
+    if(!v7SecurityStatus.recoverySet){
+      error.textContent='لم يتم إنشاء كود استرداد بعد. افتح النظام بالـ PIN الحالي مرة واحدة وسيظهر لك كود الاسترداد لحفظه.';
+      return;
+    }
+    openSecurityRecoveryResetModal();
+  };
 
   document.querySelector<HTMLFormElement>('#v7UnlockForm')!.onsubmit=async e=>{
     e.preventDefault();
