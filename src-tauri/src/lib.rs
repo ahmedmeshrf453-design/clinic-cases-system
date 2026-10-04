@@ -513,7 +513,7 @@ struct HealthCheck {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SecurityStatus { pin_set: bool, auto_lock_minutes: u32, recovery_set: bool }
+struct SecurityStatus { pin_set: bool, auto_lock_minutes: u32, recovery_set: bool, recovery_file_available: bool }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SecurityPinInput { current_pin: String, new_pin: String, auto_lock_minutes: u32 }
@@ -684,6 +684,64 @@ fn verify_security_recovery_value(conn: &Connection, code: &str) -> Result<bool,
     pin_rate_limit_record(conn, "security_recovery", ok)?;
     Ok(ok)
 }
+
+const SECURITY_RECOVERY_FILE_NAME: &str = "Clinic-Cases-Recovery-Code.txt";
+
+fn security_recovery_file_path(state: &AppState) -> PathBuf {
+    state.backup_dir.join(SECURITY_RECOVERY_FILE_NAME)
+}
+
+fn write_security_recovery_file(state: &AppState, code: &str) -> Result<(), String> {
+    fs::create_dir_all(&state.backup_dir).map_err(|e| e.to_string())?;
+    let content = format!(
+        "Clinic Cases System - Emergency Recovery Code\r\n\
+         =============================================\r\n\r\n\
+         RECOVERY CODE:\r\n{}\r\n\r\n\
+         Keep this file private.\r\n\
+         Use this code only from: Forgot PIN / نسيت PIN؟\r\n",
+        code
+    );
+    fs::write(security_recovery_file_path(state), content.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn rotate_security_recovery_material(state: &AppState, conn: &Connection) -> Result<String, String> {
+    let code = generate_recovery_code_value();
+    save_security_recovery_code(conn, &code)?;
+    write_security_recovery_file(state, &code)?;
+    Ok(code)
+}
+
+fn ensure_security_recovery_material(state: &AppState) -> Result<(), String> {
+    let conn = open_db(state)?;
+    let pin_set: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM app_meta WHERE key='security_pin_hash' AND value<>''",
+        [],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    if pin_set == 0 {
+        return Ok(());
+    }
+
+    let recovery_set: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM app_meta WHERE key='security_recovery_hash' AND value<>''",
+        [],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    let file_exists = security_recovery_file_path(state).exists();
+
+    // Legacy FIX12/FIX12B installations may already be locked before a
+    // recovery code was ever generated. Create/rotate one locally so
+    // Forgot PIN is immediately usable after this update.
+    if recovery_set == 0 || !file_exists {
+        let _ = rotate_security_recovery_material(state, &conn)?;
+    }
+
+    Ok(())
+}
+
 
 
 fn validate_patient_fields(
@@ -3172,6 +3230,7 @@ fn security_status(state: State<AppState>) -> Result<SecurityStatus, String> {
         pin_set: pin_count > 0,
         auto_lock_minutes,
         recovery_set: recovery_count > 0,
+        recovery_file_available: security_recovery_file_path(&state).exists(),
     })
 }
 
@@ -3238,8 +3297,7 @@ fn regenerate_security_recovery(
     if !verify_security_pin_value(&conn, &input.pin)? {
         return Err("PIN النظام غير صحيح".into());
     }
-    let code = generate_recovery_code_value();
-    save_security_recovery_code(&conn, &code)?;
+    let code = rotate_security_recovery_material(&state, &conn)?;
     conn.execute(
         "INSERT INTO audit_log(action,entity_type,entity_id,details)
          VALUES('تجديد','حماية','system','تم إنشاء كود استرداد جديد')",
@@ -3290,7 +3348,23 @@ fn reset_security_pin_with_recovery(
         [],
     ).map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
+    write_security_recovery_file(&state, &new_recovery_code)?;
     Ok(new_recovery_code)
+}
+
+#[tauri::command]
+fn open_security_recovery_file(state: State<AppState>) -> Result<(), String> {
+    ensure_security_recovery_material(&state)?;
+    let path = security_recovery_file_path(&state);
+    if !path.exists() {
+        return Err("ملف كود الاسترداد غير موجود".into());
+    }
+
+    Command::new("notepad.exe")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| format!("تعذر فتح ملف كود الاسترداد: {}", e))?;
+    Ok(())
 }
 
 fn attachment_signature_ok(path:&Path,ext:&str)->Result<bool,String>{let mut f=fs::File::open(path).map_err(|e|e.to_string())?;let mut h=[0u8;8];let n=f.read(&mut h).map_err(|e|e.to_string())?;Ok(match ext{"pdf"=>n>=5&&&h[..5]==b"%PDF-","png"=>n>=8&&h==[0x89,b'P',b'N',b'G',0x0D,0x0A,0x1A,0x0A],"jpg"|"jpeg"=>n>=3&&h[0]==0xFF&&h[1]==0xD8&&h[2]==0xFF,_=>false})}
@@ -3863,6 +3937,10 @@ pub fn run() {
                 attachments_dir,
             };
 
+            // FIX12C: guarantee a usable local recovery code for legacy
+            // installations before the lock screen is shown.
+            let _ = ensure_security_recovery_material(&state);
+
             if backup_only {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
@@ -3942,6 +4020,7 @@ pub fn run() {
             set_security_pin,
             regenerate_security_recovery,
             reset_security_pin_with_recovery,
+            open_security_recovery_file,
             add_patient_attachment,
             list_patient_attachments,
             delete_patient_attachment,

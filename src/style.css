@@ -4133,3 +4133,19 @@ table td{font-size:13px !important}
 .recovery-code-box{margin:14px 0 10px;padding:15px 12px;border:1px dashed #7aa9bd;border-radius:10px;background:#f4fafc;text-align:center;font-size:19px;font-weight:950;letter-spacing:1.5px;color:#183f57;user-select:all}
 .recovery-warning{padding:9px 10px;border-radius:9px;background:#fff8e7;color:#7a5a13;font-size:8.5px;line-height:1.7}
 @media(max-width:700px){.security-recovery-card{align-items:stretch;flex-direction:column}}
+
+
+/* ===== V7.0 FIX12C working forgot PIN ===== */
+.recovery-file-help{
+  margin-top:12px;
+  padding:10px;
+  display:grid;
+  gap:5px;
+  border:1px solid #d9e5eb;
+  border-radius:10px;
+  background:#f8fbfc;
+}
+.recovery-file-help strong{font-size:9px;color:#274f67}
+.recovery-file-help span{font-size:8px;color:#71848f;line-height:1.6}
+.recovery-file-help .btn{justify-self:start}
+#v7LockError{margin-top:8px;min-height:16px;font-size:9px;color:#b42318;font-weight:800}

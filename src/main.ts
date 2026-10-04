@@ -405,7 +405,7 @@ type Lab2LabAuthStatus = { pinSet: boolean };
 type Lab2LabPriceRow = { id: number; testName: string; price: string; updatedAt: string };
 
 
-type SecurityStatus={pinSet:boolean;autoLockMinutes:number;recoverySet:boolean};
+type SecurityStatus={pinSet:boolean;autoLockMinutes:number;recoverySet:boolean;recoveryFileAvailable:boolean};
 type PatientAttachment={id:string;patientId:string;originalName:string;fileType:string;note:string;storedPath:string;createdAt:string};
 type CashierItem={serviceType:string;serviceId:string;patientId:string;patientName:string;patientPhone:string;serviceLabel:string;serviceDate:string;serviceTime:string;doctor:string;visitType:string;bookingSource:string;charge:number;paid:number;remaining:number};
 type FinancialCategory={serviceType:string;label:string;count:number;charges:number;paid:number;remaining:number};
@@ -440,7 +440,7 @@ let sidebarPatientsTotal = 0;
 let screenHistory: Screen[] = [];
 let lab2labSessionPin = '';
 let labPriceOverridesLoaded = false;
-let v7SecurityStatus:SecurityStatus={pinSet:false,autoLockMinutes:10,recoverySet:false};
+let v7SecurityStatus:SecurityStatus={pinSet:false,autoLockMinutes:10,recoverySet:false,recoveryFileAvailable:false};
 let v7LastActivityAt=Date.now();
 let v7SecurityTimer:number|undefined;
 
@@ -2686,6 +2686,11 @@ function openSecurityRecoveryResetModal() {
             <label>PIN جديد<input name="newPin" class="ltr" type="password" inputmode="numeric" maxlength="8"></label>
             <label>تأكيد PIN الجديد<input name="confirmPin" class="ltr" type="password" inputmode="numeric" maxlength="8"></label>
           </div>
+          <div class="recovery-file-help">
+            <strong>مش فاكر كود الاسترداد؟</strong>
+            <span>اضغط الزر التالي لفتح ملف الكود المحفوظ على هذا الكمبيوتر.</span>
+            <button type="button" class="btn ghost" id="openRecoveryCodeFile">📄 فتح ملف كود الاسترداد</button>
+          </div>
           <div class="form-actions">
             <button type="button" class="btn ghost" id="cancelSecurityRecovery">إلغاء</button>
             <button class="btn primary">إعادة تعيين PIN</button>
@@ -2697,6 +2702,13 @@ function openSecurityRecoveryResetModal() {
   const close = () => root.innerHTML = '';
   document.querySelector<HTMLButtonElement>('#closeSecurityRecovery')!.onclick = close;
   document.querySelector<HTMLButtonElement>('#cancelSecurityRecovery')!.onclick = close;
+  document.querySelector<HTMLButtonElement>('#openRecoveryCodeFile')!.onclick = async () => {
+    try {
+      await invoke('open_security_recovery_file');
+    } catch (err) {
+      toast(`تعذر فتح ملف الاسترداد: ${String(err)}`, 'error');
+    }
+  };
 
   document.querySelector<HTMLFormElement>('#securityRecoveryForm')!.onsubmit = async e => {
     e.preventDefault();
@@ -2746,7 +2758,7 @@ async function renderSecurity() {
           <div>
             <span>كود الاسترداد</span>
             <strong>${v7SecurityStatus.recoverySet?'✓ جاهز':'⚠️ لم يتم إنشاؤه بعد'}</strong>
-            <small>يستخدم فقط لو نسيت PIN. لا يتم تخزين الكود كنص داخل البرنامج.</small>
+            <small>يستخدم فقط لو نسيت PIN. توجد نسخة طوارئ محلية داخل مجلد النسخ الاحتياطية لهذا الكمبيوتر.</small>
           </div>
           <button class="btn ghost" id="regenerateRecoveryCode">${v7SecurityStatus.recoverySet?'تجديد كود الاسترداد':'إنشاء كود الاسترداد الآن'}</button>
         </section>`:''}
@@ -2819,11 +2831,6 @@ function showV7LockScreen(){
     <div id="toastRoot"></div>`;
 
   document.querySelector<HTMLButtonElement>('#forgotSystemPin')!.onclick=()=>{
-    const error=document.querySelector<HTMLDivElement>('#v7LockError')!;
-    if(!v7SecurityStatus.recoverySet){
-      error.textContent='لم يتم إنشاء كود استرداد بعد. افتح النظام بالـ PIN الحالي مرة واحدة وسيظهر لك كود الاسترداد لحفظه.';
-      return;
-    }
     openSecurityRecoveryResetModal();
   };
 
