@@ -4121,3 +4121,15 @@ table td{font-size:13px !important}
 .finance-payment-method-grid span{font-size:8px;color:#7e8f9b}.finance-payment-method-grid strong{margin-top:3px;font-size:12px;color:#20465f}.finance-payment-method-grid small{margin-top:2px;font-size:7.5px;color:#98a4ad}
 .v7-alert-actions{display:flex;align-items:center;gap:6px}
 @media(max-width:850px){.cashier-quick-filter{align-items:stretch;flex-direction:column}.cashier-due-toggle{justify-content:center}.v7-alert-actions{flex-wrap:wrap}}
+
+
+/* ===== V7.0 FIX12 PIN recovery ===== */
+.forgot-pin-btn{margin-top:9px;border:0;background:transparent;color:#245e7b;font-size:9px;font-weight:900;text-decoration:underline;cursor:pointer}
+.lab2lab-forgot-btn{display:block;margin-inline:auto}
+.security-recovery-card{margin-top:14px;padding:12px 13px;display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #dde7ec;border-radius:12px;background:#fafcfd}
+.security-recovery-card>div{display:grid;gap:3px}.security-recovery-card span{font-size:8px;color:#7d8e99}.security-recovery-card strong{font-size:11px;color:#244a61}.security-recovery-card small{font-size:8px;color:#86959f}
+.security-recovery-card.ready{border-color:#bfe3d4;background:#f4fbf7}.security-recovery-card.ready strong{color:#13795b}
+.security-recovery-card.missing{border-color:#ecd18a;background:#fffbed}.security-recovery-card.missing strong{color:#8a5a00}
+.recovery-code-box{margin:14px 0 10px;padding:15px 12px;border:1px dashed #7aa9bd;border-radius:10px;background:#f4fafc;text-align:center;font-size:19px;font-weight:950;letter-spacing:1.5px;color:#183f57;user-select:all}
+.recovery-warning{padding:9px 10px;border-radius:9px;background:#fff8e7;color:#7a5a13;font-size:8.5px;line-height:1.7}
+@media(max-width:700px){.security-recovery-card{align-items:stretch;flex-direction:column}}

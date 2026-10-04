@@ -3,7 +3,7 @@ use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
-use rand_core::OsRng;
+use rand_core::{OsRng, RngCore};
 use chrono::{Duration, Local, NaiveDate, NaiveTime, Timelike};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -35,6 +35,10 @@ struct Lab2LabPinInput { pin: String }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Lab2LabChangePinInput { current_pin: String, new_pin: String }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Lab2LabAdminResetInput { security_pin: String, new_pin: String }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -509,13 +513,16 @@ struct HealthCheck {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SecurityStatus { pin_set: bool, auto_lock_minutes: u32 }
+struct SecurityStatus { pin_set: bool, auto_lock_minutes: u32, recovery_set: bool }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SecurityPinInput { current_pin: String, new_pin: String, auto_lock_minutes: u32 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct VerifySecurityPinInput { pin: String }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SecurityRecoveryResetInput { recovery_code: String, new_pin: String, auto_lock_minutes: u32 }
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct PatientAttachment { id:String, patient_id:String, original_name:String, file_type:String, note:String, stored_path:String, created_at:String }
@@ -633,6 +640,51 @@ fn verify_stored_pin(conn:&Connection,scope:&str,pin:&str,hash_key:&str,salt_key
     if ok&&!saved.starts_with("$argon2"){meta_set(conn,hash_key,&argon2_hash_pin(pin)?)?;meta_set(conn,salt_key,"")?}
     pin_rate_limit_record(conn,scope,ok)?; Ok(ok)
 }
+
+fn normalize_recovery_code(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_uppercase())
+        .collect()
+}
+
+fn generate_recovery_code_value() -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let mut random = [0u8; 12];
+    let mut rng = OsRng;
+    rng.fill_bytes(&mut random);
+    let body: String = random.iter()
+        .map(|b| ALPHABET[*b as usize % ALPHABET.len()] as char)
+        .collect();
+    format!("AKKAD-{}-{}-{}", &body[0..4], &body[4..8], &body[8..12])
+}
+
+fn save_security_recovery_code(conn: &Connection, code: &str) -> Result<(), String> {
+    let normalized = normalize_recovery_code(code);
+    if normalized.len() < 12 {
+        return Err("كود الاسترداد غير صالح".into());
+    }
+    meta_set(conn, "security_recovery_hash", &argon2_hash_pin(&normalized)?)?;
+    meta_set(conn, "security_recovery_failed_count", "0")?;
+    meta_set(conn, "security_recovery_lock_until", "0")?;
+    Ok(())
+}
+
+fn verify_security_recovery_value(conn: &Connection, code: &str) -> Result<bool, String> {
+    let normalized = normalize_recovery_code(code);
+    if normalized.len() < 12 || normalized.len() > 40 {
+        return Err("كود الاسترداد غير صالح".into());
+    }
+    let saved = meta_value(conn, "security_recovery_hash", "")?;
+    if saved.is_empty() {
+        return Err("لم يتم إنشاء كود استرداد لهذا النظام بعد".into());
+    }
+    pin_rate_limit_check(conn, "security_recovery")?;
+    let ok = argon2_verify_pin(&normalized, &saved);
+    pin_rate_limit_record(conn, "security_recovery", ok)?;
+    Ok(ok)
+}
+
 
 fn validate_patient_fields(
     full_name: &str,
@@ -3000,6 +3052,49 @@ fn change_lab2lab_pin(state: State<AppState>, input: Lab2LabChangePinInput) -> R
 }
 
 #[tauri::command]
+fn reset_lab2lab_pin_with_security_pin(
+    state: State<AppState>,
+    input: Lab2LabAdminResetInput,
+) -> Result<(), String> {
+    validate_lab2lab_pin(&input.new_pin)?;
+    let mut conn = open_db(&state)?;
+
+    let security_set: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM app_meta WHERE key='security_pin_hash' AND value<>''",
+        [],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    if security_set == 0 {
+        return Err("يجب تفعيل PIN النظام الرئيسي أولًا لاسترداد PIN Lab 2 Lab".into());
+    }
+    if !verify_security_pin_value(&conn, &input.security_pin)? {
+        return Err("PIN النظام الرئيسي غير صحيح".into());
+    }
+
+    let hash = argon2_hash_pin(input.new_pin.trim())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    for (key, value) in [
+        ("lab2lab_pin_salt", String::new()),
+        ("lab2lab_pin_hash", hash),
+        ("lab2lab_pin_failed_count", "0".to_string()),
+        ("lab2lab_pin_lock_until", "0".to_string()),
+    ] {
+        tx.execute(
+            "INSERT INTO app_meta(key,value) VALUES(?1,?2)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![key, value],
+        ).map_err(|e| e.to_string())?;
+    }
+    tx.execute(
+        "INSERT INTO audit_log(action,entity_type,entity_id,details)
+         VALUES('إعادة تعيين','حماية','lab2lab','تم إعادة تعيين PIN Lab 2 Lab باستخدام PIN النظام الرئيسي')",
+        [],
+    ).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn seed_lab2lab_prices(state: State<AppState>, input: Lab2LabSeedInput) -> Result<(), String> {
     let mut conn = open_db(&state)?;
     if !verify_lab2lab_pin_value(&conn, &input.pin)? { return Err("الرقم السري غير صحيح".into()); }
@@ -3058,18 +3153,144 @@ fn security_pin_hash(pin:&str,salt:&str)->String{legacy_pin_hash(b"clinic-cases-
 fn validate_security_pin(pin:&str)->Result<(),String>{let p=pin.trim();if p.len()<4||p.len()>8||!p.chars().all(|c|c.is_ascii_digit()){return Err("رقم الحماية يجب أن يكون من 4 إلى 8 أرقام".into())}Ok(())}
 fn verify_security_pin_value(conn:&Connection,pin:&str)->Result<bool,String>{validate_security_pin(pin)?;verify_stored_pin(conn,"security_pin",pin.trim(),"security_pin_hash","security_pin_salt",b"clinic-cases-security-v1|")}
 #[tauri::command]
-fn security_status(state:State<AppState>)->Result<SecurityStatus,String>{let c=open_db(&state)?;let n:i64=c.query_row("SELECT COUNT(*) FROM app_meta WHERE key='security_pin_hash' AND value<>''",[],|r|r.get(0)).map_err(|e|e.to_string())?;let m=meta_value(&c,"security_auto_lock_minutes","10")?.parse::<u32>().unwrap_or(10).clamp(1,120);Ok(SecurityStatus{pin_set:n>0,auto_lock_minutes:m})}
+fn security_status(state: State<AppState>) -> Result<SecurityStatus, String> {
+    let conn = open_db(&state)?;
+    let pin_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM app_meta WHERE key='security_pin_hash' AND value<>''",
+        [],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    let recovery_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM app_meta WHERE key='security_recovery_hash' AND value<>''",
+        [],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    let auto_lock_minutes = meta_value(&conn, "security_auto_lock_minutes", "10")?
+        .parse::<u32>().unwrap_or(10).clamp(1, 120);
+
+    Ok(SecurityStatus {
+        pin_set: pin_count > 0,
+        auto_lock_minutes,
+        recovery_set: recovery_count > 0,
+    })
+}
+
 #[tauri::command]
-fn verify_security_pin(state:State<AppState>,input:VerifySecurityPinInput)->Result<bool,String>{let c=open_db(&state)?;verify_security_pin_value(&c,&input.pin)}
+fn verify_security_pin(
+    state: State<AppState>,
+    input: VerifySecurityPinInput,
+) -> Result<bool, String> {
+    let conn = open_db(&state)?;
+    verify_security_pin_value(&conn, &input.pin)
+}
+
 #[tauri::command]
-fn set_security_pin(state:State<AppState>,input:SecurityPinInput)->Result<SecurityStatus,String>{
-    if input.auto_lock_minutes<1||input.auto_lock_minutes>120{return Err("مدة القفل التلقائي يجب أن تكون من 1 إلى 120 دقيقة".into())}
-    validate_security_pin(&input.new_pin)?;let mut c=open_db(&state)?;
-    let n:i64=c.query_row("SELECT COUNT(*) FROM app_meta WHERE key='security_pin_hash' AND value<>''",[],|r|r.get(0)).map_err(|e|e.to_string())?;
-    if n>0&&!verify_security_pin_value(&c,&input.current_pin)?{return Err("رقم الحماية الحالي غير صحيح".into())}
-    let hash=argon2_hash_pin(input.new_pin.trim())?;let tx=c.transaction().map_err(|e|e.to_string())?;
-    for (k,v) in [("security_pin_salt",String::new()),("security_pin_hash",hash),("security_auto_lock_minutes",input.auto_lock_minutes.to_string()),("security_pin_failed_count","0".to_string()),("security_pin_lock_until","0".to_string())]{tx.execute("INSERT INTO app_meta(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![k,v]).map_err(|e|e.to_string())?;}
-    tx.execute("INSERT INTO audit_log(action,entity_type,entity_id,details) VALUES('تعديل','حماية','system','تم تحديث PIN والقفل التلقائي')",[]).map_err(|e|e.to_string())?;tx.commit().map_err(|e|e.to_string())?;drop(c);security_status(state)
+fn set_security_pin(
+    state: State<AppState>,
+    input: SecurityPinInput,
+) -> Result<SecurityStatus, String> {
+    if input.auto_lock_minutes < 1 || input.auto_lock_minutes > 120 {
+        return Err("مدة القفل التلقائي يجب أن تكون من 1 إلى 120 دقيقة".into());
+    }
+    validate_security_pin(&input.new_pin)?;
+    let mut conn = open_db(&state)?;
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM app_meta WHERE key='security_pin_hash' AND value<>''",
+        [],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    if count > 0 && !verify_security_pin_value(&conn, &input.current_pin)? {
+        return Err("رقم الحماية الحالي غير صحيح".into());
+    }
+
+    let hash = argon2_hash_pin(input.new_pin.trim())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    for (key, value) in [
+        ("security_pin_salt", String::new()),
+        ("security_pin_hash", hash),
+        ("security_auto_lock_minutes", input.auto_lock_minutes.to_string()),
+        ("security_pin_failed_count", "0".to_string()),
+        ("security_pin_lock_until", "0".to_string()),
+    ] {
+        tx.execute(
+            "INSERT INTO app_meta(key,value) VALUES(?1,?2)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![key, value],
+        ).map_err(|e| e.to_string())?;
+    }
+    tx.execute(
+        "INSERT INTO audit_log(action,entity_type,entity_id,details)
+         VALUES('تعديل','حماية','system','تم تحديث PIN والقفل التلقائي')",
+        [],
+    ).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    drop(conn);
+    security_status(state)
+}
+
+#[tauri::command]
+fn regenerate_security_recovery(
+    state: State<AppState>,
+    input: VerifySecurityPinInput,
+) -> Result<String, String> {
+    let conn = open_db(&state)?;
+    if !verify_security_pin_value(&conn, &input.pin)? {
+        return Err("PIN النظام غير صحيح".into());
+    }
+    let code = generate_recovery_code_value();
+    save_security_recovery_code(&conn, &code)?;
+    conn.execute(
+        "INSERT INTO audit_log(action,entity_type,entity_id,details)
+         VALUES('تجديد','حماية','system','تم إنشاء كود استرداد جديد')",
+        [],
+    ).map_err(|e| e.to_string())?;
+    Ok(code)
+}
+
+#[tauri::command]
+fn reset_security_pin_with_recovery(
+    state: State<AppState>,
+    input: SecurityRecoveryResetInput,
+) -> Result<String, String> {
+    if input.auto_lock_minutes < 1 || input.auto_lock_minutes > 120 {
+        return Err("مدة القفل التلقائي يجب أن تكون من 1 إلى 120 دقيقة".into());
+    }
+    validate_security_pin(&input.new_pin)?;
+
+    let mut conn = open_db(&state)?;
+    if !verify_security_recovery_value(&conn, &input.recovery_code)? {
+        return Err("كود الاسترداد غير صحيح".into());
+    }
+
+    let new_pin_hash = argon2_hash_pin(input.new_pin.trim())?;
+    let new_recovery_code = generate_recovery_code_value();
+    let new_recovery_hash = argon2_hash_pin(&normalize_recovery_code(&new_recovery_code))?;
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    for (key, value) in [
+        ("security_pin_salt", String::new()),
+        ("security_pin_hash", new_pin_hash),
+        ("security_auto_lock_minutes", input.auto_lock_minutes.to_string()),
+        ("security_pin_failed_count", "0".to_string()),
+        ("security_pin_lock_until", "0".to_string()),
+        ("security_recovery_hash", new_recovery_hash),
+        ("security_recovery_failed_count", "0".to_string()),
+        ("security_recovery_lock_until", "0".to_string()),
+    ] {
+        tx.execute(
+            "INSERT INTO app_meta(key,value) VALUES(?1,?2)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![key, value],
+        ).map_err(|e| e.to_string())?;
+    }
+    tx.execute(
+        "INSERT INTO audit_log(action,entity_type,entity_id,details)
+         VALUES('استرداد','حماية','system','تم إعادة تعيين PIN النظام باستخدام كود الاسترداد وتم تدوير الكود')",
+        [],
+    ).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(new_recovery_code)
 }
 
 fn attachment_signature_ok(path:&Path,ext:&str)->Result<bool,String>{let mut f=fs::File::open(path).map_err(|e|e.to_string())?;let mut h=[0u8;8];let n=f.read(&mut h).map_err(|e|e.to_string())?;Ok(match ext{"pdf"=>n>=5&&&h[..5]==b"%PDF-","png"=>n>=8&&h==[0x89,b'P',b'N',b'G',0x0D,0x0A,0x1A,0x0A],"jpg"|"jpeg"=>n>=3&&h[0]==0xFF&&h[1]==0xD8&&h[2]==0xFF,_=>false})}
@@ -3712,12 +3933,15 @@ pub fn run() {
             setup_lab2lab_pin,
             verify_lab2lab_pin,
             change_lab2lab_pin,
+            reset_lab2lab_pin_with_security_pin,
             seed_lab2lab_prices,
             list_lab2lab_prices,
             update_lab2lab_price,
             security_status,
             verify_security_pin,
             set_security_pin,
+            regenerate_security_recovery,
+            reset_security_pin_with_recovery,
             add_patient_attachment,
             list_patient_attachments,
             delete_patient_attachment,
@@ -3889,6 +4113,19 @@ mod production_tests {
 
     #[test]
     fn attachment_signature_checks_real_content(){let d=std::env::temp_dir().join(format!("clinic-attachment-{}",Uuid::new_v4()));fs::create_dir_all(&d).expect("mkdir");let ok=d.join("ok.pdf");fs::write(&ok,b"%PDF-1.7\nsecure").expect("write");assert!(attachment_signature_ok(&ok,"pdf").expect("sig"));let fake=d.join("fake.pdf");fs::write(&fake,b"not-pdf").expect("write");assert!(!attachment_signature_ok(&fake,"pdf").expect("sig"));let _=fs::remove_dir_all(&d);}
+
+    #[test]
+    fn recovery_code_roundtrip_is_secure() {
+        let code_a = generate_recovery_code_value();
+        let code_b = generate_recovery_code_value();
+        assert_ne!(code_a, code_b);
+        assert!(code_a.starts_with("AKKAD-"));
+        let normalized = normalize_recovery_code(&code_a);
+        assert_eq!(normalized.len(), 17);
+        let hash = argon2_hash_pin(&normalized).expect("recovery hash failed");
+        assert!(argon2_verify_pin(&normalized, &hash));
+        assert!(!argon2_verify_pin("AKKADWRONGCODE0000", &hash));
+    }
 
     #[test]
     fn patient_validation_rejects_empty_identity() {

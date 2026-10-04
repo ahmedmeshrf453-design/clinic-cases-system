@@ -405,7 +405,7 @@ type Lab2LabAuthStatus = { pinSet: boolean };
 type Lab2LabPriceRow = { id: number; testName: string; price: string; updatedAt: string };
 
 
-type SecurityStatus={pinSet:boolean;autoLockMinutes:number};
+type SecurityStatus={pinSet:boolean;autoLockMinutes:number;recoverySet:boolean};
 type PatientAttachment={id:string;patientId:string;originalName:string;fileType:string;note:string;storedPath:string;createdAt:string};
 type CashierItem={serviceType:string;serviceId:string;patientId:string;patientName:string;patientPhone:string;serviceLabel:string;serviceDate:string;serviceTime:string;doctor:string;visitType:string;bookingSource:string;charge:number;paid:number;remaining:number};
 type FinancialCategory={serviceType:string;label:string;count:number;charges:number;paid:number;remaining:number};
@@ -440,7 +440,7 @@ let sidebarPatientsTotal = 0;
 let screenHistory: Screen[] = [];
 let lab2labSessionPin = '';
 let labPriceOverridesLoaded = false;
-let v7SecurityStatus:SecurityStatus={pinSet:false,autoLockMinutes:10};
+let v7SecurityStatus:SecurityStatus={pinSet:false,autoLockMinutes:10,recoverySet:false};
 let v7LastActivityAt=Date.now();
 let v7SecurityTimer:number|undefined;
 
@@ -2625,8 +2625,206 @@ async function renderAlerts(){
   });
 }
 
-async function renderSecurity(){v7SecurityStatus=await invoke<SecurityStatus>('security_status');shell(`<section class="card v7-security-card"><div class="card-head"><div><h2>حماية البيانات</h2><p>PIN وقفل تلقائي للجلسة</p></div><span class="v7-security-state">${v7SecurityStatus.pinSet?'🔐 مفعّل':'🔓 غير مفعّل'}</span></div><form id="securityForm" class="v7-security-form">${v7SecurityStatus.pinSet?'<label>PIN الحالي<input name="currentPin" type="password" inputmode="numeric" maxlength="8"></label>':''}<label>PIN الجديد<input name="newPin" type="password" inputmode="numeric" maxlength="8" placeholder="4 إلى 8 أرقام"></label><label>القفل التلقائي بعد<select name="autoLockMinutes">${[1,5,10,15,30,60,120].map(x=>`<option value="${x}" ${x===v7SecurityStatus.autoLockMinutes?'selected':''}>${x} دقيقة</option>`).join('')}</select></label><button class="btn primary">حفظ إعدادات الحماية</button></form><div class="v7-security-notes">PIN لا يُحفظ كنص صريح؛ يتم حفظ Hash مع Salt محلي.</div></section>`,'الحماية','قفل النظام تلقائيًا عند عدم الاستخدام');document.querySelector<HTMLFormElement>('#securityForm')!.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget as HTMLFormElement);try{v7SecurityStatus=await invoke<SecurityStatus>('set_security_pin',{input:{currentPin:String(fd.get('currentPin')||''),newPin:String(fd.get('newPin')||''),autoLockMinutes:Number(fd.get('autoLockMinutes')||10)}});v7LastActivityAt=Date.now();toast('تم حفظ إعدادات الحماية');await renderSecurity()}catch(err){toast(`تعذر الحفظ: ${String(err)}`,'error')}}}
-function showV7LockScreen(){app.innerHTML=`<div class="v7-lock-screen"><div class="v7-lock-card"><div class="v7-lock-icon">🔐</div><h1>النظام مقفول</h1><p>أدخل PIN الحماية للمتابعة</p><form id="v7UnlockForm"><input id="v7UnlockPin" type="password" inputmode="numeric" maxlength="8" autofocus placeholder="PIN"><button class="btn primary">فتح النظام</button></form><div id="v7LockError"></div></div></div>`;document.querySelector<HTMLFormElement>('#v7UnlockForm')!.onsubmit=async e=>{e.preventDefault();const pin=document.querySelector<HTMLInputElement>('#v7UnlockPin')!.value.trim();try{const ok=await invoke<boolean>('verify_security_pin',{input:{pin}});if(!ok){document.querySelector<HTMLDivElement>('#v7LockError')!.textContent='PIN غير صحيح';return}v7LastActivityAt=Date.now();await renderScreen()}catch(err){document.querySelector<HTMLDivElement>('#v7LockError')!.textContent=String(err)}}}
+async function showRecoveryCodeModal(code: string, afterClose?: () => void | Promise<void>) {
+  const root = document.querySelector<HTMLDivElement>('#modalRoot');
+  if (!root) {
+    window.alert(`كود الاسترداد الجديد:\n${code}\n\nاحتفظ به في مكان آمن.`);
+    if (afterClose) await afterClose();
+    return;
+  }
+
+  root.innerHTML = `
+    <div class="modal-backdrop">
+      <section class="modal compact recovery-code-modal">
+        <div class="modal-head">
+          <div><h2>كود الاسترداد</h2><p>سيظهر هذا الكود الآن فقط. احتفظ به خارج البرنامج.</p></div>
+        </div>
+        <div class="recovery-code-box ltr">${esc(code)}</div>
+        <div class="recovery-warning">⚠️ لو نسيت PIN النظام، هذا الكود هو طريقة الاسترداد الآمنة بدون حذف بيانات المرضى.</div>
+        <div class="form-actions">
+          <button class="btn ghost" id="copyRecoveryCode">⧉ نسخ الكود</button>
+          <button class="btn primary" id="closeRecoveryCode">حفظت الكود — متابعة</button>
+        </div>
+      </section>
+    </div>`;
+
+  document.querySelector<HTMLButtonElement>('#copyRecoveryCode')!.onclick = async () => {
+    await navigator.clipboard.writeText(code);
+    toast('تم نسخ كود الاسترداد');
+  };
+  document.querySelector<HTMLButtonElement>('#closeRecoveryCode')!.onclick = async () => {
+    root.innerHTML = '';
+    if (afterClose) await afterClose();
+  };
+}
+
+function openSecurityRecoveryResetModal() {
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+  root.innerHTML = `
+    <div class="modal-backdrop" id="securityRecoveryBackdrop">
+      <section class="modal compact">
+        <div class="modal-head">
+          <div><h2>نسيت PIN النظام؟</h2><p>استخدم كود الاسترداد الذي حفظته سابقًا.</p></div>
+          <button class="modal-close" id="closeSecurityRecovery">×</button>
+        </div>
+        <form id="securityRecoveryForm">
+          <div class="form-grid one">
+            <label>كود الاسترداد<input name="recoveryCode" class="ltr" autocomplete="off" placeholder="AKKAD-XXXX-XXXX-XXXX"></label>
+            <label>PIN جديد<input name="newPin" class="ltr" type="password" inputmode="numeric" maxlength="8"></label>
+            <label>تأكيد PIN الجديد<input name="confirmPin" class="ltr" type="password" inputmode="numeric" maxlength="8"></label>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn ghost" id="cancelSecurityRecovery">إلغاء</button>
+            <button class="btn primary">إعادة تعيين PIN</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+
+  const close = () => root.innerHTML = '';
+  document.querySelector<HTMLButtonElement>('#closeSecurityRecovery')!.onclick = close;
+  document.querySelector<HTMLButtonElement>('#cancelSecurityRecovery')!.onclick = close;
+
+  document.querySelector<HTMLFormElement>('#securityRecoveryForm')!.onsubmit = async e => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    const newPin = String(fd.get('newPin') || '').trim();
+    const confirmPin = String(fd.get('confirmPin') || '').trim();
+    if (newPin !== confirmPin) return toast('تأكيد PIN الجديد غير مطابق', 'error');
+
+    try {
+      const newCode = await invoke<string>('reset_security_pin_with_recovery', {
+        input: {
+          recoveryCode: String(fd.get('recoveryCode') || '').trim(),
+          newPin,
+          autoLockMinutes: v7SecurityStatus.autoLockMinutes || 10
+        }
+      });
+      v7SecurityStatus = await invoke<SecurityStatus>('security_status');
+      v7LastActivityAt = Date.now();
+      close();
+      await showRecoveryCodeModal(newCode, async () => renderScreen());
+    } catch (err) {
+      toast(`تعذر الاسترداد: ${String(err)}`, 'error');
+    }
+  };
+}
+
+async function renderSecurity() {
+  v7SecurityStatus = await invoke<SecurityStatus>('security_status');
+  shell(`
+    <section class="card v7-security-card">
+      <div class="card-head">
+        <div><h2>حماية النظام</h2><p>تغيير PIN واسترداده بدون حذف أو قفل بيانات المرضى</p></div>
+        <span class="v7-security-state">${v7SecurityStatus.pinSet?'🔐 مفعّل':'🔓 غير مفعّل'}</span>
+      </div>
+
+      <form id="securityForm" class="v7-security-form">
+        ${v7SecurityStatus.pinSet?'<label>PIN الحالي<input name="currentPin" type="password" inputmode="numeric" maxlength="8"></label>':''}
+        <label>PIN الجديد<input name="newPin" type="password" inputmode="numeric" maxlength="8" placeholder="4 إلى 8 أرقام"></label>
+        <label>القفل التلقائي بعد
+          <select name="autoLockMinutes">${[1,5,10,15,30,60,120].map(x=>`<option value="${x}" ${x===v7SecurityStatus.autoLockMinutes?'selected':''}>${x} دقيقة</option>`).join('')}</select>
+        </label>
+        <button class="btn primary">${v7SecurityStatus.pinSet?'تغيير PIN':'إنشاء PIN'}</button>
+      </form>
+
+      ${v7SecurityStatus.pinSet?`
+        <section class="security-recovery-card ${v7SecurityStatus.recoverySet?'ready':'missing'}">
+          <div>
+            <span>كود الاسترداد</span>
+            <strong>${v7SecurityStatus.recoverySet?'✓ جاهز':'⚠️ لم يتم إنشاؤه بعد'}</strong>
+            <small>يستخدم فقط لو نسيت PIN. لا يتم تخزين الكود كنص داخل البرنامج.</small>
+          </div>
+          <button class="btn ghost" id="regenerateRecoveryCode">${v7SecurityStatus.recoverySet?'تجديد كود الاسترداد':'إنشاء كود الاسترداد الآن'}</button>
+        </section>`:''}
+
+      <div class="v7-security-notes">لا يوجد Master Password أو باب خلفي. كود الاسترداد نفسه يظهر لك مرة واحدة فقط.</div>
+    </section>
+  `,'الحماية','تغيير واسترداد PIN النظام بأمان');
+
+  document.querySelector<HTMLFormElement>('#securityForm')!.onsubmit=async e=>{
+    e.preventDefault();
+    const fd=new FormData(e.currentTarget as HTMLFormElement);
+    const newPin=String(fd.get('newPin')||'').trim();
+    try{
+      v7SecurityStatus=await invoke<SecurityStatus>('set_security_pin',{input:{
+        currentPin:String(fd.get('currentPin')||''),
+        newPin,
+        autoLockMinutes:Number(fd.get('autoLockMinutes')||10)
+      }});
+      const code=await invoke<string>('regenerate_security_recovery',{input:{pin:newPin}});
+      v7SecurityStatus=await invoke<SecurityStatus>('security_status');
+      v7LastActivityAt=Date.now();
+      await showRecoveryCodeModal(code,async()=>renderSecurity());
+    }catch(err){toast(`تعذر الحفظ: ${String(err)}`,'error')}
+  };
+
+  const regen=document.querySelector<HTMLButtonElement>('#regenerateRecoveryCode');
+  if(regen) regen.onclick=()=>{
+    const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
+    root.innerHTML=`
+      <div class="modal-backdrop">
+        <section class="modal compact">
+          <div class="modal-head"><div><h2>كود الاسترداد</h2><p>أدخل PIN الحالي للتأكيد.</p></div></div>
+          <form id="regenRecoveryForm">
+            <label>PIN الحالي<input name="pin" class="ltr" type="password" inputmode="numeric" maxlength="8" autofocus></label>
+            <div class="form-actions"><button type="button" class="btn ghost" id="cancelRegen">إلغاء</button><button class="btn primary">إنشاء كود جديد</button></div>
+          </form>
+        </section>
+      </div>`;
+    const close=()=>root.innerHTML='';
+    document.querySelector<HTMLButtonElement>('#cancelRegen')!.onclick=close;
+    document.querySelector<HTMLFormElement>('#regenRecoveryForm')!.onsubmit=async e=>{
+      e.preventDefault();
+      const fd=new FormData(e.currentTarget as HTMLFormElement);
+      try{
+        const code=await invoke<string>('regenerate_security_recovery',{input:{pin:String(fd.get('pin')||'').trim()}});
+        v7SecurityStatus=await invoke<SecurityStatus>('security_status');
+        close();
+        await showRecoveryCodeModal(code,async()=>renderSecurity());
+      }catch(err){toast(`تعذر إنشاء الكود: ${String(err)}`,'error')}
+    };
+  };
+}
+
+function showV7LockScreen(){
+  app.innerHTML=`
+    <div class="v7-lock-screen">
+      <div class="v7-lock-card">
+        <div class="v7-lock-icon">🔐</div>
+        <h1>النظام مقفول</h1>
+        <p>أدخل PIN الحماية للمتابعة</p>
+        <form id="v7UnlockForm">
+          <input id="v7UnlockPin" type="password" inputmode="numeric" maxlength="8" autofocus placeholder="PIN">
+          <button class="btn primary">فتح النظام</button>
+        </form>
+        <button class="forgot-pin-btn" id="forgotSystemPin" type="button">نسيت PIN؟</button>
+        <div id="v7LockError"></div>
+      </div>
+    </div>`;
+
+  document.querySelector<HTMLButtonElement>('#forgotSystemPin')!.onclick=()=>openSecurityRecoveryResetModal();
+
+  document.querySelector<HTMLFormElement>('#v7UnlockForm')!.onsubmit=async e=>{
+    e.preventDefault();
+    const pin=document.querySelector<HTMLInputElement>('#v7UnlockPin')!.value.trim();
+    const error=document.querySelector<HTMLDivElement>('#v7LockError')!;
+    try{
+      const ok=await invoke<boolean>('verify_security_pin',{input:{pin}});
+      if(!ok){error.textContent='PIN غير صحيح';return}
+      v7LastActivityAt=Date.now();
+      v7SecurityStatus=await invoke<SecurityStatus>('security_status');
+      if(!v7SecurityStatus.recoverySet){
+        const code=await invoke<string>('regenerate_security_recovery',{input:{pin}});
+        v7SecurityStatus=await invoke<SecurityStatus>('security_status');
+        await showRecoveryCodeModal(code,async()=>renderScreen());
+        return;
+      }
+      await renderScreen();
+    }catch(err){error.textContent=String(err)}
+  };
+}
+
 async function startV7App(){await loadLabPriceOverrides();v7SecurityStatus=await invoke<SecurityStatus>('security_status');const activity=()=>{v7LastActivityAt=Date.now()};['pointerdown','keydown','touchstart'].forEach(name=>window.addEventListener(name,activity,{passive:true}));window.clearInterval(v7SecurityTimer);v7SecurityTimer=window.setInterval(()=>{if(!v7SecurityStatus.pinSet)return;const idle=Date.now()-v7LastActivityAt;if(idle>=v7SecurityStatus.autoLockMinutes*60000&&!document.querySelector('.v7-lock-screen'))showV7LockScreen()},15000);if(v7SecurityStatus.pinSet)showV7LockScreen();else await renderScreen()}
 
 async function renderScreen() {
@@ -3997,6 +4195,42 @@ async function renderLabPrices() {
 }
 
 
+function openForgotLab2LabPinModal() {
+  const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
+  root.innerHTML=`
+    <div class="modal-backdrop">
+      <section class="modal compact">
+        <div class="modal-head"><div><h2>نسيت PIN Lab 2 Lab؟</h2><p>استخدم PIN النظام الرئيسي لإنشاء PIN جديد.</p></div></div>
+        <form id="forgotLab2LabForm">
+          <div class="form-grid one">
+            <label>PIN النظام الرئيسي<input name="securityPin" class="ltr" type="password" inputmode="numeric" maxlength="8"></label>
+            <label>PIN جديد لـ Lab 2 Lab<input name="newPin" class="ltr" type="password" inputmode="numeric" maxlength="8"></label>
+            <label>تأكيد PIN الجديد<input name="confirmPin" class="ltr" type="password" inputmode="numeric" maxlength="8"></label>
+          </div>
+          <div class="form-actions"><button type="button" class="btn ghost" id="cancelForgotLab2Lab">إلغاء</button><button class="btn primary">إعادة تعيين PIN</button></div>
+        </form>
+      </section>
+    </div>`;
+  const close=()=>root.innerHTML='';
+  document.querySelector<HTMLButtonElement>('#cancelForgotLab2Lab')!.onclick=close;
+  document.querySelector<HTMLFormElement>('#forgotLab2LabForm')!.onsubmit=async e=>{
+    e.preventDefault();
+    const fd=new FormData(e.currentTarget as HTMLFormElement);
+    const newPin=String(fd.get('newPin')||'').trim();
+    if(newPin!==String(fd.get('confirmPin')||'').trim())return toast('تأكيد PIN الجديد غير مطابق','error');
+    try{
+      await invoke('reset_lab2lab_pin_with_security_pin',{input:{
+        securityPin:String(fd.get('securityPin')||'').trim(),
+        newPin
+      }});
+      lab2labSessionPin=newPin;
+      close();
+      toast('تم إعادة تعيين PIN Lab 2 Lab');
+      await renderScreen();
+    }catch(err){toast(`تعذر إعادة التعيين: ${String(err)}`,'error')}
+  };
+}
+
 async function renderLab2Lab() {
   const auth = await invoke<Lab2LabAuthStatus>('lab2lab_auth_status');
 
@@ -4058,6 +4292,7 @@ async function renderLab2Lab() {
           </label>
           <button class="btn primary" type="submit">فتح القائمة</button>
         </form>
+        <button class="forgot-pin-btn lab2lab-forgot-btn" id="forgotLab2LabPin" type="button">نسيت الرقم السري؟</button>
       </section>
     `, 'أسعار Lab 2 Lab', 'القائمة محمية برقم سري');
 
@@ -4069,7 +4304,8 @@ async function renderLab2Lab() {
         if (!ok) {
           toast('الرقم السري غير صحيح', 'error');
           document.querySelector<HTMLInputElement>('#lab2labPin')!.select();
-          return;
+          document.querySelector<HTMLButtonElement>('#forgotLab2LabPin')!.onclick = () => openForgotLab2LabPinModal();
+    return;
         }
         lab2labSessionPin = pin;
         await renderScreen();
@@ -4077,6 +4313,7 @@ async function renderLab2Lab() {
         toast(String(err), 'error');
       }
     };
+    document.querySelector<HTMLButtonElement>('#forgotLab2LabPin')!.onclick = () => openForgotLab2LabPinModal();
     return;
   }
 
