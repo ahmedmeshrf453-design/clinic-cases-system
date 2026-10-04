@@ -1,0 +1,139 @@
+name: Clinic Cases V7.0 PIN Recovery FIX12D
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply FIX12C payload safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import base64, re
+
+          wf = Path(".github/workflows/FIX12C.yml").read_text(encoding="utf-8")
+          pattern = r"printf '%s' '([A-Za-z0-9+/=]+)' >> \"\$RUNNER_TEMP/fix12c\.b64\""
+          chunks = re.findall(pattern, wf)
+          if not chunks:
+              raise SystemExit("FIX12C payload chunks not found")
+
+          payload = base64.b64decode("".join(chunks)).decode("utf-8")
+          exec(compile(payload, "<FIX12C-payload>", "exec"))
+          print("FIX12C payload applied")
+          PY
+
+      - name: Verify FIX12D source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          m=Path("src/main.ts").read_text(encoding="utf-8")
+          r=Path("src-tauri/src/lib.rs").read_text(encoding="utf-8")
+          c=Path("src/style.css").read_text(encoding="utf-8")
+
+          required=[
+            "SECURITY_RECOVERY_FILE_NAME",
+            "ensure_security_recovery_material",
+            "write_security_recovery_file",
+            "open_security_recovery_file",
+            "recovery_file_available",
+            "recoveryFileAvailable",
+            "openRecoveryCodeFile",
+            "فتح ملف كود الاسترداد",
+            "V7.0 FIX12C working forgot PIN",
+          ]
+          missing=[x for x in required if x not in m+r+c]
+          assert not missing, missing
+
+          a=m.find("function showV7LockScreen()")
+          b=m.find("async function startV7App()",a)
+          assert a>=0 and b>a
+          lock=m[a:b]
+
+          assert 'id="forgotSystemPin"' in lock
+          assert "openSecurityRecoveryResetModal();" in lock
+          assert 'id="modalRoot"' in lock
+          assert 'id="toastRoot"' in lock
+
+          for fn in [
+            "function openSecurityRecoveryResetModal()",
+            "async function renderSecurity()",
+            "async function renderLab2Lab()",
+            "async function renderToday("
+          ]:
+              assert fn in m, fn
+
+          print("FIX12D source gates passed")
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          if ($installer.Length -lt 80000000) { throw "Installer too small" }
+
+      - name: Upload FIX12D installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.0-PIN-Recovery-FIX12D
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated FIX12D source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src/style.css src-tauri/src/lib.rs
+          if git diff --cached --quiet; then
+            echo "No FIX12D changes to commit"
+          else
+            git commit -m "V7.0 FIX12D: working forgot PIN recovery"
+          fi
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
