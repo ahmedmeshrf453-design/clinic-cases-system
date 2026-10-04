@@ -413,6 +413,7 @@ type FinancialSummary={totalCharges:number;totalPaid:number;totalRemaining:numbe
 type AuditEntry={id:number;action:string;entityType:string;entityId:string;details:string;createdAt:string};
 type UnifiedSearchResult={kind:string;patientId:string;title:string;subtitle:string};
 type SystemAlert={kind:string;title:string;detail:string;patientId:string;serviceType:string;serviceId:string};
+type PaymentMethodSummary={paymentMethod:string;count:number;amount:number};
 
 type Screen = 'dashboard' | 'patients' | 'today' | 'todaystats' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'radiology' | 'cashier' | 'finance' | 'alerts' | 'audit' | 'security' | 'reports' | 'archive' | 'trash' | 'backups' | 'settings';
 
@@ -535,6 +536,9 @@ function radiologyOrderRowsHtml(rows: RadiologyOrder[], showPatient = true) {
               <td>
                 <div class="visit-row-actions">
                   <button class="icon-action" data-open-radiology-order="${esc(order.id)}" title="فتح">⌕</button>
+                  <button class="icon-action edit" data-edit-radiology-order="${esc(order.id)}" title="تعديل">✎</button>
+                  <button class="icon-action" data-radiology-order-pdf="${esc(order.id)}" title="PDF للطباعة">PDF</button>
+                  <button class="icon-action" data-radiology-order-png="${esc(order.id)}" title="صورة">▧</button>
                 </div>
               </td>
             </tr>
@@ -542,6 +546,92 @@ function radiologyOrderRowsHtml(rows: RadiologyOrder[], showPatient = true) {
         </tbody>
       </table>
     </div>`;
+}
+
+function radiologyOrderReceiptHtml(order: RadiologyOrder) {
+  return patientExportSheet(
+    'إيصال أشعة',
+    `${order.patientName || 'بدون اسم'} • ${displayDate(order.orderDate)} ${order.orderTime || ''}`,
+    `
+      <div class="export-patient-summary">
+        <div><span>المريض</span><strong>${esc(order.patientName || '—')}</strong></div>
+        <div><span>الهاتف</span><strong class="ltr">${esc(order.patientPhone || '—')}</strong></div>
+        <div><span>رقم العملية</span><strong class="ltr">${esc(order.id.slice(0, 8))}</strong></div>
+      </div>
+      <div class="radiology-detail-grid">
+        <div><span>اسم الأشعة</span><strong>${esc(order.radiologyName)}</strong></div>
+        <div><span>المركز</span><strong>${esc(order.centerName)}</strong></div>
+        <div><span>السعر</span><strong class="ltr">${moneyNumber(order.price).toFixed(2)} ج.م</strong></div>
+        <div><span>الخصم</span><strong class="ltr">${moneyNumber(order.discountPercent).toFixed(0)}%</strong></div>
+        <div><span>قيمة الخصم</span><strong class="ltr">${moneyNumber(order.discountAmount).toFixed(2)} ج.م</strong></div>
+        <div class="net"><span>الصافي</span><strong class="ltr">${moneyNumber(order.netTotal).toFixed(2)} ج.م</strong></div>
+      </div>
+    `
+  );
+}
+
+async function exportRadiologyOrder(order: RadiologyOrder, format: ExportFormat) {
+  await captureAndSaveExport(
+    radiologyOrderReceiptHtml(order),
+    `أشعة-${order.patientName || 'مريض'}-${order.orderDate}-${order.id.slice(0,8)}`,
+    format
+  );
+}
+
+async function openRadiologyEditModal(order: RadiologyOrder, afterSave?: () => Promise<void>) {
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+  root.innerHTML = `
+    <div class="modal-backdrop" id="radiologyEditBackdrop">
+      <section class="modal form-modal">
+        <div class="modal-head">
+          <div><h2>تعديل حالة الأشعة</h2><p>${esc(order.patientName || '')}</p></div>
+          <button class="modal-close" id="closeRadiologyEdit">×</button>
+        </div>
+        <form id="radiologyEditForm">
+          <div class="radiology-entry-grid">
+            <label>اسم الأشعة<input name="radiologyName" value="${esc(order.radiologyName)}"></label>
+            <label>اسم المركز<input name="centerName" value="${esc(order.centerName)}"></label>
+            <label>السعر<input name="price" class="ltr" type="number" min="0" step="0.01" value="${esc(order.price)}"></label>
+            <label>نسبة الخصم %<input name="discountPercent" class="ltr" type="number" min="0" max="100" step="0.01" value="${esc(order.discountPercent)}"></label>
+            <label>التاريخ<input name="orderDate" type="date" value="${esc(order.orderDate)}"></label>
+            <label>الوقت<input name="orderTime" type="time" value="${esc(order.orderTime)}"></label>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn ghost" id="cancelRadiologyEdit">إلغاء</button>
+            <button class="btn primary">حفظ التعديل</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+
+  const close = () => root.innerHTML = '';
+  document.querySelector<HTMLButtonElement>('#closeRadiologyEdit')!.onclick = close;
+  document.querySelector<HTMLButtonElement>('#cancelRadiologyEdit')!.onclick = close;
+  document.querySelector<HTMLDivElement>('#radiologyEditBackdrop')!.onclick = e => {
+    if (e.target === e.currentTarget) close();
+  };
+
+  document.querySelector<HTMLFormElement>('#radiologyEditForm')!.onsubmit = async e => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    try {
+      await invoke('update_radiology_order', { input: {
+        id: order.id,
+        radiologyName: String(fd.get('radiologyName') || '').trim(),
+        centerName: String(fd.get('centerName') || '').trim(),
+        price: String(fd.get('price') || '').trim(),
+        discountPercent: String(fd.get('discountPercent') || '0').trim(),
+        orderDate: String(fd.get('orderDate') || ''),
+        orderTime: String(fd.get('orderTime') || '')
+      }});
+      close();
+      toast('تم تعديل حالة الأشعة');
+      if (afterSave) await afterSave();
+      else await renderScreen();
+    } catch (err) {
+      toast(`تعذر تعديل الأشعة: ${String(err)}`, 'error');
+    }
+  };
 }
 
 async function openRadiologyOrderDetails(orderId: string) {
@@ -575,7 +665,10 @@ async function openRadiologyOrderDetails(orderId: string) {
 
         <div class="form-actions">
           <button class="btn ghost" id="radiologyOrderPatient">👤 ملف المريض</button>
-          <button class="btn primary" id="radiologyOrderCloseBottom">إغلاق</button>
+          <button class="btn ghost" id="radiologyOrderEdit">✎ تعديل</button>
+          <button class="btn ghost" id="radiologyOrderPng">صورة</button>
+          <button class="btn primary" id="radiologyOrderPdf">PDF</button>
+          <button class="btn ghost" id="radiologyOrderCloseBottom">إغلاق</button>
         </div>
       </section>
     </div>`;
@@ -587,14 +680,37 @@ async function openRadiologyOrderDetails(orderId: string) {
     if (e.target === e.currentTarget) close();
   };
   document.querySelector<HTMLButtonElement>('#radiologyOrderPatient')!.onclick = async () => {
-    close();
-    await openPatient(order.patientId);
+    close(); await openPatient(order.patientId);
   };
+  document.querySelector<HTMLButtonElement>('#radiologyOrderEdit')!.onclick = async () => {
+    close();
+    await openRadiologyEditModal(order, async () => openRadiologyOrderDetails(order.id));
+  };
+  document.querySelector<HTMLButtonElement>('#radiologyOrderPng')!.onclick = () => exportRadiologyOrder(order, 'png');
+  document.querySelector<HTMLButtonElement>('#radiologyOrderPdf')!.onclick = () => exportRadiologyOrder(order, 'pdf');
 }
 
 function bindRadiologyOrderActions() {
   document.querySelectorAll<HTMLButtonElement>('[data-open-radiology-order]').forEach(button => {
     button.onclick = () => openRadiologyOrderDetails(button.dataset.openRadiologyOrder || '');
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-edit-radiology-order]').forEach(button => {
+    button.onclick = async () => {
+      const order = await invoke<RadiologyOrder>('get_radiology_order', { id: button.dataset.editRadiologyOrder || '' });
+      await openRadiologyEditModal(order, async () => renderScreen());
+    };
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-radiology-order-pdf]').forEach(button => {
+    button.onclick = async () => {
+      const order = await invoke<RadiologyOrder>('get_radiology_order', { id: button.dataset.radiologyOrderPdf || '' });
+      await exportRadiologyOrder(order, 'pdf');
+    };
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-radiology-order-png]').forEach(button => {
+    button.onclick = async () => {
+      const order = await invoke<RadiologyOrder>('get_radiology_order', { id: button.dataset.radiologyOrderPng || '' });
+      await exportRadiologyOrder(order, 'png');
+    };
   });
 }
 
@@ -843,6 +959,7 @@ function nursingOrderRowsHtml(rows: NursingOrder[], showPatient = true) {
               <td>
                 <div class="visit-row-actions">
                   <button class="icon-action" data-open-nursing-order="${esc(order.id)}" title="فتح">⌕</button>
+                  <button class="icon-action edit" data-edit-nursing-order="${esc(order.id)}" title="تعديل">✎</button>
                   <button class="icon-action" data-nursing-order-pdf="${esc(order.id)}" title="PDF للطباعة">PDF</button>
                   <button class="icon-action" data-nursing-order-png="${esc(order.id)}" title="صورة">▧</button>
                 </div>
@@ -886,6 +1003,56 @@ async function exportNursingOrder(order: NursingOrder, format: ExportFormat) {
   );
 }
 
+async function openNursingEditModal(order: NursingOrder, afterSave?: () => Promise<void>) {
+  const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
+  root.innerHTML = `
+    <div class="modal-backdrop" id="nursingEditBackdrop">
+      <section class="modal compact">
+        <div class="modal-head">
+          <div><h2>تعديل خدمة التمريض</h2><p>${esc(order.patientName || '')}</p></div>
+          <button class="modal-close" id="closeNursingEdit">×</button>
+        </div>
+        <form id="nursingEditForm">
+          <div class="form-grid one">
+            <label>الخدمة<input name="serviceName" value="${esc(order.serviceName)}"></label>
+            <label>السعر<input name="price" class="ltr" type="number" min="0" step="0.01" value="${esc(order.price)}"></label>
+            <label>التاريخ<input name="orderDate" type="date" value="${esc(order.orderDate)}"></label>
+            <label>الوقت<input name="orderTime" type="time" value="${esc(order.orderTime)}"></label>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn ghost" id="cancelNursingEdit">إلغاء</button>
+            <button class="btn primary">حفظ التعديل</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  const close = () => root.innerHTML = '';
+  document.querySelector<HTMLButtonElement>('#closeNursingEdit')!.onclick = close;
+  document.querySelector<HTMLButtonElement>('#cancelNursingEdit')!.onclick = close;
+  document.querySelector<HTMLDivElement>('#nursingEditBackdrop')!.onclick = e => {
+    if (e.target === e.currentTarget) close();
+  };
+  document.querySelector<HTMLFormElement>('#nursingEditForm')!.onsubmit = async e => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    try {
+      await invoke('update_nursing_order', { input: {
+        id: order.id,
+        serviceName: String(fd.get('serviceName') || '').trim(),
+        price: String(fd.get('price') || '').trim(),
+        orderDate: String(fd.get('orderDate') || ''),
+        orderTime: String(fd.get('orderTime') || '')
+      }});
+      close();
+      toast('تم تعديل خدمة التمريض');
+      if (afterSave) await afterSave();
+      else await renderScreen();
+    } catch (err) {
+      toast(`تعذر تعديل الخدمة: ${String(err)}`, 'error');
+    }
+  };
+}
+
 async function openNursingOrderDetails(orderId: string) {
   const order = await invoke<NursingOrder>('get_nursing_order', { id: orderId });
   const root = document.querySelector<HTMLDivElement>('#modalRoot')!;
@@ -908,19 +1075,16 @@ async function openNursingOrderDetails(orderId: string) {
           <span>${displayDate(order.orderDate)}</span>
           <span class="ltr">${esc(order.orderTime || '—')}</span>
         </div>
-
         <div class="nursing-order-detail-card">
-          <span>نوع الخدمة</span>
-          <strong>${esc(order.serviceName)}</strong>
+          <span>نوع الخدمة</span><strong>${esc(order.serviceName)}</strong>
         </div>
-
         <div class="nursing-order-detail-card price">
-          <span>السعر</span>
-          <strong class="ltr">${moneyNumber(order.price).toFixed(2)} ج.م</strong>
+          <span>السعر</span><strong class="ltr">${moneyNumber(order.price).toFixed(2)} ج.م</strong>
         </div>
 
         <div class="form-actions">
           <button class="btn ghost" id="nursingOrderPatient">👤 ملف المريض</button>
+          <button class="btn ghost" id="nursingOrderEdit">✎ تعديل</button>
           <button class="btn ghost" id="nursingOrderPng">تنزيل صورة</button>
           <button class="btn primary" id="nursingOrderPdf">PDF للطباعة</button>
           <button class="btn ghost" id="nursingOrderCloseBottom">إغلاق</button>
@@ -937,6 +1101,10 @@ async function openNursingOrderDetails(orderId: string) {
   document.querySelector<HTMLButtonElement>('#nursingOrderPatient')!.onclick = async () => {
     close(); await openPatient(order.patientId);
   };
+  document.querySelector<HTMLButtonElement>('#nursingOrderEdit')!.onclick = async () => {
+    close();
+    await openNursingEditModal(order, async () => openNursingOrderDetails(order.id));
+  };
   document.querySelector<HTMLButtonElement>('#nursingOrderPng')!.onclick = () => exportNursingOrder(order, 'png');
   document.querySelector<HTMLButtonElement>('#nursingOrderPdf')!.onclick = () => exportNursingOrder(order, 'pdf');
 }
@@ -944,6 +1112,12 @@ async function openNursingOrderDetails(orderId: string) {
 function bindNursingOrderActions() {
   document.querySelectorAll<HTMLButtonElement>('[data-open-nursing-order]').forEach(button => {
     button.onclick = () => openNursingOrderDetails(button.dataset.openNursingOrder || '');
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-edit-nursing-order]').forEach(button => {
+    button.onclick = async () => {
+      const order = await invoke<NursingOrder>('get_nursing_order', { id: button.dataset.editNursingOrder || '' });
+      await openNursingEditModal(order, async () => renderScreen());
+    };
   });
   document.querySelectorAll<HTMLButtonElement>('[data-nursing-order-pdf]').forEach(button => {
     button.onclick = async () => {
@@ -1136,6 +1310,7 @@ async function exportTodayCombined(
   visits: Visit[],
   labOrders: LabOrder[],
   nursingOrders: NursingOrder[],
+  radiologyOrders: RadiologyOrder[],
   dayKey: string,
   format: ExportFormat
 ) {
@@ -1143,39 +1318,31 @@ async function exportTodayCombined(
   const labPaid = labOrders.reduce((sum, o) => sum + moneyNumber(o.paidAmount), 0);
   const labRemaining = labOrders.reduce((sum, o) => sum + moneyNumber(o.remainingAmount), 0);
   const nursingTotal = nursingOrders.reduce((sum, o) => sum + moneyNumber(o.price), 0);
-  const totalCases = visits.length + labOrders.length + nursingOrders.length;
-  const totalCollection = visitMetrics.revenue + labPaid + nursingTotal;
-  const clinicTotal = visitMetrics.clinicTotal + labPaid + nursingTotal;
+  const radiologyTotal = radiologyOrders.reduce((sum, o) => sum + moneyNumber(o.netTotal), 0);
+  const totalCases = visits.length + labOrders.length + nursingOrders.length + radiologyOrders.length;
+  const totalCollection = visitMetrics.revenue + labPaid + nursingTotal + radiologyTotal;
+  const clinicTotal = visitMetrics.clinicTotal + labPaid + nursingTotal + radiologyTotal;
 
   const labRows = labOrders.length ? `
     <h3>حالات التحاليل</h3>
     <table class="export-table">
       <thead><tr><th>المريض</th><th>الهاتف</th><th>التحاليل</th><th>الصافي</th><th>المدفوع</th><th>المتبقي</th></tr></thead>
       <tbody>${labOrders.map(o => `
-        <tr>
-          <td>${esc(o.patientName || '—')}</td>
-          <td class="ltr">${esc(o.patientPhone || '—')}</td>
-          <td>${o.itemsCount}</td>
-          <td class="ltr">${moneyNumber(o.netTotal).toFixed(2)} ج.م</td>
-          <td class="ltr">${moneyNumber(o.paidAmount).toFixed(2)} ج.م</td>
-          <td class="ltr">${moneyNumber(o.remainingAmount).toFixed(2)} ج.م</td>
-        </tr>
+        <tr><td>${esc(o.patientName || '—')}</td><td class="ltr">${esc(o.patientPhone || '—')}</td>
+        <td>${o.itemsCount}</td><td class="ltr">${moneyNumber(o.netTotal).toFixed(2)} ج.م</td>
+        <td class="ltr">${moneyNumber(o.paidAmount).toFixed(2)} ج.م</td><td class="ltr">${moneyNumber(o.remainingAmount).toFixed(2)} ج.م</td></tr>
       `).join('')}</tbody>
     </table>` : '';
 
   const nursingRows = nursingOrders.length ? `
     <h3>خدمات التمريض</h3>
-    <table class="export-table">
-      <thead><tr><th>المريض</th><th>الهاتف</th><th>الخدمة</th><th>السعر</th></tr></thead>
-      <tbody>${nursingOrders.map(o => `
-        <tr>
-          <td>${esc(o.patientName || '—')}</td>
-          <td class="ltr">${esc(o.patientPhone || '—')}</td>
-          <td>${esc(o.serviceName)}</td>
-          <td class="ltr">${moneyNumber(o.price).toFixed(2)} ج.م</td>
-        </tr>
-      `).join('')}</tbody>
-    </table>` : '';
+    <table class="export-table"><thead><tr><th>المريض</th><th>الهاتف</th><th>الخدمة</th><th>السعر</th></tr></thead>
+    <tbody>${nursingOrders.map(o => `<tr><td>${esc(o.patientName || '—')}</td><td class="ltr">${esc(o.patientPhone || '—')}</td><td>${esc(o.serviceName)}</td><td class="ltr">${moneyNumber(o.price).toFixed(2)} ج.م</td></tr>`).join('')}</tbody></table>` : '';
+
+  const radiologyRows = radiologyOrders.length ? `
+    <h3>حالات الأشعة</h3>
+    <table class="export-table"><thead><tr><th>المريض</th><th>الهاتف</th><th>الأشعة</th><th>المركز</th><th>الصافي</th></tr></thead>
+    <tbody>${radiologyOrders.map(o => `<tr><td>${esc(o.patientName || '—')}</td><td class="ltr">${esc(o.patientPhone || '—')}</td><td>${esc(o.radiologyName)}</td><td>${esc(o.centerName)}</td><td class="ltr">${moneyNumber(o.netTotal).toFixed(2)} ج.م</td></tr>`).join('')}</tbody></table>` : '';
 
   const body = `
     <div class="report-stats export-report-stats">
@@ -1189,6 +1356,7 @@ async function exportTodayCombined(
     ${exportVisitRows(visits, true)}
     ${labRows}
     ${nursingRows}
+    ${radiologyRows}
   `;
 
   await captureAndSaveExport(
@@ -2055,7 +2223,71 @@ async function openPatientAttachments(patientId:string){
 
 function cashierTableHtml(rows:CashierItem[]){return `<div class="table-wrap"><table class="v7-cashier-table"><thead><tr><th>التاريخ</th><th>المريض</th><th>الخدمة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>إجراء</th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr><td>${esc(displayDate(r.serviceDate))}</td><td><strong>${esc(r.patientName)}</strong><small class="ltr">${esc(r.patientPhone||'')}</small></td><td>${esc(r.serviceLabel)}</td><td class="ltr">${r.charge.toFixed(2)} ج.م</td><td class="ltr">${r.paid.toFixed(2)} ج.م</td><td class="ltr ${r.remaining>0.009?'v7-due':'v7-paid'}">${r.remaining.toFixed(2)} ج.م</td><td>${r.remaining>0.009?`<button class="btn primary small" data-cashier-pay="${esc(r.serviceType)}" data-service-id="${esc(r.serviceId)}" data-patient-id="${esc(r.patientId)}" data-remaining="${r.remaining}">تحصيل</button>`:'<span class="v7-paid-badge">تم السداد</span>'}</td></tr>`).join(''):'<tr><td colspan="7" class="empty-row">لا توجد خدمات في الفترة</td></tr>'}</tbody></table></div>`}
 function openCashierPaymentModal(item:{patientId:string;serviceType:string;serviceId:string;remaining:number},onSaved:()=>Promise<void>){const root=document.querySelector<HTMLDivElement>('#modalRoot')!;root.innerHTML=`<div class="modal-backdrop"><section class="modal compact"><div class="modal-head"><div><h2>تحصيل مبلغ</h2><p>المتبقي ${item.remaining.toFixed(2)} ج.م</p></div><button class="modal-close" id="closeCashierPayment">×</button></div><form id="cashierPaymentForm"><div class="form-grid one"><label>المبلغ<input class="ltr" name="amount" type="number" min="0.01" max="${item.remaining}" step="0.01" value="${item.remaining.toFixed(2)}"></label><label>طريقة الدفع<select name="paymentMethod"><option>نقدي</option><option>فيزا</option><option>إنستاباي</option><option>محفظة</option><option>أخرى</option></select></label><label>ملاحظات<input name="notes" maxlength="300"></label></div><div class="form-actions"><button type="button" class="btn ghost" id="cancelCashierPayment">إلغاء</button><button class="btn primary">✓ حفظ التحصيل</button></div></form></section></div>`;const close=()=>root.innerHTML='';document.querySelector<HTMLButtonElement>('#closeCashierPayment')!.onclick=close;document.querySelector<HTMLButtonElement>('#cancelCashierPayment')!.onclick=close;document.querySelector<HTMLFormElement>('#cashierPaymentForm')!.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget as HTMLFormElement);try{await invoke('record_cashier_payment',{input:{patientId:item.patientId,serviceType:item.serviceType,serviceId:item.serviceId,amount:String(fd.get('amount')||''),paymentMethod:String(fd.get('paymentMethod')||''),notes:String(fd.get('notes')||'').trim()}});close();toast('تم تسجيل التحصيل');await onSaved()}catch(err){toast(`تعذر تسجيل التحصيل: ${String(err)}`,'error')}}}
-async function renderCashier(){const day=businessDay();shell(`<section class="card"><div class="card-head toolbar"><div><h2>الكاشير والحسابات</h2><p>تحصيل ومتابعة المتبقي لكل خدمات المريض</p></div><div class="filters"><label>من<input id="cashierFrom" type="date" value="${day}"></label><label>إلى<input id="cashierTo" type="date" value="${day}"></label><button class="btn primary small" id="cashierRefresh">عرض</button></div></div><div id="cashierSummary"></div><div id="cashierRows"></div></section>`,'الكاشير','حساب موحد لكل الخدمات');const from=document.querySelector<HTMLInputElement>('#cashierFrom')!,to=document.querySelector<HTMLInputElement>('#cashierTo')!,host=document.querySelector<HTMLDivElement>('#cashierRows')!,summary=document.querySelector<HTMLDivElement>('#cashierSummary')!;const load=async()=>{const rows=await invoke<CashierItem[]>('list_cashier_items',{query:{from:from.value,to:to.value}});const charges=rows.reduce((s,r)=>s+r.charge,0),paid=rows.reduce((s,r)=>s+r.paid,0),remaining=rows.reduce((s,r)=>s+r.remaining,0);summary.innerHTML=`<div class="v7-money-grid"><div><span>إجمالي الخدمات</span><strong>${charges.toFixed(2)} ج.م</strong></div><div><span>المدفوع</span><strong>${paid.toFixed(2)} ج.م</strong></div><div><span>المتبقي</span><strong>${remaining.toFixed(2)} ج.م</strong></div></div>`;host.innerHTML=cashierTableHtml(rows);host.querySelectorAll<HTMLButtonElement>('[data-cashier-pay]').forEach(b=>b.onclick=()=>openCashierPaymentModal({patientId:b.dataset.patientId||'',serviceType:b.dataset.cashierPay||'',serviceId:b.dataset.serviceId||'',remaining:Number(b.dataset.remaining||0)},load))};document.querySelector<HTMLButtonElement>('#cashierRefresh')!.onclick=()=>load().catch(err=>toast(String(err),'error'));await load()}
+async function renderCashier(){
+  const day=businessDay();
+  shell(`
+    <section class="card">
+      <div class="card-head toolbar">
+        <div><h2>الكاشير والحسابات</h2><p>تحصيل ومتابعة المتبقي لكل خدمات المريض</p></div>
+        <div class="filters">
+          <label>من<input id="cashierFrom" type="date" value="${day}"></label>
+          <label>إلى<input id="cashierTo" type="date" value="${day}"></label>
+          <button class="btn primary small" id="cashierRefresh">عرض</button>
+        </div>
+      </div>
+      <div class="cashier-quick-filter">
+        <input class="search-input" id="cashierSearch" placeholder="بحث باسم المريض أو رقم الهاتف...">
+        <label class="cashier-due-toggle"><input id="cashierDueOnly" type="checkbox"> المتبقي فقط</label>
+      </div>
+      <div id="cashierSummary"></div>
+      <div id="cashierRows"></div>
+    </section>
+  `,'الكاشير','حساب موحد لكل الخدمات');
+
+  const from=document.querySelector<HTMLInputElement>('#cashierFrom')!;
+  const to=document.querySelector<HTMLInputElement>('#cashierTo')!;
+  const search=document.querySelector<HTMLInputElement>('#cashierSearch')!;
+  const dueOnly=document.querySelector<HTMLInputElement>('#cashierDueOnly')!;
+  const host=document.querySelector<HTMLDivElement>('#cashierRows')!;
+  const summary=document.querySelector<HTMLDivElement>('#cashierSummary')!;
+  let loadedRows: CashierItem[] = [];
+
+  const apply=()=>{
+    const q=search.value.trim().toLowerCase();
+    const rows=loadedRows.filter(r =>
+      (!dueOnly.checked || r.remaining>0.009) &&
+      (!q || `${r.patientName} ${r.patientPhone} ${r.serviceLabel}`.toLowerCase().includes(q))
+    );
+    const charges=rows.reduce((s,r)=>s+r.charge,0);
+    const paid=rows.reduce((s,r)=>s+r.paid,0);
+    const remaining=rows.reduce((s,r)=>s+r.remaining,0);
+    summary.innerHTML=`<div class="v7-money-grid"><div><span>إجمالي الخدمات</span><strong>${charges.toFixed(2)} ج.م</strong></div><div><span>المدفوع</span><strong>${paid.toFixed(2)} ج.م</strong></div><div><span>المتبقي</span><strong>${remaining.toFixed(2)} ج.م</strong></div></div>`;
+    host.innerHTML=cashierTableHtml(rows);
+    host.querySelectorAll<HTMLButtonElement>('[data-cashier-pay]').forEach(b=>b.onclick=()=>openCashierPaymentModal({
+      patientId:b.dataset.patientId||'',
+      serviceType:b.dataset.cashierPay||'',
+      serviceId:b.dataset.serviceId||'',
+      remaining:Number(b.dataset.remaining||0)
+    },load));
+  };
+
+  const load=async()=>{
+    if(from.value===to.value){
+      const next=addIsoDays(from.value,1);
+      const raw=await invoke<CashierItem[]>('list_cashier_items',{query:{from:from.value,to:next}});
+      loadedRows=operationalRows(raw,from.value);
+    } else {
+      loadedRows=await invoke<CashierItem[]>('list_cashier_items',{query:{from:from.value,to:to.value}});
+    }
+    apply();
+  };
+
+  document.querySelector<HTMLButtonElement>('#cashierRefresh')!.onclick=()=>load().catch(err=>toast(String(err),'error'));
+  search.oninput=apply;
+  dueOnly.onchange=apply;
+  await load();
+}
+
 function financeServiceLabel(serviceType: string) {
   return ({
     clinic: 'كشف / استشارة',
@@ -2201,8 +2433,25 @@ function financeReportBodyHtml(rows: CashierItem[], from: string, to: string, do
     </section>`;
 }
 
-function financeExportSheet(rows: CashierItem[], from: string, to: string, doctor: string, service: string, source: string) {
-  return exportSheet('التقرير المالي الشامل', reportPeriodLabel(from,to), financeReportBodyHtml(rows,from,to,doctor,service,source));
+function financePaymentMethodsHtml(rows: PaymentMethodSummary[]) {
+  const total = rows.reduce((sum,row)=>sum+row.amount,0);
+  return `
+    <section class="finance-report-section finance-payment-methods">
+      <div class="finance-section-title"><h3>طرق الدفع</h3><span>إجمالي ${total.toFixed(2)} ج.م</span></div>
+      <div class="finance-payment-method-grid">
+        ${rows.length ? rows.map(row => `
+          <article><span>${esc(row.paymentMethod)}</span><strong class="ltr">${row.amount.toFixed(2)} ج.م</strong><small>${row.count} عملية</small></article>
+        `).join('') : '<div class="empty-block">لا توجد عمليات دفع مسجلة للفلاتر الحالية</div>'}
+      </div>
+    </section>`;
+}
+
+function financeExportSheet(rows: CashierItem[], from: string, to: string, doctor: string, service: string, source: string, paymentMethods: PaymentMethodSummary[] = []) {
+  return exportSheet(
+    'التقرير المالي الشامل',
+    reportPeriodLabel(from,to),
+    financeReportBodyHtml(rows,from,to,doctor,service,source) + financePaymentMethodsHtml(paymentMethods)
+  );
 }
 
 function printFinancialReport(html: string) {
@@ -2245,7 +2494,7 @@ async function renderFinance(){
 
       <div id="financeHost"><div class="finance-loading">جاري إعداد التقرير...</div></div>
     </section>
-  `,'التقارير المالية','كشف تفصيلي للإيرادات والمدفوع والمتبقي');
+  `,'التقارير المالية','كشف تفصيلي للإيرادات والمدفوع والمتبقي وطرق الدفع');
 
   const fromInput = document.querySelector<HTMLInputElement>('#financeFrom')!;
   const toInput = document.querySelector<HTMLInputElement>('#financeTo')!;
@@ -2254,6 +2503,7 @@ async function renderFinance(){
   const sourceInput = document.querySelector<HTMLSelectElement>('#financeSource')!;
   const host = document.querySelector<HTMLDivElement>('#financeHost')!;
   let currentRows: CashierItem[] = [];
+  let currentPaymentMethods: PaymentMethodSummary[] = [];
 
   const filteredRows = (rows: CashierItem[]) => rows.filter(row => {
     if (doctorInput.value && row.doctor !== doctorInput.value) return false;
@@ -2265,10 +2515,29 @@ async function renderFinance(){
     return true;
   });
 
+  const paymentQuery = () => ({
+    from: fromInput.value,
+    to: toInput.value,
+    doctor: doctorInput.value,
+    serviceType: serviceInput.value,
+    bookingSource: sourceInput.value
+  });
+
   const load = async () => {
-    const allRows = await invoke<CashierItem[]>('list_cashier_items',{query:{from:fromInput.value,to:toInput.value}});
+    let allRows: CashierItem[];
+    if (fromInput.value === toInput.value) {
+      const next = addIsoDays(fromInput.value,1);
+      const raw = await invoke<CashierItem[]>('list_cashier_items',{query:{from:fromInput.value,to:next}});
+      allRows = operationalRows(raw,fromInput.value);
+    } else {
+      allRows = await invoke<CashierItem[]>('list_cashier_items',{query:{from:fromInput.value,to:toInput.value}});
+    }
+
     currentRows = filteredRows(allRows);
-    host.innerHTML = financeReportBodyHtml(currentRows,fromInput.value,toInput.value,doctorInput.value,serviceInput.value,sourceInput.value);
+    currentPaymentMethods = await invoke<PaymentMethodSummary[]>('list_payment_method_summary', { query: paymentQuery() });
+    host.innerHTML =
+      financeReportBodyHtml(currentRows,fromInput.value,toInput.value,doctorInput.value,serviceInput.value,sourceInput.value) +
+      financePaymentMethodsHtml(currentPaymentMethods);
   };
 
   document.querySelector<HTMLButtonElement>('#financeToday')!.onclick = async () => {
@@ -2278,7 +2547,7 @@ async function renderFinance(){
 
   document.querySelector<HTMLButtonElement>('#financePrint')!.onclick = () => {
     if (!currentRows.length && !confirm('التقرير الحالي لا يحتوي على بيانات. هل تريد طباعته؟')) return;
-    printFinancialReport(financeExportSheet(currentRows,fromInput.value,toInput.value,doctorInput.value,serviceInput.value,sourceInput.value));
+    printFinancialReport(financeExportSheet(currentRows,fromInput.value,toInput.value,doctorInput.value,serviceInput.value,sourceInput.value,currentPaymentMethods));
   };
 
   document.querySelector<HTMLButtonElement>('#financeDownload')!.onclick = () => {
@@ -2300,7 +2569,7 @@ async function renderFinance(){
     const download = async (format: ExportFormat) => {
       close();
       await captureAndSaveExport(
-        financeExportSheet(currentRows,fromInput.value,toInput.value,doctorInput.value,serviceInput.value,sourceInput.value),
+        financeExportSheet(currentRows,fromInput.value,toInput.value,doctorInput.value,serviceInput.value,sourceInput.value,currentPaymentMethods),
         `التقرير المالي - ${fromInput.value} - ${toInput.value}`,
         format
       );
@@ -2313,7 +2582,48 @@ async function renderFinance(){
 }
 
 async function renderAudit(){const rows=await invoke<AuditEntry[]>('list_audit_logs',{limit:500});shell(`<section class="card"><div class="card-head"><div><h2>Audit Log</h2><p>سجل قراءة فقط للعمليات</p></div></div><div class="table-wrap"><table><thead><tr><th>التاريخ والوقت</th><th>العملية</th><th>النوع</th><th>المعرف</th><th>التفاصيل</th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td class="ltr">${esc(x.createdAt)}</td><td>${esc(x.action)}</td><td>${esc(x.entityType)}</td><td class="ltr">${esc(x.entityId)}</td><td>${esc(x.details)}</td></tr>`).join(''):'<tr><td colspan="5" class="empty-row">لا توجد عمليات بعد</td></tr>'}</tbody></table></div></section>`,'Audit Log','من أضاف أو عدّل أو حذف أو حصّل')}
-async function renderAlerts(){const rows=await invoke<SystemAlert[]>('list_system_alerts');shell(`<section class="card"><div class="card-head"><div><h2>التنبيهات</h2><p>متبقيات وحالات حماية تحتاج متابعة</p></div><span class="v7-alert-count">${rows.length}</span></div><div class="v7-alert-list">${rows.length?rows.map(a=>`<article class="v7-alert-row"><span class="v7-alert-icon">${a.kind==='حماية'?'🔐':'🔔'}</span><div><strong>${esc(a.title)}</strong><p>${esc(a.detail)}</p></div>${a.patientId?`<button class="btn ghost small" data-alert-patient="${esc(a.patientId)}">ملف المريض</button>`:''}</article>`).join(''):'<div class="empty-block">لا توجد تنبيهات حالية ✅</div>'}</div></section>`,'التنبيهات','ما يحتاج متابعة داخل النظام');document.querySelectorAll<HTMLButtonElement>('[data-alert-patient]').forEach(b=>b.onclick=()=>openPatient(b.dataset.alertPatient||''))}
+async function renderAlerts(){
+  const rows=await invoke<SystemAlert[]>('list_system_alerts');
+  shell(`
+    <section class="card">
+      <div class="card-head">
+        <div><h2>التنبيهات</h2><p>متبقيات وحالات حماية تحتاج متابعة</p></div>
+        <span class="v7-alert-count">${rows.length}</span>
+      </div>
+      <div class="v7-alert-list">
+        ${rows.length?rows.map(a=>`
+          <article class="v7-alert-row">
+            <span class="v7-alert-icon">${a.kind==='حماية'?'🔐':'🔔'}</span>
+            <div><strong>${esc(a.title)}</strong><p>${esc(a.detail)}</p></div>
+            <div class="v7-alert-actions">
+              ${a.patientId?`<button class="btn ghost small" data-alert-patient="${esc(a.patientId)}">ملف المريض</button>`:''}
+              ${a.kind==='متبقي' && a.serviceId ? `<button class="btn primary small" data-alert-pay="${esc(a.serviceType)}" data-service-id="${esc(a.serviceId)}" data-patient-id="${esc(a.patientId)}">تحصيل الآن</button>` : ''}
+            </div>
+          </article>
+        `).join(''):'<div class="empty-block">لا توجد تنبيهات حالية ✅</div>'}
+      </div>
+    </section>
+  `,'التنبيهات','ما يحتاج متابعة داخل النظام');
+
+  document.querySelectorAll<HTMLButtonElement>('[data-alert-patient]').forEach(b=>b.onclick=()=>openPatient(b.dataset.alertPatient||''));
+  document.querySelectorAll<HTMLButtonElement>('[data-alert-pay]').forEach(button=>{
+    button.onclick=async()=>{
+      const all=await invoke<CashierItem[]>('list_cashier_items',{query:{from:'2000-01-01',to:'2099-12-31'}});
+      const item=all.find(x=>x.serviceType===(button.dataset.alertPay||'') && x.serviceId===(button.dataset.serviceId||''));
+      if(!item || item.remaining<=0.009){
+        toast('لا يوجد مبلغ متبقي على هذه الخدمة');
+        await renderAlerts();
+        return;
+      }
+      openCashierPaymentModal({
+        patientId:item.patientId,
+        serviceType:item.serviceType,
+        serviceId:item.serviceId,
+        remaining:item.remaining
+      }, async()=>renderAlerts());
+    };
+  });
+}
 
 async function renderSecurity(){v7SecurityStatus=await invoke<SecurityStatus>('security_status');shell(`<section class="card v7-security-card"><div class="card-head"><div><h2>حماية البيانات</h2><p>PIN وقفل تلقائي للجلسة</p></div><span class="v7-security-state">${v7SecurityStatus.pinSet?'🔐 مفعّل':'🔓 غير مفعّل'}</span></div><form id="securityForm" class="v7-security-form">${v7SecurityStatus.pinSet?'<label>PIN الحالي<input name="currentPin" type="password" inputmode="numeric" maxlength="8"></label>':''}<label>PIN الجديد<input name="newPin" type="password" inputmode="numeric" maxlength="8" placeholder="4 إلى 8 أرقام"></label><label>القفل التلقائي بعد<select name="autoLockMinutes">${[1,5,10,15,30,60,120].map(x=>`<option value="${x}" ${x===v7SecurityStatus.autoLockMinutes?'selected':''}>${x} دقيقة</option>`).join('')}</select></label><button class="btn primary">حفظ إعدادات الحماية</button></form><div class="v7-security-notes">PIN لا يُحفظ كنص صريح؛ يتم حفظ Hash مع Salt محلي.</div></section>`,'الحماية','قفل النظام تلقائيًا عند عدم الاستخدام');document.querySelector<HTMLFormElement>('#securityForm')!.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget as HTMLFormElement);try{v7SecurityStatus=await invoke<SecurityStatus>('set_security_pin',{input:{currentPin:String(fd.get('currentPin')||''),newPin:String(fd.get('newPin')||''),autoLockMinutes:Number(fd.get('autoLockMinutes')||10)}});v7LastActivityAt=Date.now();toast('تم حفظ إعدادات الحماية');await renderSecurity()}catch(err){toast(`تعذر الحفظ: ${String(err)}`,'error')}}}
 function showV7LockScreen(){app.innerHTML=`<div class="v7-lock-screen"><div class="v7-lock-card"><div class="v7-lock-icon">🔐</div><h1>النظام مقفول</h1><p>أدخل PIN الحماية للمتابعة</p><form id="v7UnlockForm"><input id="v7UnlockPin" type="password" inputmode="numeric" maxlength="8" autofocus placeholder="PIN"><button class="btn primary">فتح النظام</button></form><div id="v7LockError"></div></div></div>`;document.querySelector<HTMLFormElement>('#v7UnlockForm')!.onsubmit=async e=>{e.preventDefault();const pin=document.querySelector<HTMLInputElement>('#v7UnlockPin')!.value.trim();try{const ok=await invoke<boolean>('verify_security_pin',{input:{pin}});if(!ok){document.querySelector<HTMLDivElement>('#v7LockError')!.textContent='PIN غير صحيح';return}v7LastActivityAt=Date.now();await renderScreen()}catch(err){document.querySelector<HTMLDivElement>('#v7LockError')!.textContent=String(err)}}}
@@ -2798,7 +3108,7 @@ async function renderPatients(archived: boolean) {
           <p>${archived ? 'الملفات المؤرشفة قابلة للاستعادة' : 'بحث وفتح وتعديل ملفات المرضى'}</p>
         </div>
         <div class="filters">
-          <input class="search-input" id="patientSearch" placeholder="بحث بالاسم أو رقم الهاتف..." />
+          <input class="search-input" id="patientSearch" placeholder="بحث بالاسم أو رقم الهاتف أو رقم الملف..." />
           ${!archived ? `<button class="btn primary small" id="newFromPatients">＋ مريض جديد</button>` : ''}
         </div>
       </div>
@@ -2824,19 +3134,21 @@ async function renderPatients(archived: boolean) {
 
 async function renderToday() {
   const dayKey = businessDay();
-  const [baseResult, labOrders, nursingOrders] = await Promise.all([
+  const [baseResult, labOrders, nursingOrders, radiologyOrders] = await Promise.all([
     invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } }),
     invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } }),
-    invoke<NursingOrder[]>('list_nursing_orders', { query: { from: dayKey, to: dayKey } })
+    invoke<NursingOrder[]>('list_nursing_orders', { query: { from: dayKey, to: dayKey } }),
+    invoke<RadiologyOrder[]>('list_radiology_orders', { query: { from: dayKey, to: dayKey } })
   ]);
 
   const metrics = reportMetrics(baseResult.rows);
   const labPaid = labOrders.reduce((sum, o) => sum + moneyNumber(o.paidAmount), 0);
   const labRemaining = labOrders.reduce((sum, o) => sum + moneyNumber(o.remainingAmount), 0);
   const nursingTotal = nursingOrders.reduce((sum, o) => sum + moneyNumber(o.price), 0);
-  const totalCases = baseResult.totalVisits + labOrders.length + nursingOrders.length;
-  const totalCollection = metrics.revenue + labPaid + nursingTotal;
-  const clinicTotal = metrics.clinicTotal + labPaid + nursingTotal;
+  const radiologyTotal = radiologyOrders.reduce((sum, o) => sum + moneyNumber(o.netTotal), 0);
+  const totalCases = baseResult.totalVisits + labOrders.length + nursingOrders.length + radiologyOrders.length;
+  const totalCollection = metrics.revenue + labPaid + nursingTotal + radiologyTotal;
+  const clinicTotal = metrics.clinicTotal + labPaid + nursingTotal + radiologyTotal;
 
   ensureCaseContextMenu();
   shell(`
@@ -2874,6 +3186,7 @@ async function renderToday() {
             <option>استشارة</option>
             <option>تحاليل</option>
             <option>خدمات تمريض</option>
+            <option>أشعة</option>
           </select>
         </label>
         <label>مصدر الحجز
@@ -2892,13 +3205,13 @@ async function renderToday() {
       <div class="today-search-panel">
         <div>
           <strong>البحث في ملفات المرضى</strong>
-          <small>ابحث بالاسم أو رقم التليفون لفتح أي ملف قديم</small>
+          <small>ابحث بالاسم أو رقم التليفون أو رقم الملف</small>
         </div>
-        <input class="search-input" id="todayPatientSearch" placeholder="اسم المريض أو رقم التليفون..." />
+        <input class="search-input" id="todayPatientSearch" placeholder="اسم المريض أو رقم التليفون أو رقم الملف..." />
       </div>
       <div id="todayPatientSearchResults"></div>
     </section>
-  `, 'حالات اليوم', 'الكشوفات والاستشارات والتحاليل وخدمات التمريض');
+  `, 'حالات اليوم', 'الكشوفات والاستشارات والتحاليل والتمريض والأشعة');
 
   const doctorFilter = document.querySelector<HTMLSelectElement>('#todayDoctorFilter')!;
   const typeFilter = document.querySelector<HTMLSelectElement>('#todayTypeFilter')!;
@@ -2906,50 +3219,56 @@ async function renderToday() {
   const host = document.querySelector<HTMLDivElement>('#todayCasesHost')!;
 
   const visibleVisits = () => baseResult.rows.filter(v =>
-    typeFilter.value !== 'تحاليل' &&
-    typeFilter.value !== 'خدمات تمريض' &&
+    !['تحاليل','خدمات تمريض','أشعة'].includes(typeFilter.value) &&
     (!doctorFilter.value || v.doctor === doctorFilter.value) &&
     (!typeFilter.value || v.visitType === typeFilter.value) &&
     (!sourceFilter.value || (v.bookingSource || 'عادي') === sourceFilter.value)
   );
-
   const visibleLabs = () => {
     if (typeFilter.value && typeFilter.value !== 'تحاليل') return [];
     if (doctorFilter.value || sourceFilter.value) return [];
     return labOrders;
   };
-
   const visibleNursing = () => {
     if (typeFilter.value && typeFilter.value !== 'خدمات تمريض') return [];
     if (doctorFilter.value || sourceFilter.value) return [];
     return nursingOrders;
+  };
+  const visibleRadiology = () => {
+    if (typeFilter.value && typeFilter.value !== 'أشعة') return [];
+    if (doctorFilter.value || sourceFilter.value) return [];
+    return radiologyOrders;
   };
 
   const applyFilters = () => {
     const visits = visibleVisits();
     const labs = visibleLabs();
     const nursing = visibleNursing();
+    const radiology = visibleRadiology();
 
     host.innerHTML = `
       ${visits.length || (!typeFilter.value || typeFilter.value === 'كشف جديد' || typeFilter.value === 'استشارة') ? `
         <div class="today-case-section-head"><h3>الكشوفات والاستشارات</h3><span>${visits.length} حالة</span></div>
         ${visitTable(visits, true)}
       ` : ''}
-
       ${labs.length || typeFilter.value === 'تحاليل' || !typeFilter.value ? `
         <div class="today-case-section-head labs"><h3>حالات التحاليل</h3><span>${labs.length} حالة</span></div>
         ${labOrderRowsHtml(labs, true)}
       ` : ''}
-
       ${nursing.length || typeFilter.value === 'خدمات تمريض' || !typeFilter.value ? `
         <div class="today-case-section-head nursing"><h3>خدمات التمريض</h3><span>${nursing.length} حالة</span></div>
         ${nursingOrderRowsHtml(nursing, true)}
+      ` : ''}
+      ${radiology.length || typeFilter.value === 'أشعة' || !typeFilter.value ? `
+        <div class="today-case-section-head radiology"><h3>حالات الأشعة</h3><span>${radiology.length} حالة</span></div>
+        ${radiologyOrderRowsHtml(radiology, true)}
       ` : ''}
     `;
 
     ensureCaseContextMenu();
     bindLabOrderActions();
     bindNursingOrderActions();
+    bindRadiologyOrderActions();
   };
 
   doctorFilter.onchange = applyFilters;
@@ -2958,34 +3277,22 @@ async function renderToday() {
   applyFilters();
 
   document.querySelector<HTMLButtonElement>('#todayImage')!.onclick = () =>
-    exportTodayCombined(visibleVisits(), visibleLabs(), visibleNursing(), dayKey, 'png');
+    exportTodayCombined(visibleVisits(), visibleLabs(), visibleNursing(), visibleRadiology(), dayKey, 'png');
   document.querySelector<HTMLButtonElement>('#todayPdf')!.onclick = () =>
-    exportTodayCombined(visibleVisits(), visibleLabs(), visibleNursing(), dayKey, 'pdf');
+    exportTodayCombined(visibleVisits(), visibleLabs(), visibleNursing(), visibleRadiology(), dayKey, 'pdf');
 
   const search = document.querySelector<HTMLInputElement>('#todayPatientSearch')!;
   const results = document.querySelector<HTMLDivElement>('#todayPatientSearchResults')!;
   let timer: number | undefined;
-
   search.oninput = () => {
     window.clearTimeout(timer);
     timer = window.setTimeout(async () => {
       const q = search.value.trim();
-      if (!q) {
-        results.innerHTML = '';
-        return;
-      }
-
-      const rows = await invoke<Patient[]>('list_patients', {
-        query: { search: q, archivedOnly: false, limit: 24 }
-      });
-
-      results.innerHTML = `
-        <div class="today-search-results-title">نتائج البحث</div>
-        ${patientTable(rows, false)}
-      `;
+      if (!q) { results.innerHTML = ''; return; }
+      const matches = await invoke<Patient[]>('list_patients', { query: { search: q, archivedOnly: false, limit: 40 } });
+      results.innerHTML = patientTable(matches, false);
       bindPatientActions();
-      ensureCaseContextMenu();
-    }, 180);
+    }, 100);
   };
 }
 
@@ -3515,6 +3822,8 @@ async function renderNursingServices() {
 
 async function renderLabPrices() {
   await loadLabPriceOverrides(true);
+  const dayKey = businessDay();
+  const todayLabOrders = await invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } });
 
   const priceRowsHtml = (rows: LabTestItem[]) => {
     if (!rows.length) {
@@ -3580,6 +3889,14 @@ async function renderLabPrices() {
       <div class="lab-price-list" id="mainLabPriceList">
         ${priceRowsHtml(LAB_TESTS)}
       </div>
+
+      <section class="lab-today-orders-section">
+        <div class="today-case-section-head labs">
+          <h3>حالات التحاليل اليوم</h3>
+          <span>${todayLabOrders.length} حالة</span>
+        </div>
+        ${labOrderRowsHtml(todayLabOrders, true)}
+      </section>
     </section>
   `, 'التحاليل', 'أسعار التحاليل وتعديلها');
 
@@ -3662,6 +3979,7 @@ async function renderLabPrices() {
   const renderRows = () => {
     list.innerHTML = priceRowsHtml(searchLabTests(input.value));
     bindPriceEditors();
+  bindLabOrderActions();
   };
 
   input.oninput = renderRows;
@@ -4442,7 +4760,7 @@ async function renderBackups() {
   shell(`
     <section class="card">
       <div class="card-head toolbar">
-        <div><h2>النسخ الاحتياطية</h2><p>نسخة تلقائية يوميًا الساعة 4:00 صباحًا • الحفظ في Documents / Clinic Cases Backups</p></div>
+        <div><h2>النسخ الاحتياطية</h2><p>نسخة تلقائية يوميًا الساعة ${String(appSettings.backupHour).padStart(2, '0')}:00 • الحفظ في Documents / Clinic Cases Backups</p></div>
         <div class="filters">
           <button class="btn ghost small" id="openBackupFolder">فتح المجلد</button>
           <button class="btn primary small" id="backupNow">＋ إنشاء نسخة الآن</button>

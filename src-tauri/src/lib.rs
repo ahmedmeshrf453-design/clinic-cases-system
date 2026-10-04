@@ -363,6 +363,16 @@ struct NursingOrderQuery {
     to: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateNursingOrderInput {
+    id: String,
+    service_name: String,
+    price: String,
+    order_date: String,
+    order_time: String,
+}
+
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct NursingOrder {
@@ -394,6 +404,18 @@ struct RadiologyOrderInput {
 struct RadiologyOrderQuery {
     from: String,
     to: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateRadiologyOrderInput {
+    id: String,
+    radiology_name: String,
+    center_name: String,
+    price: String,
+    discount_percent: String,
+    order_date: String,
+    order_time: String,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -509,6 +531,23 @@ struct CashierItem { service_type:String, service_id:String, patient_id:String, 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CashierPaymentInput { patient_id:String, service_type:String, service_id:String, amount:String, payment_method:String, notes:String }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FinancePaymentQuery {
+    from: String,
+    to: String,
+    doctor: String,
+    service_type: String,
+    booking_source: String,
+}
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PaymentMethodSummary {
+    payment_method: String,
+    count: i64,
+    amount: f64,
+}
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FinancialCategory { service_type:String, label:String, count:i64, charges:f64, paid:f64, remaining:f64 }
@@ -2046,6 +2085,58 @@ fn get_nursing_order(state: State<AppState>, id: String) -> Result<NursingOrder,
 }
 
 #[tauri::command]
+fn update_nursing_order(
+    state: State<AppState>,
+    input: UpdateNursingOrderInput,
+) -> Result<(), String> {
+    let service_name = input.service_name.trim();
+    if service_name.is_empty() || service_name.len() > 240 {
+        return Err("نوع خدمة التمريض غير صالح".into());
+    }
+    if input.price.trim().is_empty() {
+        return Err("سعر خدمة التمريض مطلوب".into());
+    }
+    let price = parse_lab_money(input.price.trim(), "سعر خدمة التمريض")?;
+
+    NaiveDate::parse_from_str(input.order_date.trim(), "%Y-%m-%d")
+        .map_err(|_| "تاريخ خدمة التمريض غير صالح".to_string())?;
+    if !input.order_time.trim().is_empty() {
+        NaiveTime::parse_from_str(input.order_time.trim(), "%H:%M")
+            .map_err(|_| "وقت خدمة التمريض غير صالح".to_string())?;
+    }
+
+    let conn = open_db(&state)?;
+    let paid: f64 = conn.query_row(
+        "SELECT COALESCE(SUM(CAST(amount AS REAL)),0)
+         FROM cashier_payments WHERE service_type='nursing' AND service_id=?1",
+        params![input.id.clone()],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    if price + 0.001 < paid {
+        return Err(format!("لا يمكن جعل السعر أقل من المبلغ المحصل {:.2} ج.م", paid));
+    }
+
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let changed = conn.execute(
+        "UPDATE nursing_orders
+         SET service_name=?1,price=?2,order_date=?3,order_time=?4,updated_at=?5
+         WHERE id=?6",
+        params![
+            service_name,
+            format!("{:.2}", price),
+            input.order_date.trim(),
+            input.order_time.trim(),
+            now,
+            input.id
+        ],
+    ).map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("حالة خدمة التمريض غير موجودة".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn list_nursing_orders(
     state: State<AppState>,
     query: NursingOrderQuery,
@@ -2232,6 +2323,71 @@ fn get_radiology_order(state: State<AppState>, id: String) -> Result<RadiologyOr
 }
 
 #[tauri::command]
+fn update_radiology_order(
+    state: State<AppState>,
+    input: UpdateRadiologyOrderInput,
+) -> Result<(), String> {
+    let radiology_name = input.radiology_name.trim();
+    let center_name = input.center_name.trim();
+    if radiology_name.is_empty() || center_name.is_empty() {
+        return Err("اسم الأشعة واسم المركز مطلوبان".into());
+    }
+    if radiology_name.len() > 240 || center_name.len() > 240 {
+        return Err("اسم الأشعة أو المركز أطول من المسموح".into());
+    }
+
+    let price = parse_lab_money(input.price.trim(), "سعر الأشعة")?;
+    let discount_percent = parse_lab_money(input.discount_percent.trim(), "نسبة الخصم")?;
+    if discount_percent > 100.0 {
+        return Err("نسبة الخصم لا يمكن أن تتجاوز 100%".into());
+    }
+    let discount_amount = price * discount_percent / 100.0;
+    let net_total = (price - discount_amount).max(0.0);
+
+    NaiveDate::parse_from_str(input.order_date.trim(), "%Y-%m-%d")
+        .map_err(|_| "تاريخ الأشعة غير صالح".to_string())?;
+    if !input.order_time.trim().is_empty() {
+        NaiveTime::parse_from_str(input.order_time.trim(), "%H:%M")
+            .map_err(|_| "وقت الأشعة غير صالح".to_string())?;
+    }
+
+    let conn = open_db(&state)?;
+    let paid: f64 = conn.query_row(
+        "SELECT COALESCE(SUM(CAST(amount AS REAL)),0)
+         FROM cashier_payments WHERE service_type='radiology' AND service_id=?1",
+        params![input.id.clone()],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    if net_total + 0.001 < paid {
+        return Err(format!("لا يمكن جعل الصافي أقل من المبلغ المحصل {:.2} ج.م", paid));
+    }
+
+    let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let changed = conn.execute(
+        "UPDATE radiology_orders
+         SET radiology_name=?1,center_name=?2,price=?3,discount_percent=?4,
+             discount_amount=?5,net_total=?6,order_date=?7,order_time=?8,updated_at=?9
+         WHERE id=?10",
+        params![
+            radiology_name,
+            center_name,
+            format!("{:.2}", price),
+            format!("{:.2}", discount_percent),
+            format!("{:.2}", discount_amount),
+            format!("{:.2}", net_total),
+            input.order_date.trim(),
+            input.order_time.trim(),
+            now,
+            input.id
+        ],
+    ).map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("حالة الأشعة غير موجودة".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn list_radiology_orders(
     state: State<AppState>,
     query: RadiologyOrderQuery,
@@ -2392,7 +2548,7 @@ fn list_patients(state: State<AppState>, query: PatientQuery) -> Result<Vec<Pati
     let archived = if query.archived_only { 1 } else { 0 };
     let like = format!("%{}%", query.search.trim());
     let limit = query.limit.clamp(1, 5000);
-    let sql = format!("{} WHERE p.archived=?1 AND COALESCE(p.deleted_at,'')='' AND (?2='%%' OR p.full_name LIKE ?2 OR p.phone LIKE ?2) ORDER BY p.updated_at DESC LIMIT ?3", patient_select_sql());
+    let sql = format!("{} WHERE p.archived=?1 AND COALESCE(p.deleted_at,'')='' AND (?2='%%' OR p.full_name LIKE ?2 OR p.phone LIKE ?2 OR p.id LIKE ?2) ORDER BY p.updated_at DESC LIMIT ?3", patient_select_sql());
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map(params![archived, like, limit], map_patient)
@@ -3001,6 +3157,104 @@ fn list_cashier_items(state:State<AppState>,query:CashierQuery)->Result<Vec<Cash
 #[tauri::command]
 fn record_cashier_payment(state:State<AppState>,input:CashierPaymentInput)->Result<(),String>{if !["clinic","lab","nursing","radiology"].contains(&input.service_type.as_str()){return Err("نوع الخدمة غير صالح".into())}if input.patient_id.len()>128||input.service_id.len()>128{return Err("معرف الخدمة غير صالح".into())}let amount=parse_lab_money(&input.amount,"المبلغ")?;if amount<=0.0{return Err("المبلغ يجب أن يكون أكبر من صفر".into())}let method=input.payment_method.trim();if method.is_empty()||method.len()>80||method.chars().any(|c|c.is_control()){return Err("طريقة الدفع غير صالحة".into())}if input.notes.len()>500{return Err("ملاحظات الدفع أطول من المسموح".into())}let c=open_db(&state)?;let item=cashier_items_for_range(&c,"2000-01-01","2099-12-31")?.into_iter().find(|x|x.service_type==input.service_type&&x.service_id==input.service_id).ok_or_else(||"الخدمة غير موجودة".to_string())?;if item.patient_id!=input.patient_id{return Err("بيانات المريض غير متطابقة".into())}if amount>item.remaining+0.001{return Err("المبلغ أكبر من المتبقي".into())}c.execute("INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![Uuid::new_v4().to_string(),input.patient_id,input.service_type,input.service_id,format!("{:.2}",amount),method,input.notes.trim(),Local::now().format("%Y-%m-%d %H:%M:%S").to_string()]).map_err(|e|e.to_string())?;Ok(())}
 
+fn finance_source_label(raw: &str) -> String {
+    let value = raw.trim().to_lowercase();
+    if value.is_empty() || value == "عادي" || value.contains("direct") || value.contains("مباشر") {
+        return "حجز مباشر".into();
+    }
+    if value.contains("فيزيت") || value.contains("vezeeta") {
+        return "Vezeeta".into();
+    }
+    if value.contains("كلينيد") || value.contains("clinido") {
+        return "Clinido".into();
+    }
+    if value.contains("اكشف") || value.contains("إكشف") || value.contains("ekshef") {
+        return "Ekshef".into();
+    }
+    raw.to_string()
+}
+
+#[tauri::command]
+fn list_payment_method_summary(
+    state: State<AppState>,
+    query: FinancePaymentQuery,
+) -> Result<Vec<PaymentMethodSummary>, String> {
+    let conn = open_db(&state)?;
+    let rows = cashier_items_for_range(&conn, &query.from, &query.to)?;
+
+    let filtered: Vec<CashierItem> = rows.into_iter().filter(|row| {
+        if !query.doctor.trim().is_empty() && row.doctor != query.doctor.trim() {
+            return false;
+        }
+        if !query.service_type.trim().is_empty() && row.service_type != query.service_type.trim() {
+            return false;
+        }
+        if !query.booking_source.trim().is_empty() {
+            if row.service_type != "clinic" {
+                return false;
+            }
+            if finance_source_label(&row.booking_source) != query.booking_source.trim() {
+                return false;
+            }
+        }
+        true
+    }).collect();
+
+    let allowed: std::collections::HashSet<(String,String)> = filtered.iter()
+        .map(|row| (row.service_type.clone(), row.service_id.clone()))
+        .collect();
+
+    let mut totals: std::collections::HashMap<String,(i64,f64)> = std::collections::HashMap::new();
+    let mut paid_by_service: std::collections::HashMap<(String,String),f64> = std::collections::HashMap::new();
+
+    let mut stmt = conn.prepare(
+        "SELECT service_type,service_id,payment_method,CAST(amount AS REAL)
+         FROM cashier_payments"
+    ).map_err(|e| e.to_string())?;
+    let payments = stmt.query_map([], |row| Ok((
+        row.get::<_,String>(0)?,
+        row.get::<_,String>(1)?,
+        row.get::<_,String>(2)?,
+        row.get::<_,f64>(3)?,
+    ))).map_err(|e| e.to_string())?;
+
+    for payment in payments {
+        let (service_type, service_id, method, amount) = payment.map_err(|e| e.to_string())?;
+        let key = (service_type.clone(), service_id.clone());
+        if !allowed.contains(&key) {
+            continue;
+        }
+        let name = if method.trim().is_empty() { "غير محدد".to_string() } else { method.trim().to_string() };
+        let item = totals.entry(name).or_insert((0,0.0));
+        item.0 += 1;
+        item.1 += amount;
+        *paid_by_service.entry(key).or_insert(0.0) += amount;
+    }
+
+    // Lab orders may include an amount paid directly during registration.
+    for row in &filtered {
+        if row.service_type != "lab" {
+            continue;
+        }
+        let cashier_paid = paid_by_service
+            .get(&(row.service_type.clone(), row.service_id.clone()))
+            .copied()
+            .unwrap_or(0.0);
+        let initial_paid = (row.paid - cashier_paid).max(0.0);
+        if initial_paid > 0.009 {
+            let item = totals.entry("عند التسجيل".into()).or_insert((0,0.0));
+            item.0 += 1;
+            item.1 += initial_paid;
+        }
+    }
+
+    let mut result: Vec<PaymentMethodSummary> = totals.into_iter()
+        .map(|(payment_method,(count,amount))| PaymentMethodSummary { payment_method, count, amount })
+        .collect();
+    result.sort_by(|a,b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(result)
+}
+
 #[tauri::command]
 fn financial_report(state:State<AppState>,query:CashierQuery)->Result<FinancialSummary,String>{let c=open_db(&state)?; let items=cashier_items_for_range(&c,&query.from,&query.to)?; let defs=[("clinic","الكشف والاستشارات"),("lab","التحاليل"),("nursing","التمريض"),("radiology","الأشعة")]; let mut cats=Vec::new(); for (k,l) in defs{let s=items.iter().filter(|x|x.service_type==k).collect::<Vec<_>>(); cats.push(FinancialCategory{service_type:k.into(),label:l.into(),count:s.len() as i64,charges:s.iter().map(|x|x.charge).sum(),paid:s.iter().map(|x|x.paid).sum(),remaining:s.iter().map(|x|x.remaining).sum()});} Ok(FinancialSummary{total_charges:items.iter().map(|x|x.charge).sum(),total_paid:items.iter().map(|x|x.paid).sum(),total_remaining:items.iter().map(|x|x.remaining).sum(),categories:cats})}
 #[tauri::command]
@@ -3428,10 +3682,12 @@ pub fn run() {
             list_patient_lab_orders,
             add_nursing_order,
             get_nursing_order,
+            update_nursing_order,
             list_nursing_orders,
             list_patient_nursing_orders,
             add_radiology_order,
             get_radiology_order,
+            update_radiology_order,
             list_radiology_orders,
             list_patient_radiology_orders,
             list_patients,
@@ -3469,6 +3725,7 @@ pub fn run() {
             list_cashier_items,
             record_cashier_payment,
             financial_report,
+            list_payment_method_summary,
             list_audit_logs,
             unified_search,
             list_system_alerts,
@@ -3620,6 +3877,8 @@ mod production_tests {
             normalized_phone_digits("010 1234 5678").expect("phone normalize failed"),
             "01012345678"
         );
+        assert_eq!(finance_source_label("فيزيتا"), "Vezeeta");
+        assert_eq!(finance_source_label("عادي"), "حجز مباشر");
 
         drop(conn);
         cleanup(&path);
