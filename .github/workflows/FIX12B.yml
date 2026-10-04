@@ -1,0 +1,112 @@
+name: Clinic Cases V7.0 PIN Recovery FIX12B
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply FIX12B
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$RUNNER_TEMP/fix12b.b64"
+          printf '%s' 'CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKcCA9IFBhdGgoInNyYy9tYWluLnRzIikKcyA9IHAucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCgpvbGQgPSAnJydmdW5jdGlvbiBvcGVuU2VjdXJpdHlSZWNvdmVyeVJlc2V0TW9kYWwoKSB7CiAgY29uc3Qgcm9vdCA9IGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3I8SFRNTERpdkVsZW1lbnQ+KCcjbW9kYWxSb290JykhOwogIHJvb3QuaW5uZXJIVE1MID0gYCcnJwpuZXcgPSAnJydmdW5jdGlvbiBvcGVuU2VjdXJpdHlSZWNvdmVyeVJlc2V0TW9kYWwoKSB7CiAgbGV0IHJvb3QgPSBkb2N1bWVudC5xdWVyeVNlbGVjdG9yPEhUTUxEaXZFbGVtZW50PignI21vZGFsUm9vdCcpOwogIGlmICghcm9vdCkgewogICAgcm9vdCA9IGRvY3VtZW50LmNyZWF0ZUVsZW1lbnQoJ2RpdicpOwogICAgcm9vdC5pZCA9ICdtb2RhbFJvb3QnOwogICAgYXBwLmFwcGVuZENoaWxkKHJvb3QpOwogIH0KCiAgbGV0IHRvYXN0Um9vdCA9IGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3I8SFRNTERpdkVsZW1lbnQ+KCcjdG9hc3RSb290Jyk7CiAgaWYgKCF0b2FzdFJvb3QpIHsKICAgIHRvYXN0Um9vdCA9IGRvY3VtZW50LmNyZWF0ZUVsZW1lbnQoJ2RpdicpOwogICAgdG9hc3RSb290LmlkID0gJ3RvYXN0Um9vdCc7CiAgICBhcHAuYXBwZW5kQ2hpbGQodG9hc3RSb290KTsKICB9CgogIHJvb3QuaW5uZXJIVE1MID0gYCcnJwppZiBvbGQgbm90IGluIHM6CiAgICByYWlzZSBSdW50aW1lRXJyb3IoIm9wZW5TZWN1cml0eVJlY292ZXJ5UmVzZXRNb2RhbCBtYXJrZXIgbm90IGZvdW5kIikKcyA9IHMucmVwbGFjZShvbGQsIG5ldywgMSkKCm9sZCA9ICcnJyAgICAgICAgPGRpdiBpZD0idjdMb2NrRXJyb3IiPjwvZGl2PgogICAgICA8L2Rpdj4KICAgIDwvZGl2PmA7JycnCm5ldyA9ICcnJyAgICAgICAgPGRpdiBpZD0idjdMb2NrRXJyb3IiPjwvZGl2PgogICAgICA8L2Rpdj4KICAgIDwvZGl2PgogICAgPGRpdiBpZD0ibW9kYWxSb290Ij48L2Rpdj4KICAgIDxkaXYgaWQ9InRvYXN0Um9vdCI+PC9kaXY+YDsnJycKaWYgb2xkIG5vdCBpbiBzOgogICAgcmFpc2UgUnVudGltZUVycm9yKCJsb2NrIHNjcmVlbiBtb2RhbCByb290cyBtYXJrZXIgbm90IGZvdW5kIikKcyA9IHMucmVwbGFjZShvbGQsIG5ldywgMSkKCm9sZCA9ICcnJyAgZG9jdW1lbnQucXVlcnlTZWxlY3RvcjxIVE1MQnV0dG9uRWxlbWVudD4oJyNmb3Jnb3RTeXN0ZW1QaW4nKSEub25jbGljaz0oKT0+b3BlblNlY3VyaXR5UmVjb3ZlcnlSZXNldE1vZGFsKCk7JycnCm5ldyA9ICcnJyAgZG9jdW1lbnQucXVlcnlTZWxlY3RvcjxIVE1MQnV0dG9uRWxlbWVudD4oJyNmb3Jnb3RTeXN0ZW1QaW4nKSEub25jbGljaz0oKT0+ewogICAgY29uc3QgZXJyb3I9ZG9jdW1lbnQucXVlcnlTZWxlY3RvcjxIVE1MRGl2RWxlbWVudD4oJyN2N0xvY2tFcnJvcicpITsKICAgIGlmKCF2N1NlY3VyaXR5U3RhdHVzLnJlY292ZXJ5U2V0KXsKICAgICAgZXJyb3IudGV4dENvbnRlbnQ9J9mE2YUg2YrYqtmFINil2YbYtNin2KEg2YPZiNivINin2LPYqtix2K/Yp9ivINio2LnYry4g2KfZgdiq2K0g2KfZhNmG2LjYp9mFINio2KfZhNmAIFBJTiDYp9mE2K3Yp9mE2Yog2YXYsdipINmI2KfYrdiv2Kkg2YjYs9mK2LjZh9ixINmE2YMg2YPZiNivINin2YTYp9iz2KrYsdiv2KfYryDZhNit2YHYuNmHLic7CiAgICAgIHJldHVybjsKICAgIH0KICAgIG9wZW5TZWN1cml0eVJlY292ZXJ5UmVzZXRNb2RhbCgpOwogIH07JycnCmlmIG9sZCBub3QgaW4gczoKICAgIHJhaXNlIFJ1bnRpbWVFcnJvcigiZm9yZ290IFBJTiBjbGljayBoYW5kbGVyIG1hcmtlciBub3QgZm91bmQiKQpzID0gcy5yZXBsYWNlKG9sZCwgbmV3LCAxKQoKcC53cml0ZV90ZXh0KHMsIGVuY29kaW5nPSJ1dGYtOCIpCnByaW50KCJGSVgxMkIgYXBwbGllZDogZm9yZ290LVBJTiBtb2RhbCBub3cgd29ya3MgZnJvbSBsb2NrIHNjcmVlbi4iKQo=' >> "$RUNNER_TEMP/fix12b.b64"
+          python - "$RUNNER_TEMP/fix12b.b64" <<'PY'
+          import base64, pathlib, sys
+          exec(base64.b64decode(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).decode("utf-8"))
+          PY
+
+      - name: Verify FIX12B source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          s=Path("src/main.ts").read_text(encoding="utf-8")
+          required=[
+            '<div id="modalRoot"></div>',
+            '<div id="toastRoot"></div>',
+            "let root = document.querySelector<HTMLDivElement>('#modalRoot');",
+            "root = document.createElement('div');",
+            "لم يتم إنشاء كود استرداد بعد",
+            "openSecurityRecoveryResetModal();"
+          ]
+          missing=[x for x in required if x not in s]
+          assert not missing, missing
+          for fn in [
+            "function showV7LockScreen()",
+            "function openSecurityRecoveryResetModal()",
+            "async function renderSecurity()",
+            "async function renderLab2Lab()"
+          ]:
+              assert fn in s, fn
+          print("FIX12B source gates passed")
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          if ($installer.Length -lt 80000000) { throw "Installer too small" }
+
+      - name: Upload FIX12B installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.0-PIN-Recovery-FIX12B
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated FIX12B source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts
+          if git diff --cached --quiet; then
+            echo "No FIX12B changes to commit"
+          else
+            git commit -m "V7.0 FIX12B: fix forgot PIN modal on lock screen"
+          fi
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
