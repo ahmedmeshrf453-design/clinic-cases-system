@@ -1,0 +1,109 @@
+name: Clinic Cases V7.0 PIN Recovery FIX12E
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply FIX12E
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$RUNNER_TEMP/fix12e.b64"
+          printf '%s' 'CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKY3NzX3BhdGggPSBQYXRoKCJzcmMvc3R5bGUuY3NzIikKY3NzID0gY3NzX3BhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCgppZiAiVjcuMCBGSVgxMkUgcmVjb3ZlcnkgbW9kYWwgYWJvdmUgbG9jayIgbm90IGluIGNzczoKICAgIGNzcyArPSByJycnCgovKiA9PT09PSBWNy4wIEZJWDEyRSByZWNvdmVyeSBtb2RhbCBhYm92ZSBsb2NrID09PT09ICovCi52Ny1sb2NrLXNjcmVlbnt6LWluZGV4Ojk5OTk5fQojbW9kYWxSb290e3Bvc2l0aW9uOnJlbGF0aXZlO3otaW5kZXg6MTAwMDAwfQojbW9kYWxSb290IC5tb2RhbC1iYWNrZHJvcHt6LWluZGV4OjEwMDAwMSFpbXBvcnRhbnR9CiN0b2FzdFJvb3R7ei1pbmRleDoxMDAwMDIhaW1wb3J0YW50fQonJycKCmNzc19wYXRoLndyaXRlX3RleHQoY3NzLCBlbmNvZGluZz0idXRmLTgiKQpwcmludCgiRklYMTJFIGFwcGxpZWQ6IHJlY292ZXJ5IG1vZGFsL3RvYXN0cyBub3cgcmVuZGVyIGFib3ZlIHRoZSBsb2NrIHNjcmVlbi4iKQo=' >> "$RUNNER_TEMP/fix12e.b64"
+          python - "$RUNNER_TEMP/fix12e.b64" <<'PY'
+          import base64, pathlib, sys
+          exec(base64.b64decode(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).decode("utf-8"))
+          PY
+
+      - name: Verify FIX12E source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          m=Path("src/main.ts").read_text(encoding="utf-8")
+          c=Path("src/style.css").read_text(encoding="utf-8")
+
+          required=[
+            "function showV7LockScreen()",
+            "function openSecurityRecoveryResetModal()",
+            'id="forgotSystemPin"',
+            "openSecurityRecoveryResetModal();",
+            "#modalRoot .modal-backdrop{z-index:100001!important}",
+            "#toastRoot{z-index:100002!important}",
+            "V7.0 FIX12E recovery modal above lock",
+          ]
+          missing=[x for x in required if x not in m+c]
+          assert not missing, missing
+          assert ".v7-lock-screen{z-index:99999}" in c
+          print("FIX12E source gates passed")
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Setup EXE was not generated" }
+          if ($installer.Length -lt 80000000) { throw "Installer too small" }
+
+      - name: Upload FIX12E installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.0-PIN-Recovery-FIX12E
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated FIX12E source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/style.css
+          if git diff --cached --quiet; then
+            echo "No FIX12E changes to commit"
+          else
+            git commit -m "V7.0 FIX12E: show recovery modal above lock screen"
+          fi
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
