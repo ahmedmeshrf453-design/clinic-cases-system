@@ -2816,44 +2816,153 @@ function showV7LockScreen(){
   app.innerHTML=`
     <div class="v7-lock-screen">
       <div class="v7-lock-card">
-        <div class="v7-lock-icon">🔐</div>
-        <h1>النظام مقفول</h1>
-        <p>أدخل PIN الحماية للمتابعة</p>
-        <form id="v7UnlockForm">
-          <input id="v7UnlockPin" type="password" inputmode="numeric" maxlength="8" autofocus placeholder="PIN">
-          <button class="btn primary">فتح النظام</button>
-        </form>
-        <button class="forgot-pin-btn" id="forgotSystemPin" type="button">نسيت PIN؟</button>
-        <div id="v7LockError"></div>
-      </div>
-    </div>
-    <div id="modalRoot"></div>
-    <div id="toastRoot"></div>`;
+        <section id="v7UnlockPanel">
+          <div class="v7-lock-icon">🔐</div>
+          <h1>النظام مقفول</h1>
+          <p>أدخل PIN الحماية للمتابعة</p>
 
-  document.querySelector<HTMLButtonElement>('#forgotSystemPin')!.onclick=()=>{
-    openSecurityRecoveryResetModal();
+          <form id="v7UnlockForm">
+            <input id="v7UnlockPin" type="password" inputmode="numeric" maxlength="8" autofocus placeholder="PIN">
+            <button class="btn primary">فتح النظام</button>
+          </form>
+
+          <button class="forgot-pin-btn" id="forgotSystemPin" type="button">نسيت PIN؟</button>
+          <div id="v7LockError"></div>
+          <div class="v7-build-stamp">V7.0.1 • PIN RESET</div>
+        </section>
+
+        <section id="v7RecoveryPanel" class="v7-inline-recovery" hidden>
+          <div class="v7-lock-icon small">🔑</div>
+          <h2>تعيين PIN جديد</h2>
+          <p>هيتم التحقق من ملف الاسترداد المحلي تلقائيًا. مش محتاج تكتب كود استرداد.</p>
+
+          <form id="v7LocalRecoveryForm">
+            <label>
+              <span>PIN الجديد</span>
+              <input name="newPin" class="ltr" type="password" inputmode="numeric" maxlength="8" placeholder="4 إلى 8 أرقام" autofocus>
+            </label>
+            <label>
+              <span>تأكيد PIN الجديد</span>
+              <input name="confirmPin" class="ltr" type="password" inputmode="numeric" maxlength="8">
+            </label>
+
+            <div class="v7-recovery-actions">
+              <button type="button" class="btn ghost" id="v7BackToUnlock">رجوع</button>
+              <button class="btn primary" id="v7ResetPinBtn">تغيير PIN</button>
+            </div>
+          </form>
+
+          <div id="v7RecoveryError"></div>
+          <div class="v7-build-stamp">V7.0.1 • LOCAL RECOVERY</div>
+        </section>
+
+        <section id="v7RecoveryDone" class="v7-inline-recovery" hidden>
+          <div class="v7-lock-icon small">✅</div>
+          <h2>تم تغيير PIN</h2>
+          <p>تم تحديث كود الاسترداد المحلي تلقائيًا.</p>
+          <button class="btn primary" id="v7ContinueAfterRecovery" type="button">الدخول إلى النظام</button>
+          <div class="v7-build-stamp">V7.0.1 • RECOVERY OK</div>
+        </section>
+      </div>
+    </div>`;
+
+  const unlockPanel=document.querySelector<HTMLElement>('#v7UnlockPanel')!;
+  const recoveryPanel=document.querySelector<HTMLElement>('#v7RecoveryPanel')!;
+  const recoveryDone=document.querySelector<HTMLElement>('#v7RecoveryDone')!;
+  const lockError=document.querySelector<HTMLDivElement>('#v7LockError')!;
+  const recoveryError=document.querySelector<HTMLDivElement>('#v7RecoveryError')!;
+
+  const showRecovery=()=>{
+    lockError.textContent='';
+    recoveryError.textContent='';
+    unlockPanel.hidden=true;
+    recoveryDone.hidden=true;
+    recoveryPanel.hidden=false;
+    window.setTimeout(
+      ()=>document.querySelector<HTMLInputElement>('#v7LocalRecoveryForm input[name="newPin"]')?.focus(),
+      0
+    );
+  };
+
+  const showUnlock=()=>{
+    recoveryError.textContent='';
+    recoveryPanel.hidden=true;
+    recoveryDone.hidden=true;
+    unlockPanel.hidden=false;
+    window.setTimeout(()=>document.querySelector<HTMLInputElement>('#v7UnlockPin')?.focus(),0);
+  };
+
+  document.querySelector<HTMLButtonElement>('#forgotSystemPin')!.onclick=showRecovery;
+  document.querySelector<HTMLButtonElement>('#v7BackToUnlock')!.onclick=showUnlock;
+
+  document.querySelector<HTMLFormElement>('#v7LocalRecoveryForm')!.onsubmit=async e=>{
+    e.preventDefault();
+    recoveryError.textContent='';
+
+    const fd=new FormData(e.currentTarget as HTMLFormElement);
+    const newPin=String(fd.get('newPin')||'').trim();
+    const confirmPin=String(fd.get('confirmPin')||'').trim();
+
+    if(!/^\d{4,8}$/.test(newPin)){
+      recoveryError.textContent='PIN الجديد يجب أن يكون من 4 إلى 8 أرقام';
+      return;
+    }
+    if(newPin!==confirmPin){
+      recoveryError.textContent='تأكيد PIN الجديد غير مطابق';
+      return;
+    }
+
+    const btn=document.querySelector<HTMLButtonElement>('#v7ResetPinBtn')!;
+    btn.disabled=true;
+    btn.textContent='جارٍ تغيير PIN...';
+
+    try{
+      await invoke<string>('reset_security_pin_with_local_recovery',{
+        input:{
+          newPin,
+          autoLockMinutes:v7SecurityStatus.autoLockMinutes||10
+        }
+      });
+
+      v7SecurityStatus=await invoke<SecurityStatus>('security_status');
+      v7LastActivityAt=Date.now();
+
+      unlockPanel.hidden=true;
+      recoveryPanel.hidden=true;
+      recoveryDone.hidden=false;
+    }catch(err){
+      recoveryError.textContent=`تعذر الاسترداد: ${String(err)}`;
+    }finally{
+      btn.disabled=false;
+      btn.textContent='تغيير PIN';
+    }
+  };
+
+  document.querySelector<HTMLButtonElement>('#v7ContinueAfterRecovery')!.onclick=async()=>{
+    v7LastActivityAt=Date.now();
+    await renderScreen();
   };
 
   document.querySelector<HTMLFormElement>('#v7UnlockForm')!.onsubmit=async e=>{
     e.preventDefault();
     const pin=document.querySelector<HTMLInputElement>('#v7UnlockPin')!.value.trim();
-    const error=document.querySelector<HTMLDivElement>('#v7LockError')!;
+    lockError.textContent='';
+
     try{
       const ok=await invoke<boolean>('verify_security_pin',{input:{pin}});
-      if(!ok){error.textContent='PIN غير صحيح';return}
-      v7LastActivityAt=Date.now();
-      v7SecurityStatus=await invoke<SecurityStatus>('security_status');
-      if(!v7SecurityStatus.recoverySet){
-        const code=await invoke<string>('regenerate_security_recovery',{input:{pin}});
-        v7SecurityStatus=await invoke<SecurityStatus>('security_status');
-        await showRecoveryCodeModal(code,async()=>renderScreen());
+      if(!ok){
+        lockError.textContent='PIN غير صحيح';
         return;
       }
+
+      v7LastActivityAt=Date.now();
+      v7SecurityStatus=await invoke<SecurityStatus>('security_status');
       await renderScreen();
-    }catch(err){error.textContent=String(err)}
+    }catch(err){
+      lockError.textContent=String(err);
+    }
   };
 }
-
 async function startV7App(){await loadLabPriceOverrides();v7SecurityStatus=await invoke<SecurityStatus>('security_status');const activity=()=>{v7LastActivityAt=Date.now()};['pointerdown','keydown','touchstart'].forEach(name=>window.addEventListener(name,activity,{passive:true}));window.clearInterval(v7SecurityTimer);v7SecurityTimer=window.setInterval(()=>{if(!v7SecurityStatus.pinSet)return;const idle=Date.now()-v7LastActivityAt;if(idle>=v7SecurityStatus.autoLockMinutes*60000&&!document.querySelector('.v7-lock-screen'))showV7LockScreen()},15000);if(v7SecurityStatus.pinSet)showV7LockScreen();else await renderScreen()}
 
 async function renderScreen() {

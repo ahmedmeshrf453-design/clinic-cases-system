@@ -523,6 +523,9 @@ struct VerifySecurityPinInput { pin: String }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SecurityRecoveryResetInput { recovery_code: String, new_pin: String, auto_lock_minutes: u32 }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SecurityLocalRecoveryResetInput { new_pin: String, auto_lock_minutes: u32 }
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct PatientAttachment { id:String, patient_id:String, original_name:String, file_type:String, note:String, stored_path:String, created_at:String }
@@ -705,6 +708,20 @@ fn write_security_recovery_file(state: &AppState, code: &str) -> Result<(), Stri
     Ok(())
 }
 
+
+fn read_security_recovery_file_code(state: &AppState) -> Result<String, String> {
+    let content = fs::read_to_string(security_recovery_file_path(state))
+        .map_err(|_| "ملف الاسترداد المحلي غير موجود".to_string())?;
+
+    content
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("AKKAD-"))
+        .map(|line| line.to_string())
+        .ok_or_else(|| "ملف الاسترداد المحلي غير صالح".to_string())
+}
+
+
 fn rotate_security_recovery_material(state: &AppState, conn: &Connection) -> Result<String, String> {
     let code = generate_recovery_code_value();
     save_security_recovery_code(conn, &code)?;
@@ -714,28 +731,23 @@ fn rotate_security_recovery_material(state: &AppState, conn: &Connection) -> Res
 
 fn ensure_security_recovery_material(state: &AppState) -> Result<(), String> {
     let conn = open_db(state)?;
-    let pin_set: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM app_meta WHERE key='security_pin_hash' AND value<>''",
-        [],
-        |row| row.get(0),
-    ).map_err(|e| e.to_string())?;
+    let pin_hash = meta_value(&conn, "security_pin_hash", "")?;
 
-    if pin_set == 0 {
+    if pin_hash.is_empty() {
         return Ok(());
     }
 
-    let recovery_set: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM app_meta WHERE key='security_recovery_hash' AND value<>''",
-        [],
-        |row| row.get(0),
-    ).map_err(|e| e.to_string())?;
+    let recovery_hash = meta_value(&conn, "security_recovery_hash", "")?;
+    let file_code = read_security_recovery_file_code(state).ok();
 
-    let file_exists = security_recovery_file_path(state).exists();
+    let file_matches_hash = if let Some(code) = file_code.as_deref() {
+        !recovery_hash.is_empty()
+            && argon2_verify_pin(&normalize_recovery_code(code), &recovery_hash)
+    } else {
+        false
+    };
 
-    // Legacy FIX12/FIX12B installations may already be locked before a
-    // recovery code was ever generated. Create/rotate one locally so
-    // Forgot PIN is immediately usable after this update.
-    if recovery_set == 0 || !file_exists {
+    if !file_matches_hash {
         let _ = rotate_security_recovery_material(state, &conn)?;
     }
 
@@ -3306,22 +3318,23 @@ fn regenerate_security_recovery(
     Ok(code)
 }
 
-#[tauri::command]
-fn reset_security_pin_with_recovery(
-    state: State<AppState>,
-    input: SecurityRecoveryResetInput,
+fn reset_security_pin_using_code(
+    state: &AppState,
+    recovery_code: &str,
+    new_pin: &str,
+    auto_lock_minutes: u32,
 ) -> Result<String, String> {
-    if input.auto_lock_minutes < 1 || input.auto_lock_minutes > 120 {
+    if auto_lock_minutes < 1 || auto_lock_minutes > 120 {
         return Err("مدة القفل التلقائي يجب أن تكون من 1 إلى 120 دقيقة".into());
     }
-    validate_security_pin(&input.new_pin)?;
+    validate_security_pin(new_pin)?;
 
-    let mut conn = open_db(&state)?;
-    if !verify_security_recovery_value(&conn, &input.recovery_code)? {
+    let mut conn = open_db(state)?;
+    if !verify_security_recovery_value(&conn, recovery_code)? {
         return Err("كود الاسترداد غير صحيح".into());
     }
 
-    let new_pin_hash = argon2_hash_pin(input.new_pin.trim())?;
+    let new_pin_hash = argon2_hash_pin(new_pin.trim())?;
     let new_recovery_code = generate_recovery_code_value();
     let new_recovery_hash = argon2_hash_pin(&normalize_recovery_code(&new_recovery_code))?;
 
@@ -3329,7 +3342,7 @@ fn reset_security_pin_with_recovery(
     for (key, value) in [
         ("security_pin_salt", String::new()),
         ("security_pin_hash", new_pin_hash),
-        ("security_auto_lock_minutes", input.auto_lock_minutes.to_string()),
+        ("security_auto_lock_minutes", auto_lock_minutes.to_string()),
         ("security_pin_failed_count", "0".to_string()),
         ("security_pin_lock_until", "0".to_string()),
         ("security_recovery_hash", new_recovery_hash),
@@ -3342,14 +3355,45 @@ fn reset_security_pin_with_recovery(
             params![key, value],
         ).map_err(|e| e.to_string())?;
     }
+
     tx.execute(
         "INSERT INTO audit_log(action,entity_type,entity_id,details)
-         VALUES('استرداد','حماية','system','تم إعادة تعيين PIN النظام باستخدام كود الاسترداد وتم تدوير الكود')",
+         VALUES('استرداد','حماية','system','تم إعادة تعيين PIN النظام باستخدام الاسترداد المحلي وتم تدوير الكود')",
         [],
     ).map_err(|e| e.to_string())?;
+
     tx.commit().map_err(|e| e.to_string())?;
-    write_security_recovery_file(&state, &new_recovery_code)?;
+    write_security_recovery_file(state, &new_recovery_code)?;
     Ok(new_recovery_code)
+}
+
+#[tauri::command]
+fn reset_security_pin_with_recovery(
+    state: State<AppState>,
+    input: SecurityRecoveryResetInput,
+) -> Result<String, String> {
+    reset_security_pin_using_code(
+        &state,
+        &input.recovery_code,
+        &input.new_pin,
+        input.auto_lock_minutes,
+    )
+}
+
+#[tauri::command]
+fn reset_security_pin_with_local_recovery(
+    state: State<AppState>,
+    input: SecurityLocalRecoveryResetInput,
+) -> Result<String, String> {
+    ensure_security_recovery_material(&state)?;
+    let code = read_security_recovery_file_code(&state)?;
+
+    reset_security_pin_using_code(
+        &state,
+        &code,
+        &input.new_pin,
+        input.auto_lock_minutes,
+    )
 }
 
 #[tauri::command]
@@ -4020,6 +4064,7 @@ pub fn run() {
             set_security_pin,
             regenerate_security_recovery,
             reset_security_pin_with_recovery,
+            reset_security_pin_with_local_recovery,
             open_security_recovery_file,
             add_patient_attachment,
             list_patient_attachments,

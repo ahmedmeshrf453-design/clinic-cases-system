@@ -4156,3 +4156,38 @@ table td{font-size:13px !important}
 #modalRoot{position:relative;z-index:100000}
 #modalRoot .modal-backdrop{z-index:100001!important}
 #toastRoot{z-index:100002!important}
+
+
+/* ===== V7.0.1 FINAL local PIN recovery ===== */
+.v7-lock-card{max-height:92vh;overflow:auto}
+.v7-inline-recovery[hidden],#v7UnlockPanel[hidden]{display:none!important}
+.v7-inline-recovery{display:grid;gap:10px;text-align:right}
+.v7-inline-recovery h2{margin:0;text-align:center;color:#173650}
+.v7-inline-recovery p{text-align:center;margin:0 0 4px;color:#6d7d90;line-height:1.7}
+.v7-lock-icon.small{font-size:34px;text-align:center}
+.v7-inline-recovery form{display:grid;gap:10px}
+.v7-inline-recovery label{display:grid;gap:5px;text-align:right;color:#53637a;font-size:12px}
+.v7-inline-recovery label span{font-weight:800}
+.v7-inline-recovery input{
+  min-height:46px!important;
+  text-align:center!important;
+  font-size:18px!important;
+  letter-spacing:4px!important;
+}
+.v7-recovery-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:3px}
+#v7RecoveryError{
+  min-height:18px;
+  color:#b42318;
+  font-size:10px;
+  line-height:1.6;
+  font-weight:800;
+  text-align:center;
+}
+.v7-build-stamp{
+  margin-top:12px;
+  text-align:center;
+  font-size:9px;
+  font-weight:900;
+  color:#7890a0;
+  letter-spacing:.3px;
+}
