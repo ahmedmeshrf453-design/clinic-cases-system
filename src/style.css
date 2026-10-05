@@ -4149,3 +4149,10 @@ table td{font-size:13px !important}
 .recovery-file-help span{font-size:8px;color:#71848f;line-height:1.6}
 .recovery-file-help .btn{justify-self:start}
 #v7LockError{margin-top:8px;min-height:16px;font-size:9px;color:#b42318;font-weight:800}
+
+
+/* ===== V7.0 FIX12E recovery modal above lock ===== */
+.v7-lock-screen{z-index:99999}
+#modalRoot{position:relative;z-index:100000}
+#modalRoot .modal-backdrop{z-index:100001!important}
+#toastRoot{z-index:100002!important}
