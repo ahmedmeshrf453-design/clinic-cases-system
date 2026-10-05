@@ -3161,20 +3161,91 @@ async function renderTrash() {
 }
 
 const HOME_SPECIALTIES=[
-  {key:'urology',label:'مسالك بولية وذكورة',icon:'◉',keys:['مسالك','ذكورة']},
+  {key:'urology',label:'مسالك بولية وذكورة',icon:'💧',keys:['مسالك','ذكورة']},
   {key:'internal',label:'باطنة وجهاز هضمي',icon:'🫀',keys:['باطنة','جهاز هضمي']},
   {key:'ortho',label:'عظام ومفاصل',icon:'🦴',keys:['عظام','مفاصل']},
-  {key:'surgery',label:'جراحة عامة ومناظير',icon:'✚',keys:['جراحة عامة','مناظير']},
-  {key:'eye',label:'عيون',icon:'👁',keys:['عيون','رمد','ophthalm']},
+  {key:'surgery',label:'جراحة عامة ومناظير',icon:'🫁',keys:['جراحة عامة','مناظير']},
+  {key:'eye',label:'عيون',icon:'👁️',keys:['عيون','رمد','ophthalm']},
   {key:'neuro',label:'مخ وأعصاب وعمود فقري',icon:'🧠',keys:['مخ','أعصاب','اعصاب','عمود فقري']},
-  {key:'obgyn',label:'نساء وتوليد',icon:'♀',keys:['نساء','توليد','حقن مجهري','تأخر الإنجاب']},
+  {key:'obgyn',label:'نساء وتوليد',icon:'♀️',keys:['نساء','توليد','حقن مجهري','تأخر الإنجاب']},
   {key:'ent',label:'أنف وأذن وحنجرة',icon:'👂',keys:['أنف','انف','أذن','اذن','حنجرة']},
-  {key:'nutrition',label:'تغذية علاجية',icon:'🥗',keys:['تغذية']},
+  {key:'nutrition',label:'تغذية علاجية',icon:'🫃',keys:['تغذية']},
   {key:'vascular',label:'أوعية دموية وقدم سكري',icon:'🩸',keys:['أوعية','اوعية','قدم سكري']},
-  {key:'audiology',label:'سمع واتزان',icon:'〽',keys:['سمع','اتزان']}
+  {key:'audiology',label:'سمع واتزان',icon:'👂',keys:['سمع','اتزان']}
 ] as const;
+
+const HOME_SERVICES=[
+  {key:'labs',screen:'labs' as Screen,label:'التحاليل',icon:'🧪'},
+  {key:'radiology',screen:'radiology' as Screen,label:'الأشعة',icon:'🩻'},
+  {key:'physio',screen:'physio' as Screen,label:'العلاج الطبيعي',icon:'🦵'},
+  {key:'nursing',screen:'nursing' as Screen,label:'خدمات التمريض',icon:'❤️'}
+] as const;
+
+const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v711';
+const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v711';
+
 function specialtyMeta(key:string){return HOME_SPECIALTIES.find(x=>x.key===key)}
 function specialtyMatches(key:string,text:string){const x=specialtyMeta(key);if(!x)return true;const v=String(text||'').toLowerCase();return x.keys.some(k=>v.includes(k.toLowerCase()))}
+function orderedHomeItems<T extends {key:string}>(items:readonly T[],storageKey:string){
+  try{
+    const saved=JSON.parse(localStorage.getItem(storageKey)||'[]');
+    if(!Array.isArray(saved)||!saved.length)return [...items];
+    const map=new Map(items.map(item=>[item.key,item]));
+    const ordered=saved.map((id:string)=>map.get(id)).filter((item):item is T=>Boolean(item));
+    const rest=items.filter(item=>!saved.includes(item.key));
+    return [...ordered,...rest];
+  }catch{
+    return [...items];
+  }
+}
+function persistHomeOrder(grid:Element,itemSelector:string,storageKey:string){
+  const ids=[...grid.querySelectorAll<HTMLElement>(itemSelector)]
+    .map(el=>el.dataset.orderId||'')
+    .filter(Boolean);
+  localStorage.setItem(storageKey,JSON.stringify(ids));
+}
+function enableHomeGridDrag(gridSelector:string,itemSelector:string,storageKey:string){
+  const grid=document.querySelector<HTMLElement>(gridSelector);
+  if(!grid)return;
+  let dragging:HTMLElement|null=null;
+  let moved=false;
+  const items=()=>[...grid.querySelectorAll<HTMLElement>(itemSelector)];
+  items().forEach(el=>{
+    el.draggable=true;
+    el.addEventListener('dragstart',event=>{
+      dragging=el;
+      moved=false;
+      el.classList.add('is-dragging');
+      event.dataTransfer?.setData('text/plain',el.dataset.orderId||'');
+      if(event.dataTransfer)event.dataTransfer.effectAllowed='move';
+    });
+    el.addEventListener('dragover',event=>{
+      event.preventDefault();
+      if(!dragging||dragging===el)return;
+      moved=true;
+      items().forEach(node=>node.classList.remove('is-drag-over'));
+      el.classList.add('is-drag-over');
+      if(event.dataTransfer)event.dataTransfer.dropEffect='move';
+    });
+    el.addEventListener('drop',event=>{
+      event.preventDefault();
+      if(!dragging||dragging===el)return;
+      const rect=el.getBoundingClientRect();
+      const horizontal=Math.abs(event.clientX-(rect.left+rect.width/2)) > Math.abs(event.clientY-(rect.top+rect.height/2));
+      const before=horizontal ? event.clientX < rect.left+rect.width/2 : event.clientY < rect.top+rect.height/2;
+      grid.insertBefore(dragging,before?el:el.nextElementSibling);
+      persistHomeOrder(grid,itemSelector,storageKey);
+    });
+    el.addEventListener('dragend',()=>{
+      items().forEach(node=>node.classList.remove('is-dragging','is-drag-over'));
+      if(moved)persistHomeOrder(grid,itemSelector,storageKey);
+      dragging=null;
+    });
+    el.addEventListener('click',event=>{
+      if(moved){event.preventDefault();event.stopPropagation();moved=false;}
+    },true);
+  });
+}
 
 async function renderDashboard(){
   const dayKey=businessDay();
@@ -3187,18 +3258,46 @@ async function renderDashboard(){
   const physio=allNursing.filter(isPhysioOrder),nursing=allNursing.filter(o=>!isPhysioOrder(o));
   const doctorSpec=new Map(doctors.map(d=>[d.name,d.specialty||'']));
   const count=(key:string)=>report.rows.filter(v=>specialtyMatches(key,`${v.specialty||''} ${doctorSpec.get(v.doctor)||''}`)).length;
+  const orderedSpecialties=orderedHomeItems(HOME_SPECIALTIES,HOME_SPECIALTY_ORDER_KEY);
+  const orderedServices=orderedHomeItems(HOME_SERVICES,HOME_SERVICE_ORDER_KEY);
 
-  shell(`<section class="specialty-home">
-    <div class="specialty-home-hero"><div><span>واجهة التشغيل</span><h2>اختار التخصص</h2><p>التخصصات أولاً، ثم الطبيب والحالة.</p></div><div class="specialty-home-day"><span>اليوم التشغيلي</span><strong>${displayDate(dayKey)}</strong><small>${report.rows.length+labs.length+rad.length+physio.length+nursing.length} تسجيل</small></div></div>
-    <div class="specialty-grid">${HOME_SPECIALTIES.map(x=>`<button class="specialty-card" data-specialty-home="${x.key}"><span class="specialty-card-icon">${x.icon}</span><span><strong>${x.label}</strong><small>${doctors.filter(d=>d.active&&specialtyMatches(x.key,d.specialty)).length} طبيب • ${count(x.key)} حالة اليوم</small></span><b>←</b></button>`).join('')}</div>
-    <div class="home-section-title"><strong>الخدمات</strong><small>مرتبطة بملف المريض والكاشير</small></div>
-    <div class="clinic-services-grid"><button class="clinic-service-card" data-home-service="labs"><span>🧪</span><strong>التحاليل</strong><small>${labs.length} حالة اليوم</small></button><button class="clinic-service-card" data-home-service="radiology"><span>🩻</span><strong>الأشعة</strong><small>${rad.length} حالة اليوم</small></button><button class="clinic-service-card" data-home-service="physio"><span>🦵</span><strong>العلاج الطبيعي</strong><small>${physio.length} حالة اليوم</small></button><button class="clinic-service-card" data-home-service="nursing"><span>✚</span><strong>خدمات التمريض</strong><small>${nursing.length} حالة اليوم</small></button></div>
+  shell(`<section class="specialty-home specialty-home-v711">
+    <div class="specialty-home-hero">
+      <div><span class="specialty-home-kicker">واجهة التشغيل</span><h2>اختار التخصص</h2><p>التخصصات أولاً، ثم الطبيب والحالة.</p></div>
+      <div class="specialty-home-day"><span>اليوم التشغيلي</span><strong>${displayDate(dayKey)}</strong><small>${report.rows.length+labs.length+rad.length+physio.length+nursing.length} تسجيل</small></div>
+    </div>
+
+    <div class="home-section-title"><strong>التخصصات</strong><small>اضغط واسحب أي كارت لتغيير ترتيبه</small></div>
+    <div class="specialty-grid home-sortable-grid" id="specialtyGridHome">
+      ${orderedSpecialties.map(x=>`<button class="specialty-card home-sortable-card" data-specialty-home="${x.key}" data-order-id="${x.key}" type="button" draggable="true">
+        <span class="specialty-card-drag" title="اسحب لتغيير الترتيب">⋮⋮</span>
+        <span class="specialty-card-icon square-3d">${x.icon}</span>
+        <span class="specialty-card-copy"><strong>${x.label}</strong><small>${doctors.filter(d=>d.active&&specialtyMatches(x.key,d.specialty)).length} طبيب • ${count(x.key)} حالة اليوم</small></span>
+        <span class="specialty-card-arrow">←</span>
+      </button>`).join('')}
+    </div>
+
+    <div class="home-section-title"><strong>الخدمات</strong><small>يمكن تغيير ترتيبها بالسحب أيضًا</small></div>
+    <div class="clinic-services-grid home-sortable-grid" id="serviceGridHome">
+      ${orderedServices.map(x=>{
+        const todayCount=x.key==='labs'?labs.length:x.key==='radiology'?rad.length:x.key==='physio'?physio.length:nursing.length;
+        return `<button class="clinic-service-card home-sortable-card" data-home-service="${x.screen}" data-order-id="${x.key}" type="button" draggable="true">
+          <span class="specialty-card-drag" title="اسحب لتغيير الترتيب">⋮⋮</span>
+          <span class="clinic-service-icon square-3d">${x.icon}</span>
+          <span class="clinic-service-copy"><strong>${x.label}</strong><small>${todayCount} حالة اليوم</small></span>
+        </button>`;
+      }).join('')}
+    </div>
+
     <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
-    <div class="v71-build-stamp">V7.1.0 • SPECIALTY HOME</div>
+    <div class="v71-build-stamp">V7.1.1 • 3D ICON ORDER</div>
   </section>`,'الرئيسية','التخصصات والخدمات');
+
   document.querySelectorAll<HTMLButtonElement>('[data-specialty-home]').forEach(b=>b.onclick=async()=>{doctorSpecialtyFilter=b.dataset.specialtyHome||'';await navigate('doctors')});
   document.querySelectorAll<HTMLButtonElement>('[data-home-service]').forEach(b=>b.onclick=()=>navigate(b.dataset.homeService as Screen));
   document.querySelectorAll<HTMLButtonElement>('[data-q]').forEach(b=>b.onclick=()=>navigate(b.dataset.q as Screen));
+  enableHomeGridDrag('#specialtyGridHome','.home-sortable-card',HOME_SPECIALTY_ORDER_KEY);
+  enableHomeGridDrag('#serviceGridHome','.home-sortable-card',HOME_SERVICE_ORDER_KEY);
 }
 
 async function renderTodayStats() {
