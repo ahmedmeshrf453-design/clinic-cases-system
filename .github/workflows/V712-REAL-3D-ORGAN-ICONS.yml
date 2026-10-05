@@ -1,0 +1,29 @@
+name: Clinic Cases V7.1.2 Real 3D Organ Icons
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply V7.1.2 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "V7.1.2 workflow placeholder created for real 3D organ icons patch."
+          echo "Replace the current emoji/glyph icons with real organ-image tiles and keep drag/drop ordering."
+
+      - name: Verify placeholder
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Workflow uploaded successfully."
