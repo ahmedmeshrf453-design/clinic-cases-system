@@ -2228,10 +2228,16 @@ fn update_nursing_order(
     }
 
     let conn = open_db(&state)?;
+    let existing_service: String = conn.query_row(
+        "SELECT service_name FROM nursing_orders WHERE id=?1",
+        params![input.id.clone()],
+        |row| row.get(0),
+    ).map_err(|_| "حالة الخدمة غير موجودة".to_string())?;
+    let payment_type = if existing_service.starts_with("@@PHYSIO@@") { "physio" } else { "nursing" };
     let paid: f64 = conn.query_row(
         "SELECT COALESCE(SUM(CAST(amount AS REAL)),0)
-         FROM cashier_payments WHERE service_type='nursing' AND service_id=?1",
-        params![input.id.clone()],
+         FROM cashier_payments WHERE service_type=?1 AND service_id=?2",
+        params![payment_type, input.id.clone()],
         |row| row.get(0),
     ).map_err(|e| e.to_string())?;
     if price + 0.001 < paid {
@@ -3461,9 +3467,19 @@ FROM lab_orders o JOIN patients p ON p.id=o.patient_id
 WHERE p.archived=0 AND o.order_date BETWEEN ?1 AND ?2
 
 UNION ALL SELECT
-  'nursing',n.id,p.id,p.full_name,p.phone,'تمريض - '||COALESCE(n.service_name,''),n.order_date,COALESCE(n.order_time,''),'','','',
+  CASE WHEN n.service_name LIKE '@@PHYSIO@@%' THEN 'physio' ELSE 'nursing' END,
+  n.id,p.id,p.full_name,p.phone,
+  CASE WHEN n.service_name LIKE '@@PHYSIO@@%'
+       THEN 'علاج طبيعي - '||REPLACE(n.service_name,'@@PHYSIO@@','')
+       ELSE 'تمريض - '||COALESCE(n.service_name,'') END,
+  n.order_date,COALESCE(n.order_time,''),'','','',
   CAST(COALESCE(NULLIF(n.price,''),'0') AS REAL),
-  COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='nursing' AND cp.service_id=n.id),0)
+  COALESCE((
+    SELECT SUM(CAST(cp.amount AS REAL))
+    FROM cashier_payments cp
+    WHERE cp.service_type=CASE WHEN n.service_name LIKE '@@PHYSIO@@%' THEN 'physio' ELSE 'nursing' END
+      AND cp.service_id=n.id
+  ),0)
 FROM nursing_orders n JOIN patients p ON p.id=n.patient_id
 WHERE p.archived=0 AND n.order_date BETWEEN ?1 AND ?2
 
@@ -3494,7 +3510,7 @@ WHERE p.archived=0 AND r.order_date BETWEEN ?1 AND ?2
 #[tauri::command]
 fn list_cashier_items(state:State<AppState>,query:CashierQuery)->Result<Vec<CashierItem>,String>{let c=open_db(&state)?; cashier_items_for_range(&c,&query.from,&query.to)}
 #[tauri::command]
-fn record_cashier_payment(state:State<AppState>,input:CashierPaymentInput)->Result<(),String>{if !["clinic","lab","nursing","radiology"].contains(&input.service_type.as_str()){return Err("نوع الخدمة غير صالح".into())}if input.patient_id.len()>128||input.service_id.len()>128{return Err("معرف الخدمة غير صالح".into())}let amount=parse_lab_money(&input.amount,"المبلغ")?;if amount<=0.0{return Err("المبلغ يجب أن يكون أكبر من صفر".into())}let method=input.payment_method.trim();if method.is_empty()||method.len()>80||method.chars().any(|c|c.is_control()){return Err("طريقة الدفع غير صالحة".into())}if input.notes.len()>500{return Err("ملاحظات الدفع أطول من المسموح".into())}let c=open_db(&state)?;let item=cashier_items_for_range(&c,"2000-01-01","2099-12-31")?.into_iter().find(|x|x.service_type==input.service_type&&x.service_id==input.service_id).ok_or_else(||"الخدمة غير موجودة".to_string())?;if item.patient_id!=input.patient_id{return Err("بيانات المريض غير متطابقة".into())}if amount>item.remaining+0.001{return Err("المبلغ أكبر من المتبقي".into())}c.execute("INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![Uuid::new_v4().to_string(),input.patient_id,input.service_type,input.service_id,format!("{:.2}",amount),method,input.notes.trim(),Local::now().format("%Y-%m-%d %H:%M:%S").to_string()]).map_err(|e|e.to_string())?;Ok(())}
+fn record_cashier_payment(state:State<AppState>,input:CashierPaymentInput)->Result<(),String>{if !["clinic","lab","nursing","physio","radiology"].contains(&input.service_type.as_str()){return Err("نوع الخدمة غير صالح".into())}if input.patient_id.len()>128||input.service_id.len()>128{return Err("معرف الخدمة غير صالح".into())}let amount=parse_lab_money(&input.amount,"المبلغ")?;if amount<=0.0{return Err("المبلغ يجب أن يكون أكبر من صفر".into())}let method=input.payment_method.trim();if method.is_empty()||method.len()>80||method.chars().any(|c|c.is_control()){return Err("طريقة الدفع غير صالحة".into())}if input.notes.len()>500{return Err("ملاحظات الدفع أطول من المسموح".into())}let c=open_db(&state)?;let item=cashier_items_for_range(&c,"2000-01-01","2099-12-31")?.into_iter().find(|x|x.service_type==input.service_type&&x.service_id==input.service_id).ok_or_else(||"الخدمة غير موجودة".to_string())?;if item.patient_id!=input.patient_id{return Err("بيانات المريض غير متطابقة".into())}if amount>item.remaining+0.001{return Err("المبلغ أكبر من المتبقي".into())}c.execute("INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![Uuid::new_v4().to_string(),input.patient_id,input.service_type,input.service_id,format!("{:.2}",amount),method,input.notes.trim(),Local::now().format("%Y-%m-%d %H:%M:%S").to_string()]).map_err(|e|e.to_string())?;Ok(())}
 
 fn finance_source_label(raw: &str) -> String {
     let value = raw.trim().to_lowercase();
@@ -3595,7 +3611,7 @@ fn list_payment_method_summary(
 }
 
 #[tauri::command]
-fn financial_report(state:State<AppState>,query:CashierQuery)->Result<FinancialSummary,String>{let c=open_db(&state)?; let items=cashier_items_for_range(&c,&query.from,&query.to)?; let defs=[("clinic","الكشف والاستشارات"),("lab","التحاليل"),("nursing","التمريض"),("radiology","الأشعة")]; let mut cats=Vec::new(); for (k,l) in defs{let s=items.iter().filter(|x|x.service_type==k).collect::<Vec<_>>(); cats.push(FinancialCategory{service_type:k.into(),label:l.into(),count:s.len() as i64,charges:s.iter().map(|x|x.charge).sum(),paid:s.iter().map(|x|x.paid).sum(),remaining:s.iter().map(|x|x.remaining).sum()});} Ok(FinancialSummary{total_charges:items.iter().map(|x|x.charge).sum(),total_paid:items.iter().map(|x|x.paid).sum(),total_remaining:items.iter().map(|x|x.remaining).sum(),categories:cats})}
+fn financial_report(state:State<AppState>,query:CashierQuery)->Result<FinancialSummary,String>{let c=open_db(&state)?; let items=cashier_items_for_range(&c,&query.from,&query.to)?; let defs=[("clinic","الكشف والاستشارات"),("lab","التحاليل"),("radiology","الأشعة"),("physio","العلاج الطبيعي"),("nursing","التمريض")]; let mut cats=Vec::new(); for (k,l) in defs{let s=items.iter().filter(|x|x.service_type==k).collect::<Vec<_>>(); cats.push(FinancialCategory{service_type:k.into(),label:l.into(),count:s.len() as i64,charges:s.iter().map(|x|x.charge).sum(),paid:s.iter().map(|x|x.paid).sum(),remaining:s.iter().map(|x|x.remaining).sum()});} Ok(FinancialSummary{total_charges:items.iter().map(|x|x.charge).sum(),total_paid:items.iter().map(|x|x.paid).sum(),total_remaining:items.iter().map(|x|x.remaining).sum(),categories:cats})}
 #[tauri::command]
 fn list_audit_logs(state:State<AppState>,limit:i64)->Result<Vec<AuditEntry>,String>{let c=open_db(&state)?; let mut s=c.prepare("SELECT id,action,entity_type,entity_id,details,created_at FROM audit_log ORDER BY id DESC LIMIT ?1").map_err(|e|e.to_string())?; let rows=s.query_map(params![limit.clamp(1,1000)],|r|Ok(AuditEntry{id:r.get(0)?,action:r.get(1)?,entity_type:r.get(2)?,entity_id:r.get(3)?,details:r.get(4)?,created_at:r.get(5)?})).map_err(|e|e.to_string())?; rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())}
 
@@ -3605,7 +3621,8 @@ fn unified_search(state:State<AppState>,input:UnifiedSearchInput)->Result<Vec<Un
 for (sql,kind) in [
 ("SELECT DISTINCT p.id,p.full_name,v.doctor||' • '||v.visit_type FROM visits v JOIN patients p ON p.id=v.patient_id WHERE p.archived=0 AND (v.doctor LIKE ?1 OR v.visit_type LIKE ?1) ORDER BY v.created_at DESC LIMIT ?2","عيادة"),
 ("SELECT DISTINCT p.id,p.full_name,i.test_name FROM lab_order_items i JOIN lab_orders o ON o.id=i.order_id JOIN patients p ON p.id=o.patient_id WHERE p.archived=0 AND i.test_name LIKE ?1 ORDER BY o.created_at DESC LIMIT ?2","تحاليل"),
-("SELECT DISTINCT p.id,p.full_name,n.service_name FROM nursing_orders n JOIN patients p ON p.id=n.patient_id WHERE p.archived=0 AND n.service_name LIKE ?1 ORDER BY n.created_at DESC LIMIT ?2","تمريض"),
+("SELECT DISTINCT p.id,p.full_name,n.service_name FROM nursing_orders n JOIN patients p ON p.id=n.patient_id WHERE p.archived=0 AND n.service_name NOT LIKE '@@PHYSIO@@%' AND n.service_name LIKE ?1 ORDER BY n.created_at DESC LIMIT ?2","تمريض"),
+("SELECT DISTINCT p.id,p.full_name,REPLACE(n.service_name,'@@PHYSIO@@','') FROM nursing_orders n JOIN patients p ON p.id=n.patient_id WHERE p.archived=0 AND n.service_name LIKE '@@PHYSIO@@%' AND n.service_name LIKE ?1 ORDER BY n.created_at DESC LIMIT ?2","علاج طبيعي"),
 ("SELECT DISTINCT p.id,p.full_name,r.radiology_name||' • '||r.center_name FROM radiology_orders r JOIN patients p ON p.id=r.patient_id WHERE p.archived=0 AND (r.radiology_name LIKE ?1 OR r.center_name LIKE ?1) ORDER BY r.created_at DESC LIMIT ?2","أشعة")]{let mut s=c.prepare(sql).map_err(|e|e.to_string())?; let rows=s.query_map(params![like,lim],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e|e.to_string())?; for row in rows{if out.len()>=lim as usize{break} let(id,n,d)=row.map_err(|e|e.to_string())?; if !out.iter().any(|x|x.patient_id==id&&x.kind==kind&&x.subtitle==d){out.push(UnifiedSearchResult{kind:kind.into(),patient_id:id,title:n,subtitle:d});}}}
 out.truncate(lim as usize); Ok(out)}
 fn normalized_phone_digits(raw: &str) -> Result<String, String> {

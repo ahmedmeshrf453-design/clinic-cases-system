@@ -132,8 +132,32 @@ type PatientFileSnapshot = {
   details: PatientDetails;
   labOrders: LabOrderDetails[];
   nursingOrders: NursingOrder[];
+  physioOrders: NursingOrder[];
   radiologyOrders: RadiologyOrder[];
 };
+
+const PHYSIO_PREFIX='@@PHYSIO@@';
+type PhysioMeta={service:string;sessions:number;notes:string};
+function isPhysioOrder(order:NursingOrder){return String(order.serviceName||'').startsWith(PHYSIO_PREFIX)}
+function physioDisplayName(order:NursingOrder){return String(order.serviceName||'').replace(PHYSIO_PREFIX,'')}
+function physioMeta(order:NursingOrder):PhysioMeta{
+  const raw=physioDisplayName(order);
+  const parts=raw.split(' • ').map(x=>x.trim()).filter(Boolean);
+  const service=parts[0]||'جلسة علاج طبيعي';
+  let sessions=1,notes='';
+  for(const part of parts.slice(1)){
+    const sm=part.match(/^(\d+)\s*جلسة/);
+    if(sm)sessions=Math.max(1,Number(sm[1])||1);
+    if(part.startsWith('ملاحظات:'))notes=part.replace(/^ملاحظات:\s*/, '').trim();
+  }
+  return {service,sessions,notes};
+}
+function makePhysioServiceName(name:string,sessions:number,notes=''){
+  const service=String(name||'جلسة علاج طبيعي').replace(/•/g,'-').trim()||'جلسة علاج طبيعي';
+  const count=Math.max(1,Math.min(999,Number(sessions)||1));
+  const cleanNotes=String(notes||'').replace(/•/g,'-').trim().slice(0,500);
+  return `${PHYSIO_PREFIX}${service} • ${count} جلسة${cleanNotes?` • ملاحظات: ${cleanNotes}`:''}`;
+}
 
 function displaySavedDateTime(value: string) {
   const raw = String(value || '').trim();
@@ -158,7 +182,8 @@ async function loadPatientFile(patientId: string): Promise<PatientFileSnapshot> 
   return {
     details,
     labOrders: labDetails,
-    nursingOrders,
+    nursingOrders: nursingOrders.filter(o=>!isPhysioOrder(o)),
+    physioOrders: nursingOrders.filter(isPhysioOrder),
     radiologyOrders
   };
 }
@@ -181,6 +206,12 @@ function latestPatientService(file: PatientFileSnapshot) {
   file.nursingOrders.forEach(o => rows.push({
     key: `${o.orderDate || ''} ${o.orderTime || ''} ${o.createdAt || ''}`,
     label: `تمريض — ${o.serviceName || 'خدمة'}`,
+    when: `${displayDate(o.orderDate)}${o.orderTime ? ` • ${o.orderTime}` : ''}`
+  }));
+
+  file.physioOrders.forEach(o => rows.push({
+    key: `${o.orderDate || ''} ${o.orderTime || ''} ${o.createdAt || ''}`,
+    label: `علاج طبيعي — ${physioMeta(o).service}`,
     when: `${displayDate(o.orderDate)}${o.orderTime ? ` • ${o.orderTime}` : ''}`
   }));
 
@@ -216,7 +247,7 @@ function patientFileTimelineHtml(file: PatientFileSnapshot, interactive = true) 
   const p = file.details.patient;
 
   const items: Array<{
-    kind: 'created' | 'visit' | 'lab' | 'nursing' | 'radiology';
+    kind: 'created' | 'visit' | 'lab' | 'nursing' | 'physio' | 'radiology';
     id: string;
     savedAt: string;
     serviceAt: string;
@@ -287,6 +318,18 @@ function patientFileTimelineHtml(file: PatientFileSnapshot, interactive = true) 
       subtitle: 'خدمة تمريض مسجلة بملف المريض',
       detail: `تاريخ الخدمة: ${displayDate(o.orderDate)}${o.orderTime ? ` • ${o.orderTime}` : ''}`,
       money: `${moneyNumber(o.price).toFixed(2)} ج.م`
+    });
+  });
+
+  file.physioOrders.forEach(o => {
+    const meta=physioMeta(o);
+    items.push({
+      kind:'physio',id:o.id,savedAt:o.createdAt,
+      serviceAt:`${o.orderDate||''} ${o.orderTime||''}`.trim(),
+      icon:'🦵',title:`علاج طبيعي — ${meta.service}`,
+      subtitle:`${meta.sessions} جلسة${meta.notes?` • ${meta.notes}`:''}`,
+      detail:`تاريخ الخدمة: ${displayDate(o.orderDate)}${o.orderTime?` • ${o.orderTime}`:''}`,
+      money:`${moneyNumber(o.price).toFixed(2)} ج.م`
     });
   });
 
@@ -415,7 +458,7 @@ type UnifiedSearchResult={kind:string;patientId:string;title:string;subtitle:str
 type SystemAlert={kind:string;title:string;detail:string;patientId:string;serviceType:string;serviceId:string};
 type PaymentMethodSummary={paymentMethod:string;count:number;amount:number};
 
-type Screen = 'dashboard' | 'patients' | 'today' | 'todaystats' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'radiology' | 'cashier' | 'finance' | 'alerts' | 'audit' | 'security' | 'reports' | 'archive' | 'trash' | 'backups' | 'settings';
+type Screen = 'dashboard' | 'patients' | 'today' | 'todaystats' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'physio' | 'radiology' | 'cashier' | 'finance' | 'alerts' | 'audit' | 'security' | 'reports' | 'archive' | 'trash' | 'backups' | 'settings';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 let screen: Screen = 'dashboard';
@@ -443,6 +486,7 @@ let labPriceOverridesLoaded = false;
 let v7SecurityStatus:SecurityStatus={pinSet:false,autoLockMinutes:10,recoverySet:false,recoveryFileAvailable:false};
 let v7LastActivityAt=Date.now();
 let v7SecurityTimer:number|undefined;
+let doctorSpecialtyFilter = '';
 
 function esc(v: unknown) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({
@@ -1311,6 +1355,7 @@ async function exportTodayCombined(
   labOrders: LabOrder[],
   nursingOrders: NursingOrder[],
   radiologyOrders: RadiologyOrder[],
+  physioOrders: NursingOrder[],
   dayKey: string,
   format: ExportFormat
 ) {
@@ -1319,9 +1364,10 @@ async function exportTodayCombined(
   const labRemaining = labOrders.reduce((sum, o) => sum + moneyNumber(o.remainingAmount), 0);
   const nursingTotal = nursingOrders.reduce((sum, o) => sum + moneyNumber(o.price), 0);
   const radiologyTotal = radiologyOrders.reduce((sum, o) => sum + moneyNumber(o.netTotal), 0);
-  const totalCases = visits.length + labOrders.length + nursingOrders.length + radiologyOrders.length;
-  const totalCollection = visitMetrics.revenue + labPaid + nursingTotal + radiologyTotal;
-  const clinicTotal = visitMetrics.clinicTotal + labPaid + nursingTotal + radiologyTotal;
+  const physioTotal = physioOrders.reduce((sum,o)=>sum+moneyNumber(o.price),0);
+  const totalCases = visits.length + labOrders.length + nursingOrders.length + radiologyOrders.length + physioOrders.length;
+  const totalCollection = visitMetrics.revenue + labPaid + nursingTotal + radiologyTotal + physioTotal;
+  const clinicTotal = visitMetrics.clinicTotal + labPaid + nursingTotal + radiologyTotal + physioTotal;
 
   const labRows = labOrders.length ? `
     <h3>حالات التحاليل</h3>
@@ -1338,6 +1384,10 @@ async function exportTodayCombined(
     <h3>خدمات التمريض</h3>
     <table class="export-table"><thead><tr><th>المريض</th><th>الهاتف</th><th>الخدمة</th><th>السعر</th></tr></thead>
     <tbody>${nursingOrders.map(o => `<tr><td>${esc(o.patientName || '—')}</td><td class="ltr">${esc(o.patientPhone || '—')}</td><td>${esc(o.serviceName)}</td><td class="ltr">${moneyNumber(o.price).toFixed(2)} ج.م</td></tr>`).join('')}</tbody></table>` : '';
+
+  const physioRows = physioOrders.length ? `
+    <h3>العلاج الطبيعي</h3>
+    <table class="export-table"><thead><tr><th>المريض</th><th>الهاتف</th><th>الخدمة</th><th>الجلسات</th><th>الإجمالي</th></tr></thead><tbody>${physioOrders.map(o=>{const meta=physioMeta(o);return `<tr><td>${esc(o.patientName||'—')}</td><td class="ltr">${esc(o.patientPhone||'—')}</td><td>${esc(meta.service)}</td><td>${meta.sessions}</td><td class="ltr">${moneyNumber(o.price).toFixed(2)} ج.م</td></tr>`}).join('')}</tbody></table>` : '';
 
   const radiologyRows = radiologyOrders.length ? `
     <h3>حالات الأشعة</h3>
@@ -1357,6 +1407,7 @@ async function exportTodayCombined(
     ${labRows}
     ${nursingRows}
     ${radiologyRows}
+    ${physioRows}
   `;
 
   await captureAndSaveExport(
@@ -1840,8 +1891,9 @@ function serviceDockHtml() {
           ${nav('doctors','⚕','الأطباء')}
           ${nav('labs','🧪','التحاليل')}
           ${nav('lab2lab','L2L','أسعار Lab 2 Lab')}
-          ${nav('nursing','✚','خدمات التمريض')}
           ${nav('radiology','🩻','الأشعة')}
+          ${nav('physio','🦵','العلاج الطبيعي')}
+          ${nav('nursing','✚','خدمات التمريض')}
           ${nav('cashier','💵','الكاشير')}
           ${nav('finance','📊','المالية')}
           ${nav('alerts','🔔','التنبيهات')}
@@ -1885,8 +1937,9 @@ function shell(content: string, title: string, subtitle: string) {
           ${navButton('doctors','⚕','الأطباء')}
           ${navButton('labs','🧪','التحاليل')}
           ${navButton('lab2lab','L2L','أسعار Lab 2 Lab')}
-          ${navButton('nursing','✚','خدمات التمريض')}
           ${navButton('radiology','🩻','الأشعة')}
+          ${navButton('physio','🦵','العلاج الطبيعي')}
+          ${navButton('nursing','✚','خدمات التمريض')}
           ${navButton('cashier','💵','الكاشير')}
           ${navButton('finance','📊','التقارير المالية')}
           ${navButton('alerts','🔔','التنبيهات')}
@@ -2977,6 +3030,7 @@ async function renderScreen() {
   if (screen === 'labs') return renderLabPrices();
   if (screen === 'lab2lab') return renderLab2Lab();
   if (screen === 'nursing') return renderNursingServices();
+  if (screen === 'physio') return renderPhysioServices();
   if (screen === 'radiology') return renderRadiologyServices();
   if (screen === 'cashier') return renderCashier();
   if (screen === 'finance') return renderFinance();
@@ -3106,250 +3160,45 @@ async function renderTrash() {
   });
 }
 
-async function renderDashboard() {
-  const dayKey = businessDay();
+const HOME_SPECIALTIES=[
+  {key:'urology',label:'مسالك بولية وذكورة',icon:'◉',keys:['مسالك','ذكورة']},
+  {key:'internal',label:'باطنة وجهاز هضمي',icon:'🫀',keys:['باطنة','جهاز هضمي']},
+  {key:'ortho',label:'عظام ومفاصل',icon:'🦴',keys:['عظام','مفاصل']},
+  {key:'surgery',label:'جراحة عامة ومناظير',icon:'✚',keys:['جراحة عامة','مناظير']},
+  {key:'eye',label:'عيون',icon:'👁',keys:['عيون','رمد','ophthalm']},
+  {key:'neuro',label:'مخ وأعصاب وعمود فقري',icon:'🧠',keys:['مخ','أعصاب','اعصاب','عمود فقري']},
+  {key:'obgyn',label:'نساء وتوليد',icon:'♀',keys:['نساء','توليد','حقن مجهري','تأخر الإنجاب']},
+  {key:'ent',label:'أنف وأذن وحنجرة',icon:'👂',keys:['أنف','انف','أذن','اذن','حنجرة']},
+  {key:'nutrition',label:'تغذية علاجية',icon:'🥗',keys:['تغذية']},
+  {key:'vascular',label:'أوعية دموية وقدم سكري',icon:'🩸',keys:['أوعية','اوعية','قدم سكري']},
+  {key:'audiology',label:'سمع واتزان',icon:'〽',keys:['سمع','اتزان']}
+] as const;
+function specialtyMeta(key:string){return HOME_SPECIALTIES.find(x=>x.key===key)}
+function specialtyMatches(key:string,text:string){const x=specialtyMeta(key);if(!x)return true;const v=String(text||'').toLowerCase();return x.keys.some(k=>v.includes(k.toLowerCase()))}
 
-  const [todayReport, todayLabOrders, todayNursingOrders, todayRadiologyOrders] = await Promise.all([
-    invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } }),
-    invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } }),
-    invoke<NursingOrder[]>('list_nursing_orders', { query: { from: dayKey, to: dayKey } }),
-    invoke<RadiologyOrder[]>('list_radiology_orders', { query: { from: dayKey, to: dayKey } })
+async function renderDashboard(){
+  const dayKey=businessDay();
+  const [report,labs,rad,allNursing]=await Promise.all([
+    invoke<ReportResult>('run_report',{query:{from:dayKey,to:dayKey,doctor:''}}),
+    invoke<LabOrder[]>('list_lab_orders',{query:{from:dayKey,to:dayKey}}),
+    invoke<RadiologyOrder[]>('list_radiology_orders',{query:{from:dayKey,to:dayKey}}),
+    invoke<NursingOrder[]>('list_nursing_orders',{query:{from:dayKey,to:dayKey}})
   ]);
+  const physio=allNursing.filter(isPhysioOrder),nursing=allNursing.filter(o=>!isPhysioOrder(o));
+  const doctorSpec=new Map(doctors.map(d=>[d.name,d.specialty||'']));
+  const count=(key:string)=>report.rows.filter(v=>specialtyMatches(key,`${v.specialty||''} ${doctorSpec.get(v.doctor)||''}`)).length;
 
-  const clinicToday = todayReport.rows.length;
-  const labPatientsToday = todayLabOrders.length;
-  const nursingPatientsToday = todayNursingOrders.length;
-  const radiologyPatientsToday = todayRadiologyOrders.length;
-  const totalToday = clinicToday + labPatientsToday + nursingPatientsToday + radiologyPatientsToday;
-
-  const unifiedRows = [
-    ...todayReport.rows.map(v => ({
-      kind: 'clinic',
-      kindLabel: v.visitType || 'كشف / استشارة',
-      icon: '🩺',
-      sortKey: `${v.visitDate || ''} ${v.visitTime || ''} ${v.createdAt || ''}`,
-      time: v.visitTime || '—',
-      patientId: v.patientId,
-      patientName: v.patientName || '—',
-      patientPhone: v.patientPhone || '',
-      provider: v.doctor || '—',
-      status: 'محفوظ',
-      action: `<button class="dash-row-action" data-dash-open-patient="${esc(v.patientId)}">فتح الملف</button>`
-    })),
-    ...todayLabOrders.map(o => ({
-      kind: 'lab',
-      kindLabel: 'تحاليل',
-      icon: '🧪',
-      sortKey: `${o.orderDate || ''} ${o.orderTime || ''} ${o.createdAt || ''}`,
-      time: o.orderTime || '—',
-      patientId: o.patientId,
-      patientName: o.patientName || '—',
-      patientPhone: o.patientPhone || '',
-      provider: `${o.itemsCount} تحليل`,
-      status: labOrderStatus(o),
-      action: `<button class="dash-row-action" data-dash-open-lab="${esc(o.id)}">فتح الحالة</button>`
-    })),
-    ...todayNursingOrders.map(o => ({
-      kind: 'nursing',
-      kindLabel: 'خدمة تمريض',
-      icon: '✚',
-      sortKey: `${o.orderDate || ''} ${o.orderTime || ''} ${o.createdAt || ''}`,
-      time: o.orderTime || '—',
-      patientId: o.patientId,
-      patientName: o.patientName || '—',
-      patientPhone: o.patientPhone || '',
-      provider: o.serviceName || '—',
-      status: 'محفوظ',
-      action: `<button class="dash-row-action" data-dash-open-nursing="${esc(o.id)}">فتح الحالة</button>`
-    })),
-    ...todayRadiologyOrders.map(o => ({
-      kind: 'radiology',
-      kindLabel: 'أشعة',
-      icon: '🩻',
-      sortKey: `${o.orderDate || ''} ${o.orderTime || ''} ${o.createdAt || ''}`,
-      time: o.orderTime || '—',
-      patientId: o.patientId,
-      patientName: o.patientName || '—',
-      patientPhone: o.patientPhone || '',
-      provider: `${o.radiologyName || 'أشعة'}${o.centerName ? ` • ${o.centerName}` : ''}`,
-      status: 'محفوظ',
-      action: `<button class="dash-row-action" data-dash-open-radiology="${esc(o.id)}">فتح الحالة</button>`
-    }))
-  ].sort((a, b) => b.sortKey.localeCompare(a.sortKey));
-
-  shell(`
-    <section class="v66-dashboard">
-      <div class="v66-dashboard-topline">
-        <div class="v66-business-day-card">
-          <span class="v66-date-icon">▣</span>
-          <div>
-            <strong>${displayDate(dayKey)}</strong>
-            <small>اليوم التشغيلي يبدأ ${operationalStartLabel()}</small>
-          </div>
-        </div>
-      </div>
-
-      <div class="v66-primary-actions">
-        <button class="v66-action-card clinic" id="v66NewVisit">
-          <span class="v66-action-icon">🩺</span>
-          <span class="v66-action-copy">
-            <strong>كشف / استشارة</strong>
-            <small>تسجيل حالة عيادة جديدة</small>
-          </span>
-          <span class="v66-action-arrow">‹</span>
-        </button>
-
-        <button class="v66-action-card labs" id="v66NewLab">
-          <span class="v66-action-icon">🧪</span>
-          <span class="v66-action-copy">
-            <strong>تحاليل</strong>
-            <small>تسجيل مريض تحاليل</small>
-          </span>
-          <span class="v66-action-arrow">‹</span>
-        </button>
-
-        <button class="v66-action-card nursing" id="v66NewNursing">
-          <span class="v66-action-icon">✚</span>
-          <span class="v66-action-copy">
-            <strong>تمريض</strong>
-            <small>تسجيل خدمة تمريض</small>
-          </span>
-          <span class="v66-action-arrow">‹</span>
-        </button>
-
-        <button class="v66-action-card radiology" id="v66NewRadiology">
-          <span class="v66-action-icon">🩻</span>
-          <span class="v66-action-copy">
-            <strong>أشعة</strong>
-            <small>تسجيل حالة أشعة</small>
-          </span>
-          <span class="v66-action-arrow">‹</span>
-        </button>
-      </div>
-
-      <section class="v66-today-card">
-        <div class="v66-today-card-head">
-          <div>
-            <h2>تسجيلات اليوم</h2>
-            <p>جميع الحالات المسجلة اليوم في العيادة والتحاليل والتمريض والأشعة</p>
-          </div>
-          <button class="btn ghost small" id="v66OpenToday">فتح شاشة حالات اليوم</button>
-        </div>
-
-        <div class="v66-today-toolbar">
-          <div class="v66-filter-tabs">
-            <button class="active" data-v66-filter="all">الكل (${totalToday})</button>
-            <button data-v66-filter="clinic">العيادة (${clinicToday})</button>
-            <button data-v66-filter="lab">التحاليل (${labPatientsToday})</button>
-            <button data-v66-filter="nursing">التمريض (${nursingPatientsToday})</button>
-            <button data-v66-filter="radiology">الأشعة (${radiologyPatientsToday})</button>
-          </div>
-
-          <div class="v66-today-search">
-            <span>⌕</span>
-            <input id="v66TodaySearch" type="search" placeholder="بحث في تسجيلات اليوم..." />
-          </div>
-        </div>
-
-        <div class="v66-today-table-wrap">
-          <table class="v66-today-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>وقت التسجيل</th>
-                <th>نوع الخدمة</th>
-                <th>اسم المريض</th>
-                <th>رقم الملف</th>
-                <th>الطبيب / مقدم الخدمة</th>
-                <th>الحالة</th>
-                <th>الإجراءات</th>
-              </tr>
-            </thead>
-            <tbody id="v66TodayRows">
-              ${unifiedRows.map((row, index) => `
-                <tr
-                  data-v66-row
-                  data-v66-kind="${row.kind}"
-                  data-v66-search="${esc(`${row.patientName} ${row.patientPhone}`.toLowerCase())}"
-                >
-                  <td>${index + 1}</td>
-                  <td class="ltr">${esc(row.time)}</td>
-                  <td><span class="v66-service-badge ${row.kind}">${row.icon} ${esc(row.kindLabel)}</span></td>
-                  <td>${esc(row.patientName)}</td>
-                  <td class="ltr">${esc((row.patientId || '').slice(0, 8).toUpperCase())}</td>
-                  <td>${esc(row.provider)}</td>
-                  <td><span class="v66-status-badge">${esc(row.status)}</span></td>
-                  <td>${row.action}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-
-          <div class="v66-empty-state ${unifiedRows.length ? '' : 'show'}" id="v66TodayEmpty">
-            <div class="v66-empty-icon">▤</div>
-            <strong>لا توجد تسجيلات اليوم حتى الآن</strong>
-            <span>ستظهر هنا جميع الحالات المسجلة في العيادة والتحاليل والتمريض لهذا اليوم</span>
-          </div>
-        </div>
-      </section>
-    </section>
-  `, 'لوحة التحكم', 'تسجيلات اليوم فقط بدون إحصائيات تراكمية');
-
-  ensureCaseContextMenu();
-
-  document.querySelector<HTMLButtonElement>('#v66NewVisit')!.onclick = () => openCaseModal();
-  document.querySelector<HTMLButtonElement>('#v66NewLab')!.onclick = () => openLabPatientRegistrationModal();
-  document.querySelector<HTMLButtonElement>('#v66NewNursing')!.onclick = () => openNursingPatientRegistrationModal();
-  document.querySelector<HTMLButtonElement>('#v66NewRadiology')!.onclick = () => openRadiologyPatientRegistrationModal();
-  document.querySelector<HTMLButtonElement>('#v66OpenToday')!.onclick = () => navigate('today');
-
-  document.querySelectorAll<HTMLButtonElement>('[data-dash-open-patient]').forEach(button => {
-    button.onclick = () => openPatient(button.dataset.dashOpenPatient || '');
-  });
-  document.querySelectorAll<HTMLButtonElement>('[data-dash-open-lab]').forEach(button => {
-    button.onclick = () => openLabOrderDetails(button.dataset.dashOpenLab || '');
-  });
-  document.querySelectorAll<HTMLButtonElement>('[data-dash-open-nursing]').forEach(button => {
-    button.onclick = () => openNursingOrderDetails(button.dataset.dashOpenNursing || '');
-  });
-  document.querySelectorAll<HTMLButtonElement>('[data-dash-open-radiology]').forEach(button => {
-    button.onclick = () => openRadiologyOrderDetails(button.dataset.dashOpenRadiology || '');
-  });
-
-  const tabs = [...document.querySelectorAll<HTMLButtonElement>('[data-v66-filter]')];
-  const rows = [...document.querySelectorAll<HTMLTableRowElement>('[data-v66-row]')];
-  const search = document.querySelector<HTMLInputElement>('#v66TodaySearch')!;
-  const empty = document.querySelector<HTMLDivElement>('#v66TodayEmpty')!;
-  let activeFilter = 'all';
-
-  const apply = () => {
-    const q = search.value.trim().toLowerCase();
-    let visible = 0;
-
-    rows.forEach(row => {
-      const kind = row.dataset.v66Kind || '';
-      const searchable = row.dataset.v66Search || '';
-      const okKind = activeFilter === 'all' || kind === activeFilter;
-      const okSearch = !q || searchable.includes(q);
-      const show = okKind && okSearch;
-      row.style.display = show ? '' : 'none';
-      if (show) visible += 1;
-    });
-
-    empty.classList.toggle('show', visible === 0);
-  };
-
-  const setFilter = (filter: string) => {
-    activeFilter = filter;
-    tabs.forEach(tab => tab.classList.toggle('active', (tab.dataset.v66Filter || '') === activeFilter));
-    apply();
-  };
-
-  tabs.forEach(tab => {
-    tab.onclick = () => setFilter(tab.dataset.v66Filter || 'all');
-  });
-
-  search.oninput = apply;
+  shell(`<section class="specialty-home">
+    <div class="specialty-home-hero"><div><span>واجهة التشغيل</span><h2>اختار التخصص</h2><p>التخصصات أولاً، ثم الطبيب والحالة.</p></div><div class="specialty-home-day"><span>اليوم التشغيلي</span><strong>${displayDate(dayKey)}</strong><small>${report.rows.length+labs.length+rad.length+physio.length+nursing.length} تسجيل</small></div></div>
+    <div class="specialty-grid">${HOME_SPECIALTIES.map(x=>`<button class="specialty-card" data-specialty-home="${x.key}"><span class="specialty-card-icon">${x.icon}</span><span><strong>${x.label}</strong><small>${doctors.filter(d=>d.active&&specialtyMatches(x.key,d.specialty)).length} طبيب • ${count(x.key)} حالة اليوم</small></span><b>←</b></button>`).join('')}</div>
+    <div class="home-section-title"><strong>الخدمات</strong><small>مرتبطة بملف المريض والكاشير</small></div>
+    <div class="clinic-services-grid"><button class="clinic-service-card" data-home-service="labs"><span>🧪</span><strong>التحاليل</strong><small>${labs.length} حالة اليوم</small></button><button class="clinic-service-card" data-home-service="radiology"><span>🩻</span><strong>الأشعة</strong><small>${rad.length} حالة اليوم</small></button><button class="clinic-service-card" data-home-service="physio"><span>🦵</span><strong>العلاج الطبيعي</strong><small>${physio.length} حالة اليوم</small></button><button class="clinic-service-card" data-home-service="nursing"><span>✚</span><strong>خدمات التمريض</strong><small>${nursing.length} حالة اليوم</small></button></div>
+    <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
+    <div class="v71-build-stamp">V7.1.0 • SPECIALTY HOME</div>
+  </section>`,'الرئيسية','التخصصات والخدمات');
+  document.querySelectorAll<HTMLButtonElement>('[data-specialty-home]').forEach(b=>b.onclick=async()=>{doctorSpecialtyFilter=b.dataset.specialtyHome||'';await navigate('doctors')});
+  document.querySelectorAll<HTMLButtonElement>('[data-home-service]').forEach(b=>b.onclick=()=>navigate(b.dataset.homeService as Screen));
+  document.querySelectorAll<HTMLButtonElement>('[data-q]').forEach(b=>b.onclick=()=>navigate(b.dataset.q as Screen));
 }
 
 async function renderTodayStats() {
@@ -3364,6 +3213,7 @@ async function renderTodayStats() {
   const labPatientsToday = rows.filter(x => x.serviceType === 'lab').length;
   const nursingPatientsToday = rows.filter(x => x.serviceType === 'nursing').length;
   const radiologyPatientsToday = rows.filter(x => x.serviceType === 'radiology').length;
+  const physioPatientsToday = rows.filter(x => x.serviceType === 'physio').length;
   const totalToday = rows.length;
   const totalCharges = rows.reduce((sum,row) => sum + row.charge, 0);
   const totalPaid = rows.reduce((sum,row) => sum + row.paid, 0);
@@ -3401,6 +3251,7 @@ async function renderTodayStats() {
           <span class="v66-stat-icon radiology">🩻</span>
           <span><small>تسجيلات الأشعة اليوم</small><strong>${radiologyPatientsToday}</strong></span>
         </button>
+        <button class="v66-stat-card" id="todayStatsPhysio"><span class="v66-stat-icon physio">🦵</span><span><small>العلاج الطبيعي اليوم</small><strong>${physioPatientsToday}</strong></span></button>
         <button class="v66-stat-card total" id="todayStatsAll">
           <span class="v66-stat-icon total">▥</span>
           <span><small>إجمالي تسجيلات اليوم</small><strong>${totalToday}</strong></span>
@@ -3431,6 +3282,7 @@ async function renderTodayStats() {
   document.querySelector<HTMLButtonElement>('#todayStatsLabs')!.onclick = () => navigate('labs');
   document.querySelector<HTMLButtonElement>('#todayStatsNursing')!.onclick = () => navigate('nursing');
   document.querySelector<HTMLButtonElement>('#todayStatsRadiology')!.onclick = () => navigate('radiology');
+  document.querySelector<HTMLButtonElement>('#todayStatsPhysio')!.onclick = () => navigate('physio');
   document.querySelector<HTMLButtonElement>('#todayStatsAll')!.onclick = () => navigate('today');
 }
 
@@ -3470,21 +3322,24 @@ async function renderPatients(archived: boolean) {
 
 async function renderToday() {
   const dayKey = businessDay();
-  const [baseResult, labOrders, nursingOrders, radiologyOrders] = await Promise.all([
+  const [baseResult, labOrders, allNursingOrders, radiologyOrders] = await Promise.all([
     invoke<ReportResult>('run_report', { query: { from: dayKey, to: dayKey, doctor: '' } }),
     invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } }),
     invoke<NursingOrder[]>('list_nursing_orders', { query: { from: dayKey, to: dayKey } }),
     invoke<RadiologyOrder[]>('list_radiology_orders', { query: { from: dayKey, to: dayKey } })
   ]);
 
+  const nursingOrders=allNursingOrders.filter(o=>!isPhysioOrder(o));
+  const physioOrders=allNursingOrders.filter(isPhysioOrder);
   const metrics = reportMetrics(baseResult.rows);
   const labPaid = labOrders.reduce((sum, o) => sum + moneyNumber(o.paidAmount), 0);
   const labRemaining = labOrders.reduce((sum, o) => sum + moneyNumber(o.remainingAmount), 0);
   const nursingTotal = nursingOrders.reduce((sum, o) => sum + moneyNumber(o.price), 0);
   const radiologyTotal = radiologyOrders.reduce((sum, o) => sum + moneyNumber(o.netTotal), 0);
-  const totalCases = baseResult.totalVisits + labOrders.length + nursingOrders.length + radiologyOrders.length;
-  const totalCollection = metrics.revenue + labPaid + nursingTotal + radiologyTotal;
-  const clinicTotal = metrics.clinicTotal + labPaid + nursingTotal + radiologyTotal;
+  const totalCases = baseResult.totalVisits + labOrders.length + nursingOrders.length + radiologyOrders.length + physioOrders.length;
+  const physioTotal=physioOrders.reduce((sum,o)=>sum+moneyNumber(o.price),0);
+  const totalCollection = metrics.revenue + labPaid + nursingTotal + radiologyTotal + physioTotal;
+  const clinicTotal = metrics.clinicTotal + labPaid + nursingTotal + radiologyTotal + physioTotal;
 
   ensureCaseContextMenu();
   shell(`
@@ -3523,6 +3378,7 @@ async function renderToday() {
             <option>تحاليل</option>
             <option>خدمات تمريض</option>
             <option>أشعة</option>
+            <option>علاج طبيعي</option>
           </select>
         </label>
         <label>مصدر الحجز
@@ -3555,7 +3411,7 @@ async function renderToday() {
   const host = document.querySelector<HTMLDivElement>('#todayCasesHost')!;
 
   const visibleVisits = () => baseResult.rows.filter(v =>
-    !['تحاليل','خدمات تمريض','أشعة'].includes(typeFilter.value) &&
+    !['تحاليل','خدمات تمريض','أشعة','علاج طبيعي'].includes(typeFilter.value) &&
     (!doctorFilter.value || v.doctor === doctorFilter.value) &&
     (!typeFilter.value || v.visitType === typeFilter.value) &&
     (!sourceFilter.value || (v.bookingSource || 'عادي') === sourceFilter.value)
@@ -3576,11 +3432,18 @@ async function renderToday() {
     return radiologyOrders;
   };
 
+  const visiblePhysio=()=>{
+    if(typeFilter.value&&typeFilter.value!=='علاج طبيعي')return [];
+    if(doctorFilter.value||sourceFilter.value)return [];
+    return physioOrders;
+  };
+
   const applyFilters = () => {
     const visits = visibleVisits();
     const labs = visibleLabs();
     const nursing = visibleNursing();
     const radiology = visibleRadiology();
+    const physio = visiblePhysio();
 
     host.innerHTML = `
       ${visits.length || (!typeFilter.value || typeFilter.value === 'كشف جديد' || typeFilter.value === 'استشارة') ? `
@@ -3599,12 +3462,17 @@ async function renderToday() {
         <div class="today-case-section-head radiology"><h3>حالات الأشعة</h3><span>${radiology.length} حالة</span></div>
         ${radiologyOrderRowsHtml(radiology, true)}
       ` : ''}
+      ${physio.length || typeFilter.value === 'علاج طبيعي' || !typeFilter.value ? `
+        <div class="today-case-section-head physio"><h3>العلاج الطبيعي</h3><span>${physio.length} حالة</span></div>
+        ${physioRowsHtml(physio, true)}
+      ` : ''}
     `;
 
     ensureCaseContextMenu();
     bindLabOrderActions();
     bindNursingOrderActions();
     bindRadiologyOrderActions();
+    bindPhysioActions();
   };
 
   doctorFilter.onchange = applyFilters;
@@ -3613,9 +3481,9 @@ async function renderToday() {
   applyFilters();
 
   document.querySelector<HTMLButtonElement>('#todayImage')!.onclick = () =>
-    exportTodayCombined(visibleVisits(), visibleLabs(), visibleNursing(), visibleRadiology(), dayKey, 'png');
+    exportTodayCombined(visibleVisits(), visibleLabs(), visibleNursing(), visibleRadiology(), visiblePhysio(), dayKey, 'png');
   document.querySelector<HTMLButtonElement>('#todayPdf')!.onclick = () =>
-    exportTodayCombined(visibleVisits(), visibleLabs(), visibleNursing(), visibleRadiology(), dayKey, 'pdf');
+    exportTodayCombined(visibleVisits(), visibleLabs(), visibleNursing(), visibleRadiology(), visiblePhysio(), dayKey, 'pdf');
 
   const search = document.querySelector<HTMLInputElement>('#todayPatientSearch')!;
   const results = document.querySelector<HTMLDivElement>('#todayPatientSearchResults')!;
@@ -4117,11 +3985,60 @@ async function openNursingPatientRegistrationModal() {
   };
 }
 
+
+function physioRowsHtml(rows:NursingOrder[],showPatient=true){
+  return `<div class="table-wrap"><table><thead><tr>
+    <th>التاريخ</th><th>الوقت</th>${showPatient?'<th>المريض</th><th>الهاتف</th>':''}
+    <th>الخدمة</th><th>الجلسات</th><th>الإجمالي</th><th>إجراءات</th>
+  </tr></thead><tbody>
+  ${rows.length?rows.map(o=>{const meta=physioMeta(o);return `<tr>
+    <td>${displayDate(o.orderDate)}</td><td class="ltr">${esc(o.orderTime||'—')}</td>
+    ${showPatient?`<td>${esc(o.patientName||'—')}</td><td class="ltr">${esc(o.patientPhone||'—')}</td>`:''}
+    <td>${esc(meta.service)}</td><td>${meta.sessions}</td><td class="ltr">${moneyNumber(o.price).toFixed(2)} ج.م</td>
+    <td><div class="visit-row-actions"><button class="icon-action" data-open-physio="${esc(o.id)}">⌕</button><button class="icon-action edit" data-edit-physio="${esc(o.id)}">✎</button></div></td>
+  </tr>`}).join(''):`<tr><td colspan="${showPatient?8:6}" class="empty-row">لا توجد حالات علاج طبيعي</td></tr>`}
+  </tbody></table></div>`;
+}
+
+async function openPhysioEdit(order:NursingOrder,after?:()=>Promise<void>){
+  const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
+  const meta=physioMeta(order),sessionPrice=meta.sessions?moneyNumber(order.price)/meta.sessions:moneyNumber(order.price);
+  root.innerHTML=`<div class="modal-backdrop"><section class="modal compact"><div class="modal-head"><div><h2>تعديل العلاج الطبيعي</h2><p>${esc(order.patientName||'')}</p></div></div>
+    <form id="physioEditForm"><div class="form-grid one"><label>نوع الجلسة / الخدمة<input name="service" value="${esc(meta.service)}"></label><label>عدد الجلسات<input name="sessions" type="number" min="1" max="999" value="${meta.sessions}"></label><label>سعر الجلسة<input name="sessionPrice" type="number" min="0" step="0.01" value="${sessionPrice.toFixed(2)}"></label><label>ملاحظات<textarea name="notes" rows="3">${esc(meta.notes)}</textarea></label><label>التاريخ<input name="date" type="date" value="${esc(order.orderDate)}"></label><label>الوقت<input name="time" type="time" value="${esc(order.orderTime)}"></label></div><div class="form-actions"><button type="button" class="btn ghost" id="cancelPhysioEdit">إلغاء</button><button class="btn primary">حفظ</button></div></form>
+  </section></div>`;
+  const close=()=>root.innerHTML='';document.querySelector<HTMLButtonElement>('#cancelPhysioEdit')!.onclick=close;
+  document.querySelector<HTMLFormElement>('#physioEditForm')!.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget as HTMLFormElement);const sessions=Math.max(1,Number(fd.get('sessions')||1));const unit=moneyNumber(String(fd.get('sessionPrice')||'0'));
+    try{await invoke('update_nursing_order',{input:{id:order.id,serviceName:makePhysioServiceName(String(fd.get('service')||''),sessions,String(fd.get('notes')||'')),price:(unit*sessions).toFixed(2),orderDate:String(fd.get('date')||''),orderTime:String(fd.get('time')||'')}});close();toast('تم تعديل العلاج الطبيعي');if(after)await after();else await renderScreen()}catch(err){toast(`تعذر التعديل: ${String(err)}`,'error')}};
+}
+
+async function openPhysioDetails(id:string){
+  const o=await invoke<NursingOrder>('get_nursing_order',{id});const meta=physioMeta(o);const unit=meta.sessions?moneyNumber(o.price)/meta.sessions:moneyNumber(o.price);const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
+  root.innerHTML=`<div class="modal-backdrop"><section class="modal compact"><div class="modal-head"><div><h2>علاج طبيعي</h2><p>${esc(o.patientName||'')} • <span class="ltr">${esc(o.patientPhone||'')}</span></p></div></div><div class="physio-detail"><span>الخدمة</span><strong>${esc(meta.service)}</strong></div><div class="physio-detail"><span>عدد الجلسات</span><strong>${meta.sessions}</strong></div><div class="physio-detail"><span>سعر الجلسة</span><strong class="ltr">${unit.toFixed(2)} ج.م</strong></div><div class="physio-detail"><span>الإجمالي</span><strong class="ltr">${moneyNumber(o.price).toFixed(2)} ج.م</strong></div><div class="physio-detail"><span>ملاحظات</span><strong>${esc(meta.notes||'—')}</strong></div><div class="physio-detail"><span>التاريخ</span><strong>${displayDate(o.orderDate)} • ${esc(o.orderTime||'—')}</strong></div><div class="form-actions"><button class="btn ghost" id="physioPatient">ملف المريض</button><button class="btn ghost" id="physioEdit">✎ تعديل</button><button class="btn primary" id="physioClose">إغلاق</button></div></section></div>`;
+  const close=()=>root.innerHTML='';document.querySelector<HTMLButtonElement>('#physioClose')!.onclick=close;document.querySelector<HTMLButtonElement>('#physioPatient')!.onclick=async()=>{close();await openPatient(o.patientId)};document.querySelector<HTMLButtonElement>('#physioEdit')!.onclick=async()=>{close();await openPhysioEdit(o,async()=>openPhysioDetails(o.id))};
+}
+
+function bindPhysioActions(){document.querySelectorAll<HTMLButtonElement>('[data-open-physio]').forEach(b=>b.onclick=()=>openPhysioDetails(b.dataset.openPhysio||''));document.querySelectorAll<HTMLButtonElement>('[data-edit-physio]').forEach(b=>b.onclick=async()=>{const o=await invoke<NursingOrder>('get_nursing_order',{id:b.dataset.editPhysio||''});await openPhysioEdit(o,async()=>renderScreen())})}
+
+async function openPatientPhysioPanel(patientId:string){
+  const [d,all]=await Promise.all([invoke<PatientDetails>('get_patient_details',{id:patientId}),invoke<NursingOrder[]>('list_patient_nursing_orders',{patientId})]);const p=d.patient,rows=all.filter(isPhysioOrder);const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
+  root.innerHTML=`<div class="modal-backdrop"><section class="modal wide"><div class="modal-head"><div class="patient-feature-title"><div class="patient-feature-title-icon physio">🦵</div><div><h2>العلاج الطبيعي</h2><p>${esc(p.fullName||'')} • <span class="ltr">${esc(p.phone||'')}</span></p></div></div></div><form id="physioForm"><div class="physio-entry-grid"><label class="span2">نوع الجلسة / الخدمة<input name="service" placeholder="مثال: علاج طبيعي للركبة"></label><label>عدد الجلسات<input name="sessions" type="number" min="1" max="999" value="1"></label><label>سعر الجلسة<input name="sessionPrice" type="number" min="0" step="0.01"></label><label>التاريخ<input name="date" type="date" value="${today()}"></label><label>الوقت<input name="time" type="time" value="${timeNow()}"></label><label class="span2">ملاحظات<textarea name="notes" rows="3" placeholder="ملاحظات اختيارية"></textarea></label></div><div class="form-actions"><button class="btn primary">✓ حفظ العلاج الطبيعي</button><button type="button" class="btn ghost" id="physioBack">ملف المريض</button></div></form><div class="lab-order-history-head"><strong>السجل السابق</strong><span>${rows.length} حالة</span></div>${physioRowsHtml(rows,false)}</section></div>`;
+  const close=()=>root.innerHTML='';document.querySelector<HTMLButtonElement>('#physioBack')!.onclick=async()=>{close();await openPatient(patientId)};
+  document.querySelector<HTMLFormElement>('#physioForm')!.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget as HTMLFormElement);const sessions=Math.max(1,Number(fd.get('sessions')||1));const unit=moneyNumber(String(fd.get('sessionPrice')||'0'));try{const o=await invoke<NursingOrder>('add_nursing_order',{input:{patientId,serviceName:makePhysioServiceName(String(fd.get('service')||''),sessions,String(fd.get('notes')||'')),price:(unit*sessions).toFixed(2),orderDate:String(fd.get('date')||''),orderTime:String(fd.get('time')||'')}});close();toast('تم حفظ العلاج الطبيعي');await renderScreen();await openPhysioDetails(o.id)}catch(err){toast(`تعذر الحفظ: ${String(err)}`,'error')}};bindPhysioActions();
+}
+
+async function openPhysioPatientRegistrationModal(){
+  const root=document.querySelector<HTMLDivElement>('#modalRoot')!;root.innerHTML=`<div class="modal-backdrop"><section class="modal form-modal"><div class="modal-head"><div><h2>تسجيل حالة علاج طبيعي</h2><p>بيانات المريض ثم تسجيل الجلسات</p></div></div><form id="physioRegister"><div class="patient-register-grid"><label class="field-name">الاسم بالكامل<input name="fullName"></label><label class="field-phone">رقم التليفون<input name="phone" class="ltr"></label><label class="field-age">السن<input name="age" type="number" min="0" max="130"></label><label class="field-gender">النوع<select name="gender"><option value="">—</option><option>ذكر</option><option>أنثى</option></select></label><label class="field-address">العنوان<input name="address"></label></div><div class="form-actions"><button type="button" class="btn ghost" id="physioRegCancel">إلغاء</button><button class="btn primary">حفظ وفتح العلاج الطبيعي</button></div></form></section></div>`;const close=()=>root.innerHTML='';document.querySelector<HTMLButtonElement>('#physioRegCancel')!.onclick=close;
+  document.querySelector<HTMLFormElement>('#physioRegister')!.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget as HTMLFormElement),age=String(fd.get('age')||'').trim();try{const x=await invoke<{id:string,existed:boolean}>('register_patient',{input:{fullName:String(fd.get('fullName')||'').trim(),phone:String(fd.get('phone')||'').trim(),age:age?Number(age):null,gender:String(fd.get('gender')||''),address:String(fd.get('address')||'').trim()}});close();await renderScreen();await openPatientPhysioPanel(x.id)}catch(err){toast(`تعذر تسجيل المريض: ${String(err)}`,'error')}};
+}
+
+async function renderPhysioServices(){const dayKey=businessDay();const all=await invoke<NursingOrder[]>('list_nursing_orders',{query:{from:dayKey,to:dayKey}}),rows=all.filter(isPhysioOrder);shell(`<section class="card"><div class="card-head toolbar"><div><h2>العلاج الطبيعي</h2><p>${displayDate(dayKey)} • الجلسات المسجلة اليوم</p></div><button class="btn primary small" id="newPhysio">＋ تسجيل حالة علاج طبيعي</button></div><div class="nursing-main-summary"><div><span>حالات اليوم</span><strong>${rows.length}</strong></div></div><div class="today-case-section-head physio"><h3>العلاج الطبيعي اليوم</h3><span>${rows.length} حالة</span></div>${physioRowsHtml(rows,true)}</section>`,'العلاج الطبيعي','الجلسات والسعر والمدفوع والمتبقي داخل الكاشير');document.querySelector<HTMLButtonElement>('#newPhysio')!.onclick=()=>openPhysioPatientRegistrationModal();bindPhysioActions()}
+
 async function renderNursingServices() {
   const dayKey = businessDay();
-  const rows = await invoke<NursingOrder[]>('list_nursing_orders', {
+  const allRows = await invoke<NursingOrder[]>('list_nursing_orders', {
     query: { from: dayKey, to: dayKey }
   });
+  const rows = allRows.filter(o=>!isPhysioOrder(o));
 
   shell(`
     <section class="card nursing-main-card">
@@ -4691,18 +4608,21 @@ async function renderDoctors() {
     todayByDoctor.set(name, item);
   }
 
+  const activeSpecialty=doctorSpecialtyFilter?specialtyMeta(doctorSpecialtyFilter):undefined;
+  const shownDoctors=activeSpecialty?doctors.filter(d=>specialtyMatches(doctorSpecialtyFilter,d.specialty)):doctors;
+
   shell(`
     <section class="card">
       <div class="card-head toolbar">
         <div>
-          <h2>الأطباء</h2>
-          <p>اضغط على أي دكتور لفتح ملفه والإحصائيات والحسابات</p>
+          <h2>${activeSpecialty?activeSpecialty.label:'الأطباء'}</h2>
+          <p>${activeSpecialty?'أطباء التخصص وحالاتهم اليوم':'اضغط على أي دكتور لفتح ملفه والإحصائيات والحسابات'}</p>
         </div>
-        <button class="btn primary small" id="addDoctorBtn">＋ إضافة طبيب</button>
+        <div class="filters">${activeSpecialty?'<button class="btn ghost small" id="clearSpecialty">كل التخصصات</button>':''}<button class="btn primary small" id="addDoctorBtn">＋ إضافة طبيب</button></div>
       </div>
 
       <div class="doctor-icon-grid">
-        ${doctors.length ? doctors.map(d => {
+        ${shownDoctors.length ? shownDoctors.map(d => {
           const todayItem = todayByDoctor.get(d.name) || { count: 0, doctorAmount: 0 };
           return `
             <article class="doctor-icon-card ${d.active ? '' : 'inactive'}" data-doctor-open="${esc(d.id)}" role="button" tabindex="0">
@@ -4735,6 +4655,7 @@ async function renderDoctors() {
   `, 'الأطباء', 'ملفات الأطباء وملخص الحالات والحسابات');
 
   document.querySelector<HTMLButtonElement>('#addDoctorBtn')!.onclick = () => openDoctorModal();
+  const clearSpecialty=document.querySelector<HTMLButtonElement>('#clearSpecialty');if(clearSpecialty)clearSpecialty.onclick=async()=>{doctorSpecialtyFilter='';await renderDoctors()};
 
   document.querySelectorAll<HTMLElement>('[data-doctor-open]').forEach(card => {
     const doctor = doctors.find(d => d.id === card.dataset.doctorOpen);
@@ -5615,7 +5536,7 @@ async function openPatientFeaturePanel(
     return;
   }
 
-const nursingHistory = await invoke<NursingOrder[]>('list_patient_nursing_orders', { patientId });
+const nursingHistory = (await invoke<NursingOrder[]>('list_patient_nursing_orders', { patientId })).filter(o=>!isPhysioOrder(o));
 
   root.innerHTML = `
     <div class="modal-backdrop" id="patientFeatureBackdrop">
@@ -5764,6 +5685,7 @@ async function openPatient(id: string) {
     details.visits.length +
     patientFile.labOrders.length +
     patientFile.nursingOrders.length +
+    patientFile.physioOrders.length +
     patientFile.radiologyOrders.length;
 
   const financialRows = allCashierRows.filter(row => row.patientId === id);
@@ -5855,6 +5777,12 @@ async function openPatient(id: string) {
             <span class="patient-service-clean-count">${patientFile.nursingOrders.length}</span>
           </button>
 
+          <button class="patient-service-clean physio" id="patientPhysioServices">
+            <span class="patient-service-clean-icon">🦵</span>
+            <span class="patient-service-clean-copy"><strong>علاج طبيعي</strong></span>
+            <span class="patient-service-clean-count">${patientFile.physioOrders.length}</span>
+          </button>
+
           <button class="patient-service-clean radiology" id="patientRadiologyServices">
             <span class="patient-service-clean-icon">🩻</span>
             <span class="patient-service-clean-copy"><strong>أشعة</strong></span>
@@ -5893,7 +5821,7 @@ async function openPatient(id: string) {
         <div class="patient-full-record-head">
           <div>
             <h3>السجل الكامل للمريض</h3>
-            <small>كل كشف أو استشارة أو تحليل أو خدمة تمريض أو أشعة محفوظة بتاريخ وتوقيت الحفظ</small>
+            <small>كل كشف أو استشارة أو تحليل أو أشعة أو علاج طبيعي أو خدمة تمريض محفوظة بتاريخ وتوقيت الحفظ</small>
           </div>
           <span>${totalActivities + 1} سجل شامل إنشاء الملف</span>
         </div>
@@ -5914,6 +5842,11 @@ async function openPatient(id: string) {
   document.querySelector<HTMLButtonElement>('#patientNursingServices')!.onclick = () => {
     close();
     openPatientFeaturePanel(id, 'nursing');
+  };
+
+  document.querySelector<HTMLButtonElement>('#patientPhysioServices')!.onclick = () => {
+    close();
+    openPatientPhysioPanel(id);
   };
 
   document.querySelector<HTMLButtonElement>('#patientRadiologyServices')!.onclick = () => {
@@ -6022,6 +5955,8 @@ async function openPatient(id: string) {
         await openLabOrderDetails(itemId);
       } else if (kind === 'nursing') {
         await openNursingOrderDetails(itemId);
+      } else if (kind === 'physio') {
+        await openPhysioDetails(itemId);
       } else if (kind === 'radiology') {
         await openRadiologyOrderDetails(itemId);
       }
@@ -6049,7 +5984,7 @@ async function openPatientRegistrationModal() {
         <div class="modal-head">
           <div>
             <h2>إنشاء ملف مريض</h2>
-            <p>يتم إنشاء ملف دائم للمريض أولًا، وبعدها يمكن إضافة كشف أو استشارة أو تحاليل أو تمريض أو أشعة في أي وقت</p>
+            <p>يتم إنشاء ملف دائم للمريض أولًا، وبعدها يمكن إضافة كشف أو استشارة أو تحاليل أو أشعة أو علاج طبيعي أو تمريض في أي وقت</p>
           </div>
           <button class="modal-close" id="closeCase">×</button>
         </div>
