@@ -3161,24 +3161,24 @@ async function renderTrash() {
 }
 
 const HOME_SPECIALTIES=[
-  {key:'urology',label:'مسالك بولية وذكورة',icon:'💧',keys:['مسالك','ذكورة']},
-  {key:'internal',label:'باطنة وجهاز هضمي',icon:'🫀',keys:['باطنة','جهاز هضمي']},
-  {key:'ortho',label:'عظام ومفاصل',icon:'🦴',keys:['عظام','مفاصل']},
-  {key:'surgery',label:'جراحة عامة ومناظير',icon:'🫁',keys:['جراحة عامة','مناظير']},
-  {key:'eye',label:'عيون',icon:'👁️',keys:['عيون','رمد','ophthalm']},
-  {key:'neuro',label:'مخ وأعصاب وعمود فقري',icon:'🧠',keys:['مخ','أعصاب','اعصاب','عمود فقري']},
-  {key:'obgyn',label:'نساء وتوليد',icon:'♀️',keys:['نساء','توليد','حقن مجهري','تأخر الإنجاب']},
-  {key:'ent',label:'أنف وأذن وحنجرة',icon:'👂',keys:['أنف','انف','أذن','اذن','حنجرة']},
-  {key:'nutrition',label:'تغذية علاجية',icon:'🫃',keys:['تغذية']},
-  {key:'vascular',label:'أوعية دموية وقدم سكري',icon:'🩸',keys:['أوعية','اوعية','قدم سكري']},
-  {key:'audiology',label:'سمع واتزان',icon:'👂',keys:['سمع','اتزان']}
+  {key:'urology',label:'مسالك بولية وذكورة',iconClass:'organ-urology',keys:['مسالك','ذكورة']},
+  {key:'internal',label:'باطنة وجهاز هضمي',iconClass:'organ-internal',keys:['باطنة','جهاز هضمي']},
+  {key:'ortho',label:'عظام ومفاصل',iconClass:'organ-ortho',keys:['عظام','مفاصل']},
+  {key:'surgery',label:'جراحة عامة ومناظير',iconClass:'organ-surgery',keys:['جراحة عامة','مناظير']},
+  {key:'eye',label:'عيون',iconClass:'organ-eye',keys:['عيون','رمد','ophthalm']},
+  {key:'neuro',label:'مخ وأعصاب وعمود فقري',iconClass:'organ-neuro',keys:['مخ','أعصاب','اعصاب','عمود فقري']},
+  {key:'obgyn',label:'نساء وتوليد',iconClass:'organ-obgyn',keys:['نساء','توليد','حقن مجهري','تأخر الإنجاب']},
+  {key:'ent',label:'أنف وأذن وحنجرة',iconClass:'organ-ent',keys:['أنف','انف','أذن','اذن','حنجرة']},
+  {key:'nutrition',label:'تغذية علاجية',iconClass:'organ-nutrition',keys:['تغذية']},
+  {key:'vascular',label:'أوعية دموية وقدم سكري',iconClass:'organ-vascular',keys:['أوعية','اوعية','قدم سكري']},
+  {key:'audiology',label:'سمع واتزان',iconClass:'organ-audiology',keys:['سمع','اتزان']}
 ] as const;
 
 const HOME_SERVICES=[
-  {key:'labs',screen:'labs' as Screen,label:'التحاليل',icon:'🧪'},
-  {key:'radiology',screen:'radiology' as Screen,label:'الأشعة',icon:'🩻'},
-  {key:'physio',screen:'physio' as Screen,label:'العلاج الطبيعي',icon:'🦵'},
-  {key:'nursing',screen:'nursing' as Screen,label:'خدمات التمريض',icon:'❤️'}
+  {key:'labs',screen:'labs' as Screen,label:'التحاليل',iconClass:'organ-labs'},
+  {key:'radiology',screen:'radiology' as Screen,label:'الأشعة',iconClass:'organ-radiology'},
+  {key:'physio',screen:'physio' as Screen,label:'العلاج الطبيعي',iconClass:'organ-physio'},
+  {key:'nursing',screen:'nursing' as Screen,label:'خدمات التمريض',iconClass:'organ-nursing'}
 ] as const;
 
 const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v711';
@@ -3261,7 +3261,7 @@ async function renderDashboard(){
   const orderedSpecialties=orderedHomeItems(HOME_SPECIALTIES,HOME_SPECIALTY_ORDER_KEY);
   const orderedServices=orderedHomeItems(HOME_SERVICES,HOME_SERVICE_ORDER_KEY);
 
-  shell(`<section class="specialty-home specialty-home-v711">
+  shell(`<section class="specialty-home specialty-home-v712">
     <div class="specialty-home-hero">
       <div><span class="specialty-home-kicker">واجهة التشغيل</span><h2>اختار التخصص</h2><p>التخصصات أولاً، ثم الطبيب والحالة.</p></div>
       <div class="specialty-home-day"><span>اليوم التشغيلي</span><strong>${displayDate(dayKey)}</strong><small>${report.rows.length+labs.length+rad.length+physio.length+nursing.length} تسجيل</small></div>
@@ -3271,7 +3271,7 @@ async function renderDashboard(){
     <div class="specialty-grid home-sortable-grid" id="specialtyGridHome">
       ${orderedSpecialties.map(x=>`<button class="specialty-card home-sortable-card" data-specialty-home="${x.key}" data-order-id="${x.key}" type="button" draggable="true">
         <span class="specialty-card-drag" title="اسحب لتغيير الترتيب">⋮⋮</span>
-        <span class="specialty-card-icon square-3d">${x.icon}</span>
+        <span class="specialty-card-icon square-3d organ-sprite ${x.iconClass}"></span>
         <span class="specialty-card-copy"><strong>${x.label}</strong><small>${doctors.filter(d=>d.active&&specialtyMatches(x.key,d.specialty)).length} طبيب • ${count(x.key)} حالة اليوم</small></span>
         <span class="specialty-card-arrow">←</span>
       </button>`).join('')}
@@ -3283,14 +3283,14 @@ async function renderDashboard(){
         const todayCount=x.key==='labs'?labs.length:x.key==='radiology'?rad.length:x.key==='physio'?physio.length:nursing.length;
         return `<button class="clinic-service-card home-sortable-card" data-home-service="${x.screen}" data-order-id="${x.key}" type="button" draggable="true">
           <span class="specialty-card-drag" title="اسحب لتغيير الترتيب">⋮⋮</span>
-          <span class="clinic-service-icon square-3d">${x.icon}</span>
+          <span class="clinic-service-icon square-3d organ-sprite ${x.iconClass}"></span>
           <span class="clinic-service-copy"><strong>${x.label}</strong><small>${todayCount} حالة اليوم</small></span>
         </button>`;
       }).join('')}
     </div>
 
     <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
-    <div class="v71-build-stamp">V7.1.1 • 3D ICON ORDER</div>
+    <div class="v71-build-stamp">V7.1.2 • REAL 3D ORGAN IMAGES</div>
   </section>`,'الرئيسية','التخصصات والخدمات');
 
   document.querySelectorAll<HTMLButtonElement>('[data-specialty-home]').forEach(b=>b.onclick=async()=>{doctorSpecialtyFilter=b.dataset.specialtyHome||'';await navigate('doctors')});
