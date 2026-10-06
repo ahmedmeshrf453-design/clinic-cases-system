@@ -3180,9 +3180,8 @@ const HOME_SERVICES=[
   {key:'physio',screen:'physio' as Screen,label:'العلاج الطبيعي',iconClass:'organ-physio'},
   {key:'nursing',screen:'nursing' as Screen,label:'خدمات التمريض',iconClass:'organ-nursing'}
 ] as const;
-
-const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v711';
-const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v711';
+const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v713';
+const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v713';
 
 function specialtyMeta(key:string){return HOME_SPECIALTIES.find(x=>x.key===key)}
 function specialtyMatches(key:string,text:string){const x=specialtyMeta(key);if(!x)return true;const v=String(text||'').toLowerCase();return x.keys.some(k=>v.includes(k.toLowerCase()))}
@@ -3261,7 +3260,7 @@ async function renderDashboard(){
   const orderedSpecialties=orderedHomeItems(HOME_SPECIALTIES,HOME_SPECIALTY_ORDER_KEY);
   const orderedServices=orderedHomeItems(HOME_SERVICES,HOME_SERVICE_ORDER_KEY);
 
-  shell(`<section class="specialty-home specialty-home-v712">
+  shell(`<section class="specialty-home specialty-home-v713">
     <div class="specialty-home-hero">
       <div><span class="specialty-home-kicker">واجهة التشغيل</span><h2>اختار التخصص</h2><p>التخصصات أولاً، ثم الطبيب والحالة.</p></div>
       <div class="specialty-home-day"><span>اليوم التشغيلي</span><strong>${displayDate(dayKey)}</strong><small>${report.rows.length+labs.length+rad.length+physio.length+nursing.length} تسجيل</small></div>
@@ -3271,7 +3270,7 @@ async function renderDashboard(){
     <div class="specialty-grid home-sortable-grid" id="specialtyGridHome">
       ${orderedSpecialties.map(x=>`<button class="specialty-card home-sortable-card" data-specialty-home="${x.key}" data-order-id="${x.key}" type="button" draggable="true">
         <span class="specialty-card-drag" title="اسحب لتغيير الترتيب">⋮⋮</span>
-        <span class="specialty-card-icon square-3d organ-sprite ${x.iconClass}"></span>
+        <span class="specialty-card-icon hologram-tile ${x.iconClass}"></span>
         <span class="specialty-card-copy"><strong>${x.label}</strong><small>${doctors.filter(d=>d.active&&specialtyMatches(x.key,d.specialty)).length} طبيب • ${count(x.key)} حالة اليوم</small></span>
         <span class="specialty-card-arrow">←</span>
       </button>`).join('')}
@@ -3283,14 +3282,14 @@ async function renderDashboard(){
         const todayCount=x.key==='labs'?labs.length:x.key==='radiology'?rad.length:x.key==='physio'?physio.length:nursing.length;
         return `<button class="clinic-service-card home-sortable-card" data-home-service="${x.screen}" data-order-id="${x.key}" type="button" draggable="true">
           <span class="specialty-card-drag" title="اسحب لتغيير الترتيب">⋮⋮</span>
-          <span class="clinic-service-icon square-3d organ-sprite ${x.iconClass}"></span>
+          <span class="clinic-service-icon hologram-tile ${x.iconClass}"></span>
           <span class="clinic-service-copy"><strong>${x.label}</strong><small>${todayCount} حالة اليوم</small></span>
         </button>`;
       }).join('')}
     </div>
 
     <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
-    <div class="v71-build-stamp">V7.1.2 • REAL 3D ORGAN IMAGES</div>
+    <div class="v71-build-stamp">V7.1.3 • HOLOGRAM ORGAN ICONS</div>
   </section>`,'الرئيسية','التخصصات والخدمات');
 
   document.querySelectorAll<HTMLButtonElement>('[data-specialty-home]').forEach(b=>b.onclick=async()=>{doctorSpecialtyFilter=b.dataset.specialtyHome||'';await navigate('doctors')});
