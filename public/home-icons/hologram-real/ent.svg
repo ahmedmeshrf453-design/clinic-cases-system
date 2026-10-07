@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 384">
+<defs>
+  <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#e9fdff" stop-opacity="0.96"/>
+    <stop offset="0.23" stop-color="#68e8ff" stop-opacity="0.88"/>
+    <stop offset="0.62" stop-color="#35bddd" stop-opacity="0.64"/>
+    <stop offset="1" stop-color="#6b6dff" stop-opacity="0.56"/>
+  </linearGradient>
+  <radialGradient id="rg" cx="32%" cy="24%" r="80%">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.92"/>
+    <stop offset="0.22" stop-color="#a9f4ff" stop-opacity="0.66"/>
+    <stop offset="0.55" stop-color="#43c8ee" stop-opacity="0.28"/>
+    <stop offset="1" stop-color="#113b74" stop-opacity="0.12"/>
+  </radialGradient>
+  <filter id="glow" x="-70%" y="-70%" width="240%" height="240%">
+    <feGaussianBlur stdDeviation="10" result="b"/>
+    <feColorMatrix in="b" type="matrix" values="0 0 0 0 0.15 0 0 0 0 0.78 0 0 0 0 1 0 0 0 0.9 0" result="gb"/>
+    <feMerge><feMergeNode in="gb"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="soft" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="4"/></filter>
+</defs>
+<ellipse cx="192" cy="330" rx="105" ry="17" fill="#46d9ff" opacity="0.12" filter="url(#soft)"/>
+<g filter="url(#glow)">
+<path d="M205 61 C253 61 286 95 286 141 C286 175 269 194 249 211 C232 225 222 239 222 261 C222 283 207 300 187 300 C166 300 150 284 150 263 C150 225 173 202 197 183 C216 168 228 155 228 137 C228 117 214 102 194 102 C175 102 161 117 161 137" fill="url(#g)" stroke="#d6fbff" stroke-width="4" stroke-linecap="round"/>
+<path d="M154 158 C155 125 178 101 207 101 M173 249 C183 264 194 269 207 269" fill="none" stroke="#c9faff" stroke-width="5" opacity="0.62"/>
+<path d="M214 145 C253 127 287 133 311 157 C329 174 337 196 335 216" fill="none" stroke="#7de7ff" stroke-width="11" opacity="0.42"/>
+<ellipse cx="226" cy="91" rx="27" ry="12" fill="#fff" opacity="0.16"/>
+</g>
+</svg>

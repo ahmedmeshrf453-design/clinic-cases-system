@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 384">
+<defs>
+  <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#e9fdff" stop-opacity="0.96"/>
+    <stop offset="0.23" stop-color="#68e8ff" stop-opacity="0.88"/>
+    <stop offset="0.62" stop-color="#35bddd" stop-opacity="0.64"/>
+    <stop offset="1" stop-color="#6b6dff" stop-opacity="0.56"/>
+  </linearGradient>
+  <radialGradient id="rg" cx="32%" cy="24%" r="80%">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.92"/>
+    <stop offset="0.22" stop-color="#a9f4ff" stop-opacity="0.66"/>
+    <stop offset="0.55" stop-color="#43c8ee" stop-opacity="0.28"/>
+    <stop offset="1" stop-color="#113b74" stop-opacity="0.12"/>
+  </radialGradient>
+  <filter id="glow" x="-70%" y="-70%" width="240%" height="240%">
+    <feGaussianBlur stdDeviation="10" result="b"/>
+    <feColorMatrix in="b" type="matrix" values="0 0 0 0 0.15 0 0 0 0 0.78 0 0 0 0 1 0 0 0 0.9 0" result="gb"/>
+    <feMerge><feMergeNode in="gb"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="soft" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="4"/></filter>
+</defs>
+<ellipse cx="192" cy="330" rx="105" ry="17" fill="#46d9ff" opacity="0.12" filter="url(#soft)"/>
+<g filter="url(#glow)">
+<path d="M105 95 C74 91 55 119 60 159 C65 199 88 229 119 226 C143 224 151 201 147 169 L145 126 C141 105 128 96 105 95Z" fill="url(#g)" stroke="#d6fbff" stroke-width="4"/>
+<path d="M279 95 C310 91 329 119 324 159 C319 199 296 229 265 226 C241 224 233 201 237 169 L239 126 C243 105 256 96 279 95Z" fill="url(#g)" stroke="#d6fbff" stroke-width="4"/>
+<path d="M132 210 C140 248 156 259 181 276 M252 210 C244 248 228 259 203 276" fill="none" stroke="#aaf5ff" stroke-width="7" stroke-linecap="round"/>
+<path d="M159 283 C159 259 174 243 192 243 C210 243 225 259 225 283 C225 303 211 317 192 317 C173 317 159 303 159 283Z" fill="url(#rg)" stroke="#cbfaff" stroke-width="4"/>
+<path d="M83 130 C94 114 118 112 132 126 M252 126 C266 112 290 114 301 130" fill="none" stroke="#fff" stroke-width="8" opacity="0.28" stroke-linecap="round"/>
+<path d="M102 153 C115 166 122 180 120 203 M282 153 C269 166 262 180 264 203" fill="none" stroke="#c1faff" stroke-width="4" opacity="0.62"/>
+</g>
+</svg>
