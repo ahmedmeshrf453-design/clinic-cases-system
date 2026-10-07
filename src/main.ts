@@ -3181,8 +3181,8 @@ const HOME_SERVICES=[
   {key:'nursing',screen:'nursing' as Screen,label:'خدمات التمريض',iconClass:'organ-nursing'}
 ] as const;
 
-const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v719b';
-const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v719b';
+const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v7110';
+const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v7110';
 
 function specialtyMeta(key:string){return HOME_SPECIALTIES.find(x=>x.key===key)}
 function specialtyMatches(key:string,text:string){const x=specialtyMeta(key);if(!x)return true;const v=String(text||'').toLowerCase();return x.keys.some(k=>v.includes(k.toLowerCase()))}
@@ -3261,7 +3261,7 @@ async function renderDashboard(){
   const orderedSpecialties=orderedHomeItems(HOME_SPECIALTIES,HOME_SPECIALTY_ORDER_KEY);
   const orderedServices=orderedHomeItems(HOME_SERVICES,HOME_SERVICE_ORDER_KEY);
 
-  shell(`<section class="specialty-home specialty-home-v719b">
+  shell(`<section class="specialty-home specialty-home-v7110">
     <div class="specialty-home-hero">
       <div><span class="specialty-home-kicker">واجهة التشغيل</span><h2>اختار التخصص</h2><p>التخصصات أولاً، ثم الطبيب والحالة.</p></div>
       <div class="specialty-home-day"><span>اليوم التشغيلي</span><strong>${displayDate(dayKey)}</strong><small>${report.rows.length+labs.length+rad.length+physio.length+nursing.length} تسجيل</small></div>
@@ -3290,7 +3290,7 @@ async function renderDashboard(){
     </div>
 
     <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
-    <div class="v71-build-stamp">V7.1.9 • REAL IMAGE TILES</div>
+    <div class="v71-build-stamp">V7.1.10 • COMPACT IMAGE CARDS</div>
   </section>`,'الرئيسية','التخصصات والخدمات');
 
   document.querySelectorAll<HTMLButtonElement>('[data-specialty-home]').forEach(b=>b.onclick=async()=>{doctorSpecialtyFilter=b.dataset.specialtyHome||'';await navigate('doctors')});

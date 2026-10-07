@@ -4692,3 +4692,55 @@ table td{font-size:13px !important}
 @media(max-width:1400px){.specialty-home-v719b .specialty-grid{grid-template-columns:repeat(5,minmax(150px,1fr))}}
 @media(max-width:1120px){.specialty-home-v719b .specialty-grid,.specialty-home-v719b .clinic-services-grid{grid-template-columns:repeat(4,minmax(145px,1fr))}}
 @media(max-width:860px){.specialty-home-v719b .specialty-grid,.specialty-home-v719b .clinic-services-grid{grid-template-columns:repeat(2,minmax(145px,1fr))}}
+
+
+/* ===== V7.1.10 COMPACT IMAGE CARDS ===== */
+.specialty-home-v7110{background:#f4f8fb!important}
+.specialty-home-v7110 .specialty-grid{grid-template-columns:repeat(7,minmax(132px,1fr))!important;gap:8px!important}
+.specialty-home-v7110 .clinic-services-grid{grid-template-columns:repeat(7,minmax(132px,1fr))!important;gap:8px!important}
+.specialty-home-v7110 .home-sortable-card{position:relative!important;overflow:visible!important;cursor:grab!important;user-select:none!important}
+.specialty-home-v7110 .home-sortable-card:active{cursor:grabbing!important}
+.specialty-home-v7110 .specialty-card,
+.specialty-home-v7110 .clinic-service-card{
+  position:relative!important;
+  min-height:82px!important;
+  height:82px!important;
+  padding:5px 8px 6px!important;
+  border-radius:14px!important;
+  border:1px solid #d8e5ee!important;
+  background:#fff!important;
+  box-shadow:0 5px 12px rgba(21,52,77,.045)!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:3px!important;
+  text-align:center!important;
+  overflow:hidden!important
+}
+.specialty-home-v7110 .specialty-card:hover,
+.specialty-home-v7110 .clinic-service-card:hover{transform:translateY(-1px)!important;border-color:#bdd9e7!important;box-shadow:0 7px 15px rgba(21,52,77,.075)!important}
+.specialty-home-v7110 .specialty-card-arrow,
+.specialty-home-v7110 .specialty-card-copy small,
+.specialty-home-v7110 .clinic-service-copy small{display:none!important}
+.specialty-home-v7110 .specialty-card-drag{position:absolute!important;top:5px!important;right:5px!important;font-size:11px!important;color:#9cafbc!important;line-height:1!important;letter-spacing:-2px!important;padding:1px 2px!important;z-index:2!important}
+.specialty-home-v7110 .specialty-card-copy,
+.specialty-home-v7110 .clinic-service-copy{display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important;margin:0!important;min-height:18px!important}
+.specialty-home-v7110 .specialty-card-copy strong,
+.specialty-home-v7110 .clinic-service-copy strong{font-size:11px!important;font-weight:800!important;line-height:1.2!important;color:#153a5a!important;max-width:125px!important}
+.specialty-home-v7110 .photo-sprite-tile{width:46px!important;height:46px!important;min-width:46px!important;min-height:46px!important;border-radius:11px!important;margin:0 auto!important;border:1px solid #dce8ef!important;box-shadow:0 3px 9px rgba(40,125,166,.10),0 0 0 2px rgba(84,203,255,.06)!important;background-size:400% 400%!important}
+.specialty-home-v7110 .home-section-title{margin:2px 0 5px!important;min-height:25px!important}
+.specialty-home-v7110 .home-section-title strong{font-size:20px!important;line-height:1.1!important;color:#163a59!important}
+.specialty-home-v7110 .home-section-title small{font-size:9px!important;color:#899daa!important}
+.specialty-home-v7110 .specialty-home-hero{padding:9px 14px!important;margin-bottom:6px!important;min-height:auto!important;background:#fff!important;border:1px solid #d9e6ef!important;box-shadow:0 5px 14px rgba(20,50,74,.035)!important}
+.specialty-home-v7110 .specialty-home-hero h2{font-size:18px!important;margin:0 0 2px!important}
+.specialty-home-v7110 .specialty-home-hero p{font-size:11px!important;margin:0!important}
+.specialty-home-v7110 .specialty-home-day{padding:6px 9px!important;min-width:145px!important}
+.specialty-home-v7110 .home-quick-actions{gap:8px!important;margin-top:7px!important}
+.specialty-home-v7110 .home-quick-actions button{min-height:34px!important;padding:6px 8px!important;font-size:13px!important;background:#fff!important;border:1px solid #d9e6ef!important;color:#21455f!important}
+.specialty-home-v7110 .v71-build-stamp{font-size:9px!important;margin-top:3px!important}
+.specialty-home-v7110 .is-dragging{opacity:.55!important;transform:scale(.98)!important}
+.specialty-home-v7110 .is-drag-over{outline:2px dashed #9fdcff!important;outline-offset:-3px!important}
+@media(max-width:1380px){.specialty-home-v7110 .specialty-grid,.specialty-home-v7110 .clinic-services-grid{grid-template-columns:repeat(6,minmax(126px,1fr))!important}}
+@media(max-width:1120px){.specialty-home-v7110 .specialty-grid,.specialty-home-v7110 .clinic-services-grid{grid-template-columns:repeat(5,minmax(120px,1fr))!important}}
+@media(max-width:900px){.specialty-home-v7110 .specialty-grid,.specialty-home-v7110 .clinic-services-grid{grid-template-columns:repeat(3,minmax(118px,1fr))!important}}
