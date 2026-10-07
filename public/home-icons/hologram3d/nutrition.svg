@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+<defs>
+<linearGradient id="h" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#effeff" stop-opacity=".98"/><stop offset=".35" stop-color="#7cecff" stop-opacity=".92"/><stop offset=".72" stop-color="#2dc6ee" stop-opacity=".62"/><stop offset="1" stop-color="#0878a6" stop-opacity=".40"/></linearGradient>
+<radialGradient id="r" cx=".32" cy=".25" r=".9"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".22" stop-color="#b8f7ff" stop-opacity=".65"/><stop offset=".6" stop-color="#39c7ee" stop-opacity=".20"/><stop offset="1" stop-color="#0d82ad" stop-opacity=".03"/></radialGradient>
+<filter id="g" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<ellipse cx="80" cy="134" rx="42" ry="8" fill="#45d9ff" opacity=".12"/>
+<g filter="url(#g)"><path d="M34 96h92c-3 21-18 34-46 34S37 117 34 96Z" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M52 86c0-14 10-24 24-24M83 73c2-15 13-25 29-25M101 88c0-10 8-18 18-18" fill="none" stroke="#d1fbff" stroke-width="3.5" stroke-linecap="round"/><circle cx="60" cy="80" r="7" fill="#69e8ff" opacity=".65"/><circle cx="84" cy="90" r="7" fill="#b2f7ff" opacity=".62"/></g>
+</svg>

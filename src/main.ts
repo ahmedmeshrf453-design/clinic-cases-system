@@ -3161,27 +3161,27 @@ async function renderTrash() {
 }
 
 const HOME_SPECIALTIES=[
-  {key:'urology',label:'مسالك بولية وذكورة',iconClass:'organ-urology',keys:['مسالك','ذكورة']},
-  {key:'internal',label:'باطنة وجهاز هضمي',iconClass:'organ-internal',keys:['باطنة','جهاز هضمي']},
-  {key:'ortho',label:'عظام ومفاصل',iconClass:'organ-ortho',keys:['عظام','مفاصل']},
-  {key:'surgery',label:'جراحة عامة ومناظير',iconClass:'organ-surgery',keys:['جراحة عامة','مناظير']},
-  {key:'eye',label:'عيون',iconClass:'organ-eye',keys:['عيون','رمد','ophthalm']},
-  {key:'neuro',label:'مخ وأعصاب وعمود فقري',iconClass:'organ-neuro',keys:['مخ','أعصاب','اعصاب','عمود فقري']},
-  {key:'obgyn',label:'نساء وتوليد',iconClass:'organ-obgyn',keys:['نساء','توليد','حقن مجهري','تأخر الإنجاب']},
-  {key:'ent',label:'أنف وأذن وحنجرة',iconClass:'organ-ent',keys:['أنف','انف','أذن','اذن','حنجرة']},
-  {key:'nutrition',label:'تغذية علاجية',iconClass:'organ-nutrition',keys:['تغذية']},
-  {key:'vascular',label:'أوعية دموية وقدم سكري',iconClass:'organ-vascular',keys:['أوعية','اوعية','قدم سكري']},
-  {key:'audiology',label:'سمع واتزان',iconClass:'organ-audiology',keys:['سمع','اتزان']}
+  {key:'urology',label:'مسالك بولية وذكورة',image:'/home-icons/hologram3d/urology.svg',keys:['مسالك','ذكورة']},
+  {key:'internal',label:'باطنة وجهاز هضمي',image:'/home-icons/hologram3d/internal.svg',keys:['باطنة','جهاز هضمي']},
+  {key:'ortho',label:'عظام ومفاصل',image:'/home-icons/hologram3d/ortho.svg',keys:['عظام','مفاصل']},
+  {key:'surgery',label:'جراحة عامة ومناظير',image:'/home-icons/hologram3d/surgery.svg',keys:['جراحة عامة','مناظير']},
+  {key:'eye',label:'عيون',image:'/home-icons/hologram3d/eye.svg',keys:['عيون','رمد','ophthalm']},
+  {key:'neuro',label:'مخ وأعصاب وعمود فقري',image:'/home-icons/hologram3d/neuro.svg',keys:['مخ','أعصاب','اعصاب','عمود فقري']},
+  {key:'obgyn',label:'نساء وتوليد',image:'/home-icons/hologram3d/obgyn.svg',keys:['نساء','توليد','حقن مجهري','تأخر الإنجاب']},
+  {key:'ent',label:'أنف وأذن وحنجرة',image:'/home-icons/hologram3d/ent.svg',keys:['أنف','انف','أذن','اذن','حنجرة']},
+  {key:'nutrition',label:'تغذية علاجية',image:'/home-icons/hologram3d/nutrition.svg',keys:['تغذية']},
+  {key:'vascular',label:'أوعية دموية وقدم سكري',image:'/home-icons/hologram3d/vascular.svg',keys:['أوعية','اوعية','قدم سكري']},
+  {key:'audiology',label:'سمع واتزان',image:'/home-icons/hologram3d/audiology.svg',keys:['سمع','اتزان']}
 ] as const;
 
 const HOME_SERVICES=[
-  {key:'labs',screen:'labs' as Screen,label:'التحاليل',iconClass:'organ-labs'},
-  {key:'radiology',screen:'radiology' as Screen,label:'الأشعة',iconClass:'organ-radiology'},
-  {key:'physio',screen:'physio' as Screen,label:'العلاج الطبيعي',iconClass:'organ-physio'},
-  {key:'nursing',screen:'nursing' as Screen,label:'خدمات التمريض',iconClass:'organ-nursing'}
+  {key:'labs',screen:'labs' as Screen,label:'التحاليل',image:'/home-icons/hologram3d/labs.svg'},
+  {key:'radiology',screen:'radiology' as Screen,label:'الأشعة',image:'/home-icons/hologram3d/radiology.svg'},
+  {key:'physio',screen:'physio' as Screen,label:'العلاج الطبيعي',image:'/home-icons/hologram3d/physio.svg'},
+  {key:'nursing',screen:'nursing' as Screen,label:'خدمات التمريض',image:'/home-icons/hologram3d/nursing.svg'}
 ] as const;
-const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v713';
-const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v713';
+const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v715';
+const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v715';
 
 function specialtyMeta(key:string){return HOME_SPECIALTIES.find(x=>x.key===key)}
 function specialtyMatches(key:string,text:string){const x=specialtyMeta(key);if(!x)return true;const v=String(text||'').toLowerCase();return x.keys.some(k=>v.includes(k.toLowerCase()))}
@@ -3260,7 +3260,7 @@ async function renderDashboard(){
   const orderedSpecialties=orderedHomeItems(HOME_SPECIALTIES,HOME_SPECIALTY_ORDER_KEY);
   const orderedServices=orderedHomeItems(HOME_SERVICES,HOME_SERVICE_ORDER_KEY);
 
-  shell(`<section class="specialty-home specialty-home-v713">
+  shell(`<section class="specialty-home specialty-home-v715">
     <div class="specialty-home-hero">
       <div><span class="specialty-home-kicker">واجهة التشغيل</span><h2>اختار التخصص</h2><p>التخصصات أولاً، ثم الطبيب والحالة.</p></div>
       <div class="specialty-home-day"><span>اليوم التشغيلي</span><strong>${displayDate(dayKey)}</strong><small>${report.rows.length+labs.length+rad.length+physio.length+nursing.length} تسجيل</small></div>
@@ -3270,7 +3270,7 @@ async function renderDashboard(){
     <div class="specialty-grid home-sortable-grid" id="specialtyGridHome">
       ${orderedSpecialties.map(x=>`<button class="specialty-card home-sortable-card" data-specialty-home="${x.key}" data-order-id="${x.key}" type="button" draggable="true">
         <span class="specialty-card-drag" title="اسحب لتغيير الترتيب">⋮⋮</span>
-        <span class="specialty-card-icon hologram-tile ${x.iconClass}"></span>
+        <span class="specialty-card-icon organ-hologram-3d"><img src="${x.image}" alt="" draggable="false"></span>
         <span class="specialty-card-copy"><strong>${x.label}</strong><small>${doctors.filter(d=>d.active&&specialtyMatches(x.key,d.specialty)).length} طبيب • ${count(x.key)} حالة اليوم</small></span>
         <span class="specialty-card-arrow">←</span>
       </button>`).join('')}
@@ -3282,14 +3282,14 @@ async function renderDashboard(){
         const todayCount=x.key==='labs'?labs.length:x.key==='radiology'?rad.length:x.key==='physio'?physio.length:nursing.length;
         return `<button class="clinic-service-card home-sortable-card" data-home-service="${x.screen}" data-order-id="${x.key}" type="button" draggable="true">
           <span class="specialty-card-drag" title="اسحب لتغيير الترتيب">⋮⋮</span>
-          <span class="clinic-service-icon hologram-tile ${x.iconClass}"></span>
+          <span class="clinic-service-icon organ-hologram-3d"><img src="${x.image}" alt="" draggable="false"></span>
           <span class="clinic-service-copy"><strong>${x.label}</strong><small>${todayCount} حالة اليوم</small></span>
         </button>`;
       }).join('')}
     </div>
 
     <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
-    <div class="v71-build-stamp">V7.1.4 • HOLOGRAM RENDER FIX</div>
+    <div class="v71-build-stamp">V7.1.5 • 3D HOLOGRAM ORGANS</div>
   </section>`,'الرئيسية','التخصصات والخدمات');
 
   document.querySelectorAll<HTMLButtonElement>('[data-specialty-home]').forEach(b=>b.onclick=async()=>{doctorSpecialtyFilter=b.dataset.specialtyHome||'';await navigate('doctors')});

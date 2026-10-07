@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+<defs>
+<linearGradient id="h" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#effeff" stop-opacity=".98"/><stop offset=".35" stop-color="#7cecff" stop-opacity=".92"/><stop offset=".72" stop-color="#2dc6ee" stop-opacity=".62"/><stop offset="1" stop-color="#0878a6" stop-opacity=".40"/></linearGradient>
+<radialGradient id="r" cx=".32" cy=".25" r=".9"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".22" stop-color="#b8f7ff" stop-opacity=".65"/><stop offset=".6" stop-color="#39c7ee" stop-opacity=".20"/><stop offset="1" stop-color="#0d82ad" stop-opacity=".03"/></radialGradient>
+<filter id="g" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<ellipse cx="80" cy="134" rx="42" ry="8" fill="#45d9ff" opacity=".12"/>
+<g filter="url(#g)"><path d="M55 25c8-10 20-15 34-15 22 0 40 16 41 37 10 5 16 15 16 27 0 16-13 29-29 29H52c-16 0-29-13-29-29 0-12 6-22 16-27 2-9 6-16 12-22Z" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M80 18v90M54 49c13 0 23 8 26 21M106 49c-13 0-23 8-26 21M52 77c13 0 23 8 26 21M108 77c-13 0-23 8-26 21" fill="none" stroke="#d2fbff" stroke-width="3" opacity=".8"/><path d="M73 108v28M87 108v28" fill="none" stroke="#78e7ff" stroke-width="4"/></g>
+</svg>

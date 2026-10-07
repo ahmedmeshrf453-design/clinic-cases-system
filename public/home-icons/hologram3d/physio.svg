@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+<defs>
+<linearGradient id="h" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#effeff" stop-opacity=".98"/><stop offset=".35" stop-color="#7cecff" stop-opacity=".92"/><stop offset=".72" stop-color="#2dc6ee" stop-opacity=".62"/><stop offset="1" stop-color="#0878a6" stop-opacity=".40"/></linearGradient>
+<radialGradient id="r" cx=".32" cy=".25" r=".9"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".22" stop-color="#b8f7ff" stop-opacity=".65"/><stop offset=".6" stop-color="#39c7ee" stop-opacity=".20"/><stop offset="1" stop-color="#0d82ad" stop-opacity=".03"/></radialGradient>
+<filter id="g" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<ellipse cx="80" cy="134" rx="42" ry="8" fill="#45d9ff" opacity=".12"/>
+<g filter="url(#g)"><path d="M98 16c13 0 23 10 23 23 0 6-3 12-8 17L99 70c-9 9-13 19-13 31v10c0 18-14 32-32 32H33v-21h18c8 0 14-6 14-14V96c0-17 7-31 19-43l13-13c2-2 3-4 3-6 0-3-3-6-7-6" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M45 132h27" fill="none" stroke="#d0fbff" stroke-width="4"/></g>
+</svg>

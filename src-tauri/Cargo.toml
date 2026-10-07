@@ -1,6 +1,6 @@
 [package]
 name = "clinic-cases-system"
-version = "7.1.4"
+version = "7.1.5"
 description = "Offline clinic patient cases system"
 authors = ["Clinic Cases"]
 edition = "2021"
