@@ -1,0 +1,293 @@
+name: Clinic Cases V7.1.8 Bright Compact Icons
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply V7.1.8 bright compact icon UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          main_p = Path('src/main.ts')
+          css_p = Path('src/style.css')
+          tauri_p = Path('src-tauri/tauri.conf.json')
+          cargo_p = Path('src-tauri/Cargo.toml')
+          lock_p = Path('src-tauri/Cargo.lock')
+          pkg_p = Path('package.json')
+          pkglock_p = Path('package-lock.json')
+
+          m = main_p.read_text(encoding='utf-8')
+          c = css_p.read_text(encoding='utf-8')
+
+          tauri = json.loads(tauri_p.read_text(encoding='utf-8'))
+          tauri['version'] = '7.1.8'
+          tauri_p.write_text(json.dumps(tauri, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          pkg = json.loads(pkg_p.read_text(encoding='utf-8'))
+          pkg['version'] = '7.1.8'
+          pkg_p.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          pl = pkglock_p.read_text(encoding='utf-8')
+          pl = re.sub(r'("version"\s*:\s*")7\.1\.\d+(")', r'\g<1>7.1.8\2', pl, count=2)
+          pkglock_p.write_text(pl, encoding='utf-8')
+
+          cg = cargo_p.read_text(encoding='utf-8')
+          cg = re.sub(r'(?m)^version\s*=\s*"7\.1\.\d+"\s*$', 'version = "7.1.8"', cg, count=1)
+          cargo_p.write_text(cg, encoding='utf-8')
+
+          cl = lock_p.read_text(encoding='utf-8')
+          cl = re.sub(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.\d+(")', r'\g<1>7.1.8\2', cl, count=1)
+          lock_p.write_text(cl, encoding='utf-8')
+
+          m = re.sub(r"const HOME_SPECIALTY_ORDER_KEY='[^']+';", "const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v718';", m)
+          m = re.sub(r"const HOME_SERVICE_ORDER_KEY='[^']+';", "const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v718';", m)
+          m = re.sub(r'specialty-home specialty-home-v7[0-9a-zA-Z-]*', 'specialty-home specialty-home-v718', m, count=1)
+          m = re.sub(r'V7\.1\.\d+ • [^<]+', 'V7.1.8 • BRIGHT COMPACT ICONS', m, count=1)
+
+          if 'V7.1.8 BRIGHT COMPACT ICONS' not in c:
+              c += '''
+
+          /* ===== V7.1.8 BRIGHT COMPACT ICONS ===== */
+          .specialty-home-v718{background:#f4f8fb!important}
+          .specialty-home-v718 .specialty-grid{grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px}
+          .specialty-home-v718 .clinic-services-grid{grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px}
+          .specialty-home-v718 .home-sortable-card{position:relative;overflow:visible;cursor:grab;user-select:none}
+          .specialty-home-v718 .home-sortable-card:active{cursor:grabbing}
+          .specialty-home-v718 .specialty-card,
+          .specialty-home-v718 .clinic-service-card{
+            position:relative!important;
+            min-height:126px!important;
+            padding:12px 10px 12px!important;
+            border-radius:18px!important;
+            border:1px solid #d7e4ee!important;
+            background:#ffffff!important;
+            box-shadow:0 8px 18px rgba(20,50,74,.05), inset 0 1px 0 rgba(255,255,255,.98)!important;
+            display:flex!important;
+            flex-direction:column!important;
+            align-items:center!important;
+            justify-content:center!important;
+            gap:8px!important;
+            text-align:center!important;
+            color:#173650!important;
+          }
+          .specialty-home-v718 .specialty-card:hover,
+          .specialty-home-v718 .clinic-service-card:hover{
+            transform:translateY(-1px)!important;
+            box-shadow:0 10px 22px rgba(20,50,74,.08)!important;
+            border-color:#bfe1ee!important;
+          }
+          .specialty-home-v718 .specialty-card-arrow,
+          .specialty-home-v718 .specialty-card-copy small,
+          .specialty-home-v718 .clinic-service-copy small{display:none!important}
+          .specialty-home-v718 .specialty-card-drag{
+            position:absolute!important;
+            top:8px!important;
+            right:8px!important;
+            font-size:14px!important;
+            line-height:1!important;
+            color:#94a8b8!important;
+            letter-spacing:-2px!important;
+            padding:2px 4px!important;
+            z-index:2!important;
+          }
+          .specialty-home-v718 .specialty-card-copy,
+          .specialty-home-v718 .clinic-service-copy{
+            display:flex!important;
+            flex-direction:column!important;
+            align-items:center!important;
+            justify-content:center!important;
+            gap:0!important;
+            text-align:center!important;
+          }
+          .specialty-home-v718 .specialty-card-copy strong,
+          .specialty-home-v718 .clinic-service-copy strong{
+            font-size:15px!important;
+            font-weight:800!important;
+            line-height:1.35!important;
+            color:#153a5a!important;
+            max-width:100%!important;
+          }
+          .specialty-home-v718 .anatomical-hologram-tile,
+          .specialty-home-v718 .realistic-hologram-tile,
+          .specialty-home-v718 .real-anatomy-hologram,
+          .specialty-home-v718 .specialty-card-icon,
+          .specialty-home-v718 .clinic-service-icon{
+            width:62px!important;
+            height:62px!important;
+            min-width:62px!important;
+            min-height:62px!important;
+            border-radius:16px!important;
+            display:flex!important;
+            align-items:center!important;
+            justify-content:center!important;
+            overflow:hidden!important;
+            background:linear-gradient(180deg,#ffffff 0%,#f7fbff 100%)!important;
+            border:1px solid #d9e8f1!important;
+            box-shadow:0 0 0 3px rgba(74,196,255,.08), 0 6px 16px rgba(29,128,198,.10)!important;
+            padding:0!important;
+            margin:0 auto!important;
+          }
+          .specialty-home-v718 .anatomical-hologram-tile:after,
+          .specialty-home-v718 .realistic-hologram-tile:after,
+          .specialty-home-v718 .real-anatomy-hologram:after{display:none!important;content:none!important}
+          .specialty-home-v718 .anatomical-hologram-tile img,
+          .specialty-home-v718 .realistic-hologram-tile img,
+          .specialty-home-v718 .real-anatomy-hologram img,
+          .specialty-home-v718 .specialty-card-icon img,
+          .specialty-home-v718 .clinic-service-icon img{
+            width:46px!important;
+            height:46px!important;
+            object-fit:contain!important;
+            padding:0!important;
+            filter: brightness(0) saturate(100%) invert(54%) sepia(91%) saturate(1180%) hue-rotate(173deg) brightness(104%) contrast(102%) drop-shadow(0 0 2px rgba(83,217,255,.7)) drop-shadow(0 0 8px rgba(83,217,255,.45)) !important;
+            opacity:1!important;
+          }
+          .specialty-home-v718 .home-section-title{margin-bottom:8px!important}
+          .specialty-home-v718 .home-section-title strong{color:#163a59!important;font-size:28px!important}
+          .specialty-home-v718 .home-section-title small{color:#86a0b0!important}
+          .specialty-home-v718 .specialty-home-hero{
+            background:#ffffff!important;
+            border:1px solid #d9e6ef!important;
+            box-shadow:0 8px 18px rgba(20,50,74,.04)!important;
+            padding:14px 18px!important;
+            margin-bottom:10px!important;
+          }
+          .specialty-home-v718 .specialty-home-hero h2{color:#163a59!important;font-size:22px!important}
+          .specialty-home-v718 .specialty-home-hero p{color:#7a8d9b!important;font-size:13px!important}
+          .specialty-home-v718 .specialty-home-day{
+            background:#eef7fb!important;
+            color:#163a59!important;
+            border:1px solid #dce8f0!important;
+            min-width:170px!important;
+            padding:10px 12px!important;
+          }
+          .specialty-home-v718 .specialty-home-day span,
+          .specialty-home-v718 .specialty-home-day small{color:#7f92a0!important}
+          .specialty-home-v718 .home-quick-actions button{
+            background:#ffffff!important;
+            border:1px solid #d9e6ef!important;
+            color:#21455f!important;
+            box-shadow:0 4px 10px rgba(22,56,81,.04)!important;
+            min-height:44px!important;
+            padding:10px 12px!important;
+          }
+          .specialty-home-v718 .v71-build-stamp{color:#9aabb5!important;font-size:11px!important}
+          .specialty-home-v718 .is-dragging{opacity:.55!important;transform:scale(.98)!important}
+          .specialty-home-v718 .is-drag-over{outline:2px dashed #9fdcff!important;outline-offset:-4px!important}
+          @media(min-width:1450px){
+            .specialty-home-v718 .specialty-grid{grid-template-columns:repeat(5,minmax(170px,1fr))}
+          }
+          @media(max-width:1250px){
+            .specialty-home-v718 .specialty-grid,
+            .specialty-home-v718 .clinic-services-grid{grid-template-columns:repeat(3,minmax(170px,1fr))}
+          }
+          @media(max-width:980px){
+            .specialty-home-v718 .specialty-grid,
+            .specialty-home-v718 .clinic-services-grid{grid-template-columns:repeat(2,minmax(160px,1fr))}
+          }
+          '''
+
+          main_p.write_text(m, encoding='utf-8')
+          css_p.write_text(c, encoding='utf-8')
+          print('V7.1.8 bright compact icon UI applied')
+          PY
+
+      - name: Verify V7.1.8 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          m = Path('src/main.ts').read_text(encoding='utf-8')
+          c = Path('src/style.css').read_text(encoding='utf-8')
+          t = json.loads(Path('src-tauri/tauri.conf.json').read_text(encoding='utf-8'))
+          checks = {
+            'version': t.get('version') == '7.1.8',
+            'build_marker': 'BRIGHT COMPACT ICONS' in m,
+            'home_class': 'specialty-home-v718' in m,
+            'css_marker': 'V7.1.8 BRIGHT COMPACT ICONS' in c,
+            'smaller_icons': 'width:62px!important' in c,
+            'hide_counts': '.specialty-home-v718 .specialty-card-copy small' in c,
+          }
+          for k,v in checks.items():
+            print(k, 'OK' if v else 'FAIL')
+          assert all(checks.values()), checks
+          print('V7.1.8 verification passed')
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $i = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" |
+            Where-Object { $_.Name -match "7\.1\.8" } |
+            Select-Object -First 1
+          if(-not $i){ throw "V7.1.8 installer missing" }
+          if($i.Length -lt 80000000){ throw "Installer too small" }
+          Write-Host "Verified $($i.Name) $($i.Length) bytes"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.8-Bright-Compact-Icons
+          path: src-tauri/target/release/bundle/nsis/*7.1.8*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated V7.1.8 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src/style.css src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "V7.1.8: bright compact specialty icons"
+          fi
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
