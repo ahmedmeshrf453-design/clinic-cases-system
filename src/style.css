@@ -4626,3 +4626,69 @@ table td{font-size:13px !important}
   .specialty-home-v718 .specialty-grid,
   .specialty-home-v718 .clinic-services-grid{grid-template-columns:repeat(2,minmax(160px,1fr))}
 }
+
+
+/* ===== V7.1.9B REAL IMAGE TILES ===== */
+.specialty-home-v719b{background:#f4f8fb!important}
+.specialty-home-v719b .specialty-grid{grid-template-columns:repeat(6,minmax(150px,1fr));gap:10px}
+.specialty-home-v719b .clinic-services-grid{grid-template-columns:repeat(4,minmax(170px,1fr));gap:10px}
+.specialty-home-v719b .home-sortable-card{position:relative;overflow:visible;cursor:grab;user-select:none}
+.specialty-home-v719b .home-sortable-card:active{cursor:grabbing}
+.specialty-home-v719b .specialty-card,.specialty-home-v719b .clinic-service-card{
+  position:relative!important;min-height:108px!important;padding:10px 8px 10px!important;
+  border-radius:17px!important;border:1px solid #d7e4ee!important;background:#fff!important;
+  box-shadow:0 7px 15px rgba(20,50,74,.045)!important;display:flex!important;flex-direction:column!important;
+  align-items:center!important;justify-content:center!important;gap:6px!important;text-align:center!important
+}
+.specialty-home-v719b .specialty-card:hover,.specialty-home-v719b .clinic-service-card:hover{
+  transform:translateY(-1px)!important;border-color:#bfdae8!important;box-shadow:0 10px 20px rgba(20,50,74,.075)!important
+}
+.specialty-home-v719b .specialty-card-arrow,
+.specialty-home-v719b .specialty-card-copy small,
+.specialty-home-v719b .clinic-service-copy small{display:none!important}
+.specialty-home-v719b .specialty-card-drag{
+  position:absolute!important;top:7px!important;right:7px!important;font-size:13px!important;color:#9db0bd!important;
+  letter-spacing:-2px!important;line-height:1!important;padding:2px!important;z-index:2!important
+}
+.specialty-home-v719b .specialty-card-copy,.specialty-home-v719b .clinic-service-copy{
+  display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important
+}
+.specialty-home-v719b .specialty-card-copy strong,.specialty-home-v719b .clinic-service-copy strong{
+  font-size:13px!important;font-weight:800!important;line-height:1.3!important;color:#153a5a!important
+}
+.specialty-home-v719b .photo-sprite-tile{
+  width:58px!important;height:58px!important;min-width:58px!important;min-height:58px!important;border-radius:14px!important;
+  display:block!important;padding:0!important;margin:0 auto!important;overflow:hidden!important;
+  background-image:url('/home-icons/organ-sprite.webp')!important;background-size:400% 400%!important;
+  background-repeat:no-repeat!important;border:1px solid #dbe8ef!important;
+  box-shadow:0 5px 14px rgba(41,122,165,.11),0 0 0 3px rgba(84,203,255,.07)!important
+}
+.specialty-home-v719b .organ-urology{background-position:0% 0%!important}
+.specialty-home-v719b .organ-internal{background-position:33.33% 0%!important}
+.specialty-home-v719b .organ-ortho{background-position:66.67% 0%!important}
+.specialty-home-v719b .organ-surgery{background-position:100% 0%!important}
+.specialty-home-v719b .organ-eye{background-position:0% 33.33%!important}
+.specialty-home-v719b .organ-neuro{background-position:33.33% 33.33%!important}
+.specialty-home-v719b .organ-obgyn{background-position:66.67% 33.33%!important}
+.specialty-home-v719b .organ-ent{background-position:100% 33.33%!important}
+.specialty-home-v719b .organ-audiology{background-position:0% 66.67%!important}
+.specialty-home-v719b .organ-vascular{background-position:33.33% 66.67%!important}
+.specialty-home-v719b .organ-nutrition{background-position:66.67% 66.67%!important}
+.specialty-home-v719b .organ-nursing{background-position:100% 66.67%!important}
+.specialty-home-v719b .organ-physio{background-position:0% 100%!important}
+.specialty-home-v719b .organ-radiology{background-position:33.33% 100%!important}
+.specialty-home-v719b .organ-labs{background-position:66.67% 100%!important}
+.specialty-home-v719b .home-section-title{margin-bottom:6px!important}
+.specialty-home-v719b .home-section-title strong{font-size:25px!important;color:#163a59!important}
+.specialty-home-v719b .home-section-title small{color:#899daa!important}
+.specialty-home-v719b .specialty-home-hero{background:#fff!important;border:1px solid #d9e6ef!important;padding:11px 16px!important;margin-bottom:8px!important}
+.specialty-home-v719b .specialty-home-hero h2{font-size:20px!important;color:#163a59!important}
+.specialty-home-v719b .specialty-home-hero p{font-size:12px!important;color:#7f919e!important}
+.specialty-home-v719b .specialty-home-day{background:#eef7fb!important;color:#163a59!important;border:1px solid #dce8f0!important;padding:8px 10px!important}
+.specialty-home-v719b .home-quick-actions button{background:#fff!important;border:1px solid #d9e6ef!important;color:#21455f!important;min-height:39px!important;padding:8px 9px!important}
+.specialty-home-v719b .v71-build-stamp{font-size:10px!important;color:#9aabb5!important}
+.specialty-home-v719b .is-dragging{opacity:.55!important;transform:scale(.98)!important}
+.specialty-home-v719b .is-drag-over{outline:2px dashed #9fdcff!important;outline-offset:-4px!important}
+@media(max-width:1400px){.specialty-home-v719b .specialty-grid{grid-template-columns:repeat(5,minmax(150px,1fr))}}
+@media(max-width:1120px){.specialty-home-v719b .specialty-grid,.specialty-home-v719b .clinic-services-grid{grid-template-columns:repeat(4,minmax(145px,1fr))}}
+@media(max-width:860px){.specialty-home-v719b .specialty-grid,.specialty-home-v719b .clinic-services-grid{grid-template-columns:repeat(2,minmax(145px,1fr))}}
