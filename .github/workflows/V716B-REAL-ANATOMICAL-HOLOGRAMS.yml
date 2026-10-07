@@ -1,0 +1,512 @@
+name: Clinic Cases V7.1.6B Real Anatomical Holograms
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install image tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Download anatomical source images
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp-anatomy public/home-icons/real-hologram
+
+          fetch () {
+            name="$1"
+            url="$2"
+            echo "Downloading $name"
+            curl.exe -L --fail --retry 4 --retry-delay 2 -A "Mozilla/5.0" "$url" -o ".tmp-anatomy/$name"
+            test -s ".tmp-anatomy/$name"
+          }
+
+          fetch urology.jpg "https://commons.wikimedia.org/wiki/Special:Redirect/file/Urinary_system.jpg"
+          fetch internal.png "https://commons.wikimedia.org/wiki/Special:Redirect/file/Stomach.png"
+          fetch ortho.png "https://commons.wikimedia.org/wiki/Special:Redirect/file/Diagrama_rodilla_color.png"
+          fetch surgery.png "https://commons.wikimedia.org/wiki/Special:Redirect/file/Liver_%28transparent%29.png"
+          fetch eye.png "https://commons.wikimedia.org/wiki/Special:Redirect/file/Human_eye_cross-sectional_view_grayscale.png"
+          fetch neuro.png "https://commons.wikimedia.org/wiki/Special:Redirect/file/Human_brain.png"
+          fetch obgyn.png "https://commons.wikimedia.org/wiki/Special:Redirect/file/Sistema-reproductor-femenino.png"
+          fetch ent.jpg "https://commons.wikimedia.org/wiki/Special:Redirect/file/HumanEar.jpg"
+          fetch nutrition.png "https://commons.wikimedia.org/wiki/Special:Redirect/file/Digestive_System.png"
+          fetch vascular.png "https://commons.wikimedia.org/wiki/Special:Redirect/file/Human_foot.png"
+          fetch audiology.png "https://commons.wikimedia.org/wiki/Special:Redirect/file/Cochlea.png"
+          fetch labs.png "https://commons.wikimedia.org/wiki/Special:Redirect/file/Red_Blood_Cell_%28NIH_BioArt_443%29.png"
+          fetch radiology.png "https://commons.wikimedia.org/wiki/Special:Redirect/file/Chest.PNG"
+          cp .tmp-anatomy/ortho.png .tmp-anatomy/physio.png
+          fetch nursing.png "https://commons.wikimedia.org/wiki/Special:Redirect/file/Human_Heart.png"
+
+      - name: Render anatomical hologram PNGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageOps, ImageFilter, ImageChops, ImageDraw, ImageEnhance
+
+          src_dir = Path(".tmp-anatomy")
+          out_dir = Path("public/home-icons/real-hologram")
+          out_dir.mkdir(parents=True, exist_ok=True)
+
+          names = [
+              "urology","internal","ortho","surgery","eye","neuro","obgyn",
+              "ent","nutrition","vascular","audiology","labs","radiology",
+              "physio","nursing"
+          ]
+
+          def border_median(rgb):
+              im = rgb.resize((64,64), Image.Resampling.BILINEAR)
+              p = im.load()
+              vals = []
+              for x in range(64):
+                  for y in (0,1,62,63):
+                      r,g,b = p[x,y]
+                      vals.append((r+g+b)/3)
+              for y in range(64):
+                  for x in (0,1,62,63):
+                      r,g,b = p[x,y]
+                      vals.append((r+g+b)/3)
+              vals.sort()
+              return vals[len(vals)//2]
+
+          def make_mask(rgba):
+              rgb = rgba.convert("RGB")
+              alpha = rgba.getchannel("A")
+              if alpha.getextrema()[0] < 245:
+                  mask = alpha
+              else:
+                  bg = border_median(rgb)
+                  gray = ImageOps.grayscale(rgb)
+                  if bg > 145:
+                      diff = ImageChops.difference(rgb, Image.new("RGB", rgb.size, "white"))
+                      mask = ImageOps.grayscale(diff)
+                      mask = ImageOps.autocontrast(mask)
+                      mask = mask.point(lambda v: 0 if v < 17 else min(255, int((v-17)*1.75)))
+                  else:
+                      mask = ImageOps.autocontrast(gray)
+                      mask = mask.point(lambda v: 0 if v < 18 else min(255, int((v-18)*1.45)))
+              return mask.filter(ImageFilter.GaussianBlur(.6))
+
+          def bbox_with_pad(mask):
+              bbox = mask.point(lambda v: 255 if v > 12 else 0).getbbox()
+              if not bbox:
+                  return (0,0,mask.width,mask.height)
+              l,t,r,b = bbox
+              pad = max(5, int(max(r-l,b-t)*.05))
+              return (max(0,l-pad), max(0,t-pad), min(mask.width,r+pad), min(mask.height,b+pad))
+
+          def fit(im, side=318):
+              ratio = min(side/im.width, side/im.height)
+              size = (max(1,int(im.width*ratio)), max(1,int(im.height*ratio)))
+              return im.resize(size, Image.Resampling.LANCZOS)
+
+          def render(name):
+              candidates = list(src_dir.glob(name + ".*"))
+              if not candidates:
+                  raise RuntimeError("Missing source: " + name)
+
+              rgba = Image.open(candidates[0]).convert("RGBA")
+              gray = ImageOps.grayscale(rgba.convert("RGB"))
+              mask = make_mask(rgba)
+
+              box = bbox_with_pad(mask)
+              gray = gray.crop(box)
+              mask = mask.crop(box)
+
+              gray = ImageOps.autocontrast(gray)
+              gray = ImageEnhance.Contrast(gray).enhance(1.22)
+              gray = fit(gray)
+              mask = fit(mask)
+
+              W = H = 384
+              x = (W-mask.width)//2
+              y = (H-mask.height)//2 - 5
+
+              canvas = Image.new("RGBA",(W,H),(0,0,0,0))
+
+              pedestal = Image.new("RGBA",(W,H),(0,0,0,0))
+              d = ImageDraw.Draw(pedestal)
+              d.ellipse((92,326,292,364), fill=(55,211,246,42))
+              pedestal = pedestal.filter(ImageFilter.GaussianBlur(14))
+              canvas = Image.alpha_composite(canvas,pedestal)
+
+              full_mask = Image.new("L",(W,H),0)
+              full_mask.paste(mask,(x,y))
+              glow_alpha = full_mask.filter(ImageFilter.GaussianBlur(13)).point(lambda v:min(150,int(v*.72)))
+              glow = Image.new("RGBA",(W,H),(32,197,239,0))
+              glow.putalpha(glow_alpha)
+              canvas = Image.alpha_composite(canvas,glow)
+
+              detail = ImageOps.autocontrast(ImageOps.invert(gray))
+              detail = ImageEnhance.Contrast(detail).enhance(.92)
+              highlights = ImageChops.multiply(mask, detail)
+
+              body = Image.new("RGBA", mask.size, (36,191,232,0))
+              body.putalpha(mask.point(lambda v:min(230,int(v*.88))))
+
+              deep = Image.new("RGBA", mask.size, (4,91,142,0))
+              deep_alpha = ImageChops.multiply(mask, gray)
+              deep.putalpha(deep_alpha.point(lambda v:min(105,int(v*.30))))
+
+              light = Image.new("RGBA", mask.size, (212,252,255,0))
+              light.putalpha(highlights.point(lambda v:min(185,int(v*.66))))
+
+              expanded = mask.filter(ImageFilter.MaxFilter(5))
+              contracted = mask.filter(ImageFilter.MinFilter(5))
+              edge = ImageChops.subtract(expanded,contracted)
+              edge = ImageEnhance.Contrast(edge).enhance(1.35)
+              outline = Image.new("RGBA",mask.size,(160,245,255,0))
+              outline.putalpha(edge.point(lambda v:min(185,v)))
+
+              layer = Image.new("RGBA",(W,H),(0,0,0,0))
+              layer.alpha_composite(body,(x,y))
+              layer.alpha_composite(deep,(x,y))
+              layer.alpha_composite(light,(x,y))
+              layer.alpha_composite(outline,(x,y))
+              canvas = Image.alpha_composite(canvas,layer)
+
+              sheen = Image.new("RGBA",(W,H),(0,0,0,0))
+              sd = ImageDraw.Draw(sheen)
+              sd.ellipse((105,42,279,150), fill=(220,255,255,25))
+              sheen = sheen.filter(ImageFilter.GaussianBlur(22))
+              canvas = Image.alpha_composite(canvas,sheen)
+
+              canvas.save(out_dir/(name+".png"), optimize=True)
+
+          for n in names:
+              render(n)
+
+          (out_dir/"SOURCES.txt").write_text(
+              "Base anatomical images downloaded from Wikimedia Commons and converted "
+              "to cyan hologram derivatives for Clinic Cases V7.1.6.\n",
+              encoding="utf-8"
+          )
+          print("Rendered", len(names), "anatomical hologram PNGs")
+          PY
+
+      - name: Apply V7.1.6 UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          main_p = Path("src/main.ts")
+          css_p = Path("src/style.css")
+          tauri_p = Path("src-tauri/tauri.conf.json")
+          cargo_p = Path("src-tauri/Cargo.toml")
+          lock_p = Path("src-tauri/Cargo.lock")
+          pkg_p = Path("package.json")
+          pkglock_p = Path("package-lock.json")
+
+          tauri = json.loads(tauri_p.read_text(encoding="utf-8"))
+          tauri["version"] = "7.1.6"
+          tauri_p.write_text(json.dumps(tauri, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          pkg = json.loads(pkg_p.read_text(encoding="utf-8"))
+          pkg["version"] = "7.1.6"
+          pkg_p.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          pl = pkglock_p.read_text(encoding="utf-8")
+          pl = re.sub(r'("version"\s*:\s*")7\.1\.\d+(")', r'\g<1>7.1.6\2', pl, count=2)
+          pkglock_p.write_text(pl, encoding="utf-8")
+
+          cg = cargo_p.read_text(encoding="utf-8")
+          cg = re.sub(r'(?m)^version\s*=\s*"7\.1\.\d+"\s*$', 'version = "7.1.6"', cg, count=1)
+          cargo_p.write_text(cg, encoding="utf-8")
+
+          cl = lock_p.read_text(encoding="utf-8")
+          cl = re.sub(
+              r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.\d+(")',
+              r'\g<1>7.1.6\2',
+              cl,
+              count=1
+          )
+          lock_p.write_text(cl, encoding="utf-8")
+
+          m = main_p.read_text(encoding="utf-8")
+          c = css_p.read_text(encoding="utf-8")
+
+          start = m.index("const HOME_SPECIALTIES=[")
+          end = m.index("\nconst HOME_SPECIALTY_ORDER_KEY=", start)
+          defs = '''const HOME_SPECIALTIES=[
+            {key:'urology',label:'مسالك بولية وذكورة',image:'/home-icons/real-hologram/urology.png',keys:['مسالك','ذكورة']},
+            {key:'internal',label:'باطنة وجهاز هضمي',image:'/home-icons/real-hologram/internal.png',keys:['باطنة','جهاز هضمي']},
+            {key:'ortho',label:'عظام ومفاصل',image:'/home-icons/real-hologram/ortho.png',keys:['عظام','مفاصل']},
+            {key:'surgery',label:'جراحة عامة ومناظير',image:'/home-icons/real-hologram/surgery.png',keys:['جراحة عامة','مناظير']},
+            {key:'eye',label:'عيون',image:'/home-icons/real-hologram/eye.png',keys:['عيون','رمد','ophthalm']},
+            {key:'neuro',label:'مخ وأعصاب وعمود فقري',image:'/home-icons/real-hologram/neuro.png',keys:['مخ','أعصاب','اعصاب','عمود فقري']},
+            {key:'obgyn',label:'نساء وتوليد',image:'/home-icons/real-hologram/obgyn.png',keys:['نساء','توليد','حقن مجهري','تأخر الإنجاب']},
+            {key:'ent',label:'أنف وأذن وحنجرة',image:'/home-icons/real-hologram/ent.png',keys:['أنف','انف','أذن','اذن','حنجرة']},
+            {key:'nutrition',label:'تغذية علاجية',image:'/home-icons/real-hologram/nutrition.png',keys:['تغذية']},
+            {key:'vascular',label:'أوعية دموية وقدم سكري',image:'/home-icons/real-hologram/vascular.png',keys:['أوعية','اوعية','قدم سكري']},
+            {key:'audiology',label:'سمع واتزان',image:'/home-icons/real-hologram/audiology.png',keys:['سمع','اتزان']}
+          ] as const;
+
+          const HOME_SERVICES=[
+            {key:'labs',screen:'labs' as Screen,label:'التحاليل',image:'/home-icons/real-hologram/labs.png'},
+            {key:'radiology',screen:'radiology' as Screen,label:'الأشعة',image:'/home-icons/real-hologram/radiology.png'},
+            {key:'physio',screen:'physio' as Screen,label:'العلاج الطبيعي',image:'/home-icons/real-hologram/physio.png'},
+            {key:'nursing',screen:'nursing' as Screen,label:'خدمات التمريض',image:'/home-icons/real-hologram/nursing.png'}
+          ] as const;
+          '''
+          m = m[:start] + defs + m[end:]
+
+          m = re.sub(
+              r"const HOME_SPECIALTY_ORDER_KEY='[^']+';",
+              "const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v716b';",
+              m
+          )
+          m = re.sub(
+              r"const HOME_SERVICE_ORDER_KEY='[^']+';",
+              "const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v716b';",
+              m
+          )
+          m = re.sub(
+              r'specialty-home specialty-home-v7\d+[a-z]*',
+              'specialty-home specialty-home-v716b',
+              m,
+              count=1
+          )
+          m = re.sub(
+              r'<span class="specialty-card-icon[^>]*>.*?</span>',
+              '<span class="specialty-card-icon real-anatomy-hologram"><img src="${x.image}" alt="" draggable="false"></span>',
+              m,
+              count=1,
+              flags=re.S
+          )
+          m = re.sub(
+              r'<span class="clinic-service-icon[^>]*>.*?</span>',
+              '<span class="clinic-service-icon real-anatomy-hologram"><img src="${x.image}" alt="" draggable="false"></span>',
+              m,
+              count=1,
+              flags=re.S
+          )
+          m = re.sub(
+              r'V7\.1\.[0-9]+ • [^<]+',
+              'V7.1.6 • REAL ANATOMICAL HOLOGRAMS',
+              m,
+              count=1
+          )
+
+          if "V7.1.6B REAL ANATOMICAL HOLOGRAMS" not in c:
+              c += r'''
+
+          /* ===== V7.1.6B REAL ANATOMICAL HOLOGRAMS ===== */
+          .specialty-home-v716b{background:#f5f9fc!important}
+          .specialty-home-v716b .specialty-grid{grid-template-columns:repeat(4,minmax(235px,1fr));gap:14px}
+          .specialty-home-v716b .clinic-services-grid{grid-template-columns:repeat(4,minmax(220px,1fr));gap:14px}
+          .specialty-home-v716b .home-sortable-card{position:relative;overflow:hidden;cursor:grab;user-select:none}
+          .specialty-home-v716b .home-sortable-card:active{cursor:grabbing}
+          .specialty-home-v716b .specialty-card,
+          .specialty-home-v716b .clinic-service-card{
+            min-height:132px!important;border-radius:20px!important;border:1px solid #d9e5ee!important;
+            background:linear-gradient(180deg,#fff 0%,#f8fbfd 100%)!important;
+            box-shadow:0 8px 22px rgba(24,57,80,.07),inset 0 1px 0 rgba(255,255,255,.96)!important;
+            color:#173650!important
+          }
+          .specialty-home-v716b .specialty-card:hover,
+          .specialty-home-v716b .clinic-service-card:hover{
+            transform:translateY(-2px);border-color:#a7d9e7!important;
+            box-shadow:0 12px 28px rgba(24,57,80,.11)!important
+          }
+          .specialty-home-v716b .specialty-card{
+            display:grid!important;grid-template-columns:22px 108px 1fr 18px!important;
+            gap:14px!important;align-items:center!important;padding:13px!important
+          }
+          .specialty-home-v716b .clinic-service-card{
+            display:grid!important;grid-template-columns:22px 108px 1fr!important;
+            gap:14px!important;align-items:center!important;padding:13px!important;text-align:right!important
+          }
+          .specialty-home-v716b .specialty-card-drag{
+            color:#8ca4b4!important;font-size:17px!important;letter-spacing:-3px!important;
+            align-self:flex-start!important;padding-top:4px!important
+          }
+          .specialty-home-v716b .real-anatomy-hologram{
+            width:108px!important;height:108px!important;border-radius:22px!important;display:block!important;
+            position:relative!important;overflow:hidden!important;padding:0!important;
+            background:radial-gradient(circle at 50% 36%,rgba(83,222,255,.11),rgba(245,252,254,.96) 58%,rgba(229,244,249,.98) 100%)!important;
+            border:1px solid rgba(105,205,232,.42)!important;
+            box-shadow:0 10px 22px rgba(39,132,168,.12),inset 0 1px 2px rgba(255,255,255,.98)!important
+          }
+          .specialty-home-v716b .real-anatomy-hologram img{
+            width:100%!important;height:100%!important;display:block!important;object-fit:contain!important;
+            padding:3px!important;box-sizing:border-box!important;
+            filter:drop-shadow(0 0 5px rgba(54,204,241,.48)) drop-shadow(0 0 12px rgba(35,154,205,.19))!important;
+            pointer-events:none!important;user-select:none!important
+          }
+          .specialty-home-v716b .real-anatomy-hologram:after{
+            content:'';position:absolute;left:12px;right:12px;bottom:6px;height:10px;border-radius:50%;
+            background:radial-gradient(ellipse at center,rgba(47,201,239,.24),rgba(47,201,239,0) 72%);
+            pointer-events:none
+          }
+          .specialty-home-v716b .specialty-card-copy,
+          .specialty-home-v716b .clinic-service-copy{display:grid!important;gap:5px!important;text-align:right!important}
+          .specialty-home-v716b .specialty-card-copy strong,
+          .specialty-home-v716b .clinic-service-copy strong{
+            font-size:15px!important;color:#173650!important;line-height:1.45!important
+          }
+          .specialty-home-v716b .specialty-card-copy small,
+          .specialty-home-v716b .clinic-service-copy small{font-size:10px!important;color:#7c8e9d!important}
+          .specialty-home-v716b .specialty-card-arrow{font-size:18px!important;color:#7897a8!important}
+          .specialty-home-v716b .is-dragging{opacity:.55!important;transform:scale(.97)!important}
+          .specialty-home-v716b .is-drag-over{
+            outline:3px dashed #59c9e8!important;outline-offset:-7px!important;background:#eefafd!important
+          }
+          .specialty-home-v716b .home-section-title strong{color:#173650!important}
+          .specialty-home-v716b .home-section-title small{color:#7d8f9d!important}
+          .specialty-home-v716b .specialty-home-hero{
+            background:#fff!important;border-color:#d9e5ee!important;box-shadow:0 7px 22px rgba(24,57,80,.06)!important
+          }
+          .specialty-home-v716b .specialty-home-hero h2{color:#173650!important}
+          .specialty-home-v716b .specialty-home-hero p{color:#7c8e9d!important}
+          .specialty-home-v716b .specialty-home-day{
+            background:#eef7fb!important;color:#173650!important;border:1px solid #d8e8f0!important
+          }
+          .specialty-home-v716b .specialty-home-day span,
+          .specialty-home-v716b .specialty-home-day small{color:#7b8f9e!important}
+          .specialty-home-v716b .home-quick-actions button{
+            background:#fff!important;border:1px solid #d9e5ee!important;color:#294c63!important;
+            box-shadow:0 4px 12px rgba(24,57,80,.04)!important
+          }
+          .specialty-home-v716b .v71-build-stamp{color:#9aabb5!important}
+          @media(max-width:1250px){
+            .specialty-home-v716b .specialty-grid{grid-template-columns:repeat(3,minmax(220px,1fr))}
+          }
+          @media(max-width:980px){
+            .specialty-home-v716b .specialty-grid,
+            .specialty-home-v716b .clinic-services-grid{grid-template-columns:repeat(2,minmax(180px,1fr))}
+          }
+          '''
+
+          main_p.write_text(m, encoding="utf-8")
+          css_p.write_text(c, encoding="utf-8")
+          print("V7.1.6B UI applied")
+          PY
+
+      - name: Verify V7.1.6B
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          m = Path("src/main.ts").read_text(encoding="utf-8")
+          c = Path("src/style.css").read_text(encoding="utf-8")
+          t = json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+
+          checks = {
+              "version": t.get("version") == "7.1.6",
+              "build_marker": "REAL ANATOMICAL HOLOGRAMS" in m,
+              "home_class": "specialty-home-v716b" in m,
+              "image_markup": "real-anatomy-hologram" in m,
+              "css_marker": "V7.1.6B REAL ANATOMICAL HOLOGRAMS" in c,
+          }
+          for k,v in checks.items():
+              print(k, "OK" if v else "FAIL")
+          assert all(checks.values()), checks
+
+          names = [
+              "urology","internal","ortho","surgery","eye","neuro","obgyn",
+              "ent","nutrition","vascular","audiology","labs","radiology",
+              "physio","nursing"
+          ]
+          for n in names:
+              p = Path("public/home-icons/real-hologram")/(n+".png")
+              if not p.exists():
+                  raise AssertionError(f"Missing icon: {n}")
+              if p.stat().st_size < 8000:
+                  raise AssertionError(f"Icon too small: {n} {p.stat().st_size}")
+          print("All V7.1.6B verification checks passed")
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Verify bundled icons
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/home-icons/real-hologram/urology.png
+          test -f dist/home-icons/real-hologram/neuro.png
+          test -f dist/home-icons/real-hologram/eye.png
+          test -f dist/home-icons/real-hologram/obgyn.png
+          test -f dist/home-icons/real-hologram/labs.png
+          echo "Bundled anatomy icons OK"
+
+      - name: Rust tests
+        shell: bash
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $i = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" |
+            Where-Object { $_.Name -match "7\.1\.6" } |
+            Select-Object -First 1
+          if(-not $i){ throw "V7.1.6 installer missing" }
+          if($i.Length -lt 80000000){ throw "Installer too small" }
+          Write-Host "Verified $($i.Name) $($i.Length) bytes"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.6-Real-Anatomical-Holograms-FIXB
+          path: src-tauri/target/release/bundle/nsis/*7.1.6*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated V7.1.6B
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/home-icons/real-hologram src/main.ts src/style.css src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "V7.1.6B: real anatomical hologram icons"
+          fi
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
