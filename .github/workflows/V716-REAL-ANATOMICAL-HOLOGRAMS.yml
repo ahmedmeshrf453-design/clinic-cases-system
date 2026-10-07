@@ -1,0 +1,185 @@
+name: Clinic Cases V7.1.6 Real Anatomical Holograms
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply V7.1.6
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          main_p=Path('src/main.ts')
+          css_p=Path('src/style.css')
+          version_paths=[Path('src-tauri/tauri.conf.json'),Path('src-tauri/Cargo.toml'),Path('src-tauri/Cargo.lock'),Path('package.json'),Path('package-lock.json')]
+
+          m=main_p.read_text(encoding='utf-8')
+          c=css_p.read_text(encoding='utf-8')
+          for p in version_paths:
+              s=p.read_text(encoding='utf-8').replace('7.1.4','7.1.6').replace('7.1.3','7.1.6')
+              p.write_text(s,encoding='utf-8')
+
+          asset_dir=Path('public/home-icons/hologram3d')
+          asset_dir.mkdir(parents=True,exist_ok=True)
+
+          def svg(body):
+              return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+          <defs>
+          <linearGradient id="h" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#effeff" stop-opacity=".98"/><stop offset=".35" stop-color="#7cecff" stop-opacity=".92"/><stop offset=".72" stop-color="#2dc6ee" stop-opacity=".62"/><stop offset="1" stop-color="#0878a6" stop-opacity=".40"/></linearGradient>
+          <radialGradient id="r" cx=".32" cy=".25" r=".9"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".22" stop-color="#b8f7ff" stop-opacity=".65"/><stop offset=".6" stop-color="#39c7ee" stop-opacity=".20"/><stop offset="1" stop-color="#0d82ad" stop-opacity=".03"/></radialGradient>
+          <filter id="g" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          </defs>
+          <ellipse cx="80" cy="134" rx="42" ry="8" fill="#45d9ff" opacity=".12"/>
+          <g filter="url(#g)">{body}</g>
+          </svg>'''
+
+          icons={
+          'urology':svg('''<path d="M49 33c-17 0-28 13-28 31 0 23 13 40 30 40 10 0 16-8 16-19V58c0-16-7-25-18-25Z" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M111 33c17 0 28 13 28 31 0 23-13 40-30 40-10 0-16-8-16-19V58c0-16 7-25 18-25Z" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M61 88c2 14 8 20 19 27M99 88c-2 14-8 20-19 27" fill="none" stroke="#baf8ff" stroke-width="4" stroke-linecap="round"/><path d="M61 113c0-12 8-20 19-20s19 8 19 20c0 11-8 19-19 19s-19-8-19-19Z" fill="url(#r)" stroke="#aaf6ff" stroke-width="2"/><ellipse cx="42" cy="50" rx="8" ry="13" fill="#fff" opacity=".22"/><ellipse cx="118" cy="50" rx="8" ry="13" fill="#fff" opacity=".22"/>'''),
+          'internal':svg('''<path d="M57 26c0 18 5 25 19 30 18 7 30 20 30 39 0 19-14 33-34 33-29 0-52-23-52-58 0-25 12-43 37-54Z" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M58 57c14 10 27 12 43 15M43 89c18-5 36-2 50 10" fill="none" stroke="#d0fbff" stroke-width="3" opacity=".75"/><ellipse cx="52" cy="41" rx="9" ry="5" fill="#fff" opacity=".22"/>'''),
+          'ortho':svg('''<g transform="rotate(-20 80 80)"><path d="M43 42c-10 0-18-8-18-18S33 6 43 6c8 0 15 4 19 11h36c4-7 11-11 19-11 10 0 18 8 18 18s-8 18-18 18c-8 0-15-4-19-11H62c-4 7-11 11-19 11Z" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><rect x="59" y="31" width="42" height="98" rx="18" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M43 154c-10 0-18-8-18-18s8-18 18-18c8 0 15 4 19 11h36c4-7 11-11 19-11 10 0 18 8 18 18s-8 18-18 18c-8 0-15-4-19-11H62c-4 7-11 11-19 11Z" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M71 44c11 16 18 39 17 65" fill="none" stroke="#fff" stroke-width="4" opacity=".20"/></g>'''),
+          'surgery':svg('''<path d="M38 45c9-19 24-29 42-29s33 10 42 29v45c-9 20-24 31-42 31S47 110 38 90Z" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M80 29v80M55 53h50M55 82h50" fill="none" stroke="#d2fbff" stroke-width="3" opacity=".75"/><path d="M69 62 80 73 92 61" fill="none" stroke="#fff" stroke-width="4" opacity=".52"/>'''),
+          'eye':svg('''<path d="M16 79c17-28 39-42 64-42s47 14 64 42c-17 28-39 42-64 42S33 107 16 79Z" fill="url(#r)" stroke="#aaf6ff" stroke-width="2.4"/><circle cx="80" cy="79" r="27" fill="url(#h)" stroke="#c6fbff" stroke-width="2"/><circle cx="80" cy="79" r="12" fill="#0f7099" opacity=".82" stroke="#bffaff" stroke-width="2"/><circle cx="72" cy="68" r="5" fill="#fff" opacity=".72"/>'''),
+          'neuro':svg('''<path d="M55 25c8-10 20-15 34-15 22 0 40 16 41 37 10 5 16 15 16 27 0 16-13 29-29 29H52c-16 0-29-13-29-29 0-12 6-22 16-27 2-9 6-16 12-22Z" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M80 18v90M54 49c13 0 23 8 26 21M106 49c-13 0-23 8-26 21M52 77c13 0 23 8 26 21M108 77c-13 0-23 8-26 21" fill="none" stroke="#d2fbff" stroke-width="3" opacity=".8"/><path d="M73 108v28M87 108v28" fill="none" stroke="#78e7ff" stroke-width="4"/>'''),
+          'obgyn':svg('''<path d="M45 46c13 0 20 10 35 25 15-15 22-25 35-25 13 0 24 10 24 23 0 17-17 28-34 33-10 4-15 10-15 21v13H70v-13c0-11-5-17-15-21-17-5-34-16-34-33 0-13 11-23 24-23Z" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M24 48 12 33M136 48l12-15M80 75v51" fill="none" stroke="#d0fbff" stroke-width="3.5"/>'''),
+          'ent':svg('''<path d="M86 19c25 0 45 19 45 44 0 21-10 30-21 39-10 8-15 14-15 25 0 10-7 18-17 18s-17-8-17-18c0-20 12-33 25-42 11-8 17-14 17-24 0-11-7-20-18-20-10 0-18 8-18 19" fill="url(#h)" stroke="#aaf6ff" stroke-width="2" stroke-linecap="round"/><path d="M57 69c0-13 10-24 23-24M71 118c4 6 8 8 14 8" fill="none" stroke="#d1fbff" stroke-width="3.5"/>'''),
+          'nutrition':svg('''<path d="M34 96h92c-3 21-18 34-46 34S37 117 34 96Z" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M52 86c0-14 10-24 24-24M83 73c2-15 13-25 29-25M101 88c0-10 8-18 18-18" fill="none" stroke="#d1fbff" stroke-width="3.5" stroke-linecap="round"/><circle cx="60" cy="80" r="7" fill="#69e8ff" opacity=".65"/><circle cx="84" cy="90" r="7" fill="#b2f7ff" opacity=".62"/>'''),
+          'vascular':svg('''<path d="M80 15c19 25 34 47 34 70 0 20-15 36-34 36S46 105 46 85c0-23 15-45 34-70Z" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M63 57c10 9 15 18 17 31M95 54c-10 10-14 22-15 36M61 98c11 8 24 9 38 2" fill="none" stroke="#d1fbff" stroke-width="3.5"/>'''),
+          'audiology':svg('''<path d="M38 92c14-34 29-49 49-49 24 0 42 19 51 49" fill="none" stroke="url(#h)" stroke-width="8" stroke-linecap="round"/><path d="M57 80c9-20 18-29 30-29 15 0 28 13 34 29" fill="none" stroke="#d1fbff" stroke-width="5" stroke-linecap="round"/><path d="M69 72c5-10 11-15 18-15 9 0 16 7 21 15" fill="none" stroke="#fff" stroke-width="3" opacity=".5"/><circle cx="137" cy="97" r="7" fill="#64e4ff" opacity=".8"/>'''),
+          'labs':svg('''<path d="M61 22h38M70 22v28L49 97c-7 16 4 34 21 34h20c17 0 28-18 21-34L90 50V22" fill="url(#h)" stroke="#aaf6ff" stroke-width="2.4"/><path d="M59 88h42M66 104h28" fill="none" stroke="#d1fbff" stroke-width="3"/>'''),
+          'radiology':svg('''<rect x="35" y="17" width="90" height="124" rx="14" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M80 34v91M53 53c9 10 18 15 27 15s18-5 27-15M53 105c9-10 18-15 27-15s18 5 27 15" fill="none" stroke="#d1fbff" stroke-width="3"/><circle cx="80" cy="79" r="21" fill="none" stroke="#fff" stroke-width="3" opacity=".35"/>'''),
+          'physio':svg('''<path d="M98 16c13 0 23 10 23 23 0 6-3 12-8 17L99 70c-9 9-13 19-13 31v10c0 18-14 32-32 32H33v-21h18c8 0 14-6 14-14V96c0-17 7-31 19-43l13-13c2-2 3-4 3-6 0-3-3-6-7-6" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M45 132h27" fill="none" stroke="#d0fbff" stroke-width="4"/>'''),
+          'nursing':svg('''<path d="M80 140 29 89c-15-15-15-40 0-55 13-13 34-14 49-2l2 2 2-2c15-12 36-11 49 2 15 15 15 40 0 55Z" fill="url(#h)" stroke="#aaf6ff" stroke-width="2"/><path d="M80 55v43M58 76h44" fill="none" stroke="#d3fbff" stroke-width="5"/>''')
+          }
+          for name,data in icons.items():
+              (asset_dir/f'{name}.svg').write_text(data,encoding='utf-8')
+
+          start=m.index('const HOME_SPECIALTIES=[')
+          end=m.index('\nconst HOME_SPECIALTY_ORDER_KEY=',start)
+          defs="""const HOME_SPECIALTIES=[
+            {key:'urology',label:'مسالك بولية وذكورة',image:'/home-icons/hologram3d/urology.svg',keys:['مسالك','ذكورة']},
+            {key:'internal',label:'باطنة وجهاز هضمي',image:'/home-icons/hologram3d/internal.svg',keys:['باطنة','جهاز هضمي']},
+            {key:'ortho',label:'عظام ومفاصل',image:'/home-icons/hologram3d/ortho.svg',keys:['عظام','مفاصل']},
+            {key:'surgery',label:'جراحة عامة ومناظير',image:'/home-icons/hologram3d/surgery.svg',keys:['جراحة عامة','مناظير']},
+            {key:'eye',label:'عيون',image:'/home-icons/hologram3d/eye.svg',keys:['عيون','رمد','ophthalm']},
+            {key:'neuro',label:'مخ وأعصاب وعمود فقري',image:'/home-icons/hologram3d/neuro.svg',keys:['مخ','أعصاب','اعصاب','عمود فقري']},
+            {key:'obgyn',label:'نساء وتوليد',image:'/home-icons/hologram3d/obgyn.svg',keys:['نساء','توليد','حقن مجهري','تأخر الإنجاب']},
+            {key:'ent',label:'أنف وأذن وحنجرة',image:'/home-icons/hologram3d/ent.svg',keys:['أنف','انف','أذن','اذن','حنجرة']},
+            {key:'nutrition',label:'تغذية علاجية',image:'/home-icons/hologram3d/nutrition.svg',keys:['تغذية']},
+            {key:'vascular',label:'أوعية دموية وقدم سكري',image:'/home-icons/hologram3d/vascular.svg',keys:['أوعية','اوعية','قدم سكري']},
+            {key:'audiology',label:'سمع واتزان',image:'/home-icons/hologram3d/audiology.svg',keys:['سمع','اتزان']}
+          ] as const;
+
+          const HOME_SERVICES=[
+            {key:'labs',screen:'labs' as Screen,label:'التحاليل',image:'/home-icons/hologram3d/labs.svg'},
+            {key:'radiology',screen:'radiology' as Screen,label:'الأشعة',image:'/home-icons/hologram3d/radiology.svg'},
+            {key:'physio',screen:'physio' as Screen,label:'العلاج الطبيعي',image:'/home-icons/hologram3d/physio.svg'},
+            {key:'nursing',screen:'nursing' as Screen,label:'خدمات التمريض',image:'/home-icons/hologram3d/nursing.svg'}
+          ] as const;"""
+          m=m[:start]+defs+m[end:]
+          m=re.sub(r"const HOME_SPECIALTY_ORDER_KEY='[^']+';","const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v716';",m)
+          m=re.sub(r"const HOME_SERVICE_ORDER_KEY='[^']+';","const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v716';",m)
+          m=m.replace('specialty-home specialty-home-v713','specialty-home specialty-home-v716').replace('specialty-home specialty-home-v714','specialty-home specialty-home-v716')
+          m=re.sub(r'<span class="specialty-card-icon[^>]*>.*?</span>','<span class="specialty-card-icon organ-hologram-3d"><img src="${x.image}" alt="" draggable="false"></span>',m,count=1,flags=re.S)
+          m=re.sub(r'<span class="clinic-service-icon[^>]*>.*?</span>','<span class="clinic-service-icon organ-hologram-3d"><img src="${x.image}" alt="" draggable="false"></span>',m,count=1,flags=re.S)
+          m=re.sub(r'V7\.1\.[0-9]+ • [^<]+','V7.1.6 • 3D HOLOGRAM ORGANS',m,count=1)
+
+          if 'V7.1.6 WHITE CARDS + 3D HOLOGRAM ORGANS' not in c:
+              c += '''\n/* ===== V7.1.6 WHITE CARDS + 3D HOLOGRAM ORGANS ===== */
+          .specialty-home-v716{background:#f5f9fc!important}.specialty-home-v716 .specialty-grid{grid-template-columns:repeat(4,minmax(235px,1fr));gap:14px}.specialty-home-v716 .clinic-services-grid{grid-template-columns:repeat(4,minmax(220px,1fr));gap:14px}.specialty-home-v716 .home-sortable-card{position:relative;overflow:hidden;cursor:grab;user-select:none}.specialty-home-v716 .home-sortable-card:active{cursor:grabbing}.specialty-home-v716 .specialty-card,.specialty-home-v716 .clinic-service-card{min-height:128px!important;border-radius:20px!important;border:1px solid #d9e5ee!important;background:linear-gradient(180deg,#fff 0%,#f7fbfd 100%)!important;box-shadow:0 8px 22px rgba(24,57,80,.08),inset 0 1px 0 rgba(255,255,255,.95)!important;color:#173650!important}.specialty-home-v716 .specialty-card:hover,.specialty-home-v716 .clinic-service-card:hover{border-color:#9fd5e4!important;box-shadow:0 12px 28px rgba(24,57,80,.12),0 0 0 1px rgba(85,218,255,.06) inset!important;transform:translateY(-2px)}.specialty-home-v716 .specialty-card{display:grid!important;grid-template-columns:22px 98px 1fr 18px!important;gap:14px!important;align-items:center!important;padding:15px!important}.specialty-home-v716 .clinic-service-card{display:grid!important;grid-template-columns:22px 98px 1fr!important;gap:14px!important;align-items:center!important;padding:15px!important;text-align:right!important}.specialty-home-v716 .specialty-card-drag{color:#8da5b4!important;font-size:17px!important;letter-spacing:-3px!important;align-self:flex-start!important;padding-top:4px!important}.specialty-home-v716 .organ-hologram-3d{width:98px!important;height:98px!important;border-radius:22px!important;display:block!important;position:relative!important;overflow:hidden!important;padding:0!important;background:radial-gradient(circle at 50% 38%,rgba(107,230,255,.18),rgba(235,249,253,.72) 48%,rgba(220,240,248,.96) 100%)!important;border:1px solid rgba(116,211,235,.52)!important;box-shadow:0 10px 22px rgba(32,111,147,.16),inset 0 1px 2px rgba(255,255,255,.95),inset 0 -10px 22px rgba(52,174,215,.08)!important}.specialty-home-v716 .organ-hologram-3d img{width:100%!important;height:100%!important;display:block!important;object-fit:contain!important;padding:5px!important;box-sizing:border-box!important;filter:drop-shadow(0 0 5px rgba(47,205,244,.56)) drop-shadow(0 0 14px rgba(33,164,214,.24))!important;pointer-events:none!important;user-select:none!important}.specialty-home-v716 .organ-hologram-3d:after{content:'';position:absolute;inset:auto 12px 7px 12px;height:10px;border-radius:50%;background:radial-gradient(ellipse at center,rgba(46,204,243,.28),rgba(46,204,243,0) 70%);pointer-events:none}.specialty-home-v716 .specialty-card-copy,.specialty-home-v716 .clinic-service-copy{display:grid!important;gap:5px!important;text-align:right!important}.specialty-home-v716 .specialty-card-copy strong,.specialty-home-v716 .clinic-service-copy strong{font-size:15px!important;color:#173650!important;line-height:1.45!important}.specialty-home-v716 .specialty-card-copy small,.specialty-home-v716 .clinic-service-copy small{font-size:10px!important;color:#7c8e9d!important}.specialty-home-v716 .specialty-card-arrow{font-size:18px!important;color:#7998a9!important}.specialty-home-v716 .is-dragging{opacity:.55!important;transform:scale(.97)!important}.specialty-home-v716 .is-drag-over{outline:3px dashed #59c9e8!important;outline-offset:-7px!important;background:#eefafd!important}.specialty-home-v716 .home-section-title strong{color:#173650!important}.specialty-home-v716 .home-section-title small{color:#7d8f9d!important}.specialty-home-v716 .specialty-home-hero{background:#fff!important;border-color:#d9e5ee!important;box-shadow:0 7px 22px rgba(24,57,80,.06)!important}.specialty-home-v716 .specialty-home-hero h2{color:#173650!important}.specialty-home-v716 .specialty-home-hero p{color:#7c8e9d!important}.specialty-home-v716 .specialty-home-day{background:#eef7fb!important;color:#173650!important;border:1px solid #d8e8f0!important}.specialty-home-v716 .specialty-home-day span,.specialty-home-v716 .specialty-home-day small{color:#7b8f9e!important}.specialty-home-v716 .home-quick-actions button{background:#fff!important;border:1px solid #d9e5ee!important;color:#294c63!important;box-shadow:0 4px 12px rgba(24,57,80,.04)!important}.specialty-home-v716 .v71-build-stamp{color:#9aabb5!important}@media(max-width:1250px){.specialty-home-v716 .specialty-grid{grid-template-columns:repeat(3,minmax(220px,1fr))}}@media(max-width:980px){.specialty-home-v716 .specialty-grid,.specialty-home-v716 .clinic-services-grid{grid-template-columns:repeat(2,minmax(180px,1fr))}}'''
+
+          main_p.write_text(m,encoding='utf-8')
+          css_p.write_text(c,encoding='utf-8')
+          print('V7.1.6 applied')
+
+          PY
+
+      - name: Verify V7.1.6
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          m=Path('src/main.ts').read_text(encoding='utf-8')
+          c=Path('src/style.css').read_text(encoding='utf-8')
+          t=Path('src-tauri/tauri.conf.json').read_text(encoding='utf-8')
+          assert '"version": "7.1.6"' in t
+          assert '3D HOLOGRAM ORGANS' in m
+          assert 'specialty-home-v716' in m
+          assert 'organ-hologram-3d' in m and 'organ-hologram-3d' in c
+          assert 'WHITE CARDS + 3D HOLOGRAM ORGANS' in c
+          for n in ['urology','internal','ortho','surgery','eye','neuro','obgyn','ent','nutrition','vascular','audiology','labs','radiology','physio','nursing']:
+              p=Path('public/home-icons/hologram3d')/(n+'.svg')
+              assert p.exists() and p.stat().st_size>900,n
+          print('V7.1.6 verified')
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Verify bundled icons
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/home-icons/hologram3d/urology.svg
+          test -f dist/home-icons/hologram3d/neuro.svg
+          test -f dist/home-icons/hologram3d/eye.svg
+          test -f dist/home-icons/hologram3d/labs.svg
+
+      - name: Rust tests
+        shell: bash
+        env:
+          RUST_BACKTRACE: '1'
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $i=Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" | Where-Object { $_.Name -match "7\.1\.5" } | Select-Object -First 1
+          if(-not $i){throw "V7.1.6 installer missing"}
+          if($i.Length -lt 80000000){throw "Installer too small"}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.6-Real-Anatomical-Holograms
+          path: src-tauri/target/release/bundle/nsis/*7.1.6*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated V7.1.6
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/home-icons/hologram3d src/main.ts src/style.css src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json package-lock.json
+          if git diff --cached --quiet; then echo "No changes"; else git commit -m "V7.1.6: white cards with volumetric hologram organs"; fi
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
