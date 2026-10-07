@@ -4355,3 +4355,134 @@ table td{font-size:13px !important}
 .specialty-home-v716d .home-quick-actions button{background:#fff!important;border:1px solid #d9e5ee!important;color:#294c63!important;box-shadow:0 4px 12px rgba(24,57,80,.04)!important}.specialty-home-v716d .v71-build-stamp{color:#9aabb5!important}
 @media(max-width:1250px){.specialty-home-v716d .specialty-grid{grid-template-columns:repeat(3,minmax(220px,1fr))}}
 @media(max-width:980px){.specialty-home-v716d .specialty-grid,.specialty-home-v716d .clinic-services-grid{grid-template-columns:repeat(2,minmax(180px,1fr))}}
+
+
+/* ===== V7.1.7 MINIMAL NAVY CARDS ===== */
+.specialty-home-v717{background:#f4f8fb!important}
+.specialty-home-v717 .specialty-grid{grid-template-columns:repeat(4,minmax(220px,1fr));gap:16px}
+.specialty-home-v717 .clinic-services-grid{grid-template-columns:repeat(4,minmax(220px,1fr));gap:16px}
+.specialty-home-v717 .home-sortable-card{position:relative;overflow:visible;cursor:grab;user-select:none}
+.specialty-home-v717 .home-sortable-card:active{cursor:grabbing}
+.specialty-home-v717 .specialty-card,
+.specialty-home-v717 .clinic-service-card{
+  position:relative!important;
+  min-height:168px!important;
+  padding:18px 14px 16px!important;
+  border-radius:22px!important;
+  border:1px solid #d9e6ef!important;
+  background:#ffffff!important;
+  box-shadow:0 10px 24px rgba(22,56,81,.06), inset 0 1px 0 rgba(255,255,255,.98)!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:10px!important;
+  text-align:center!important;
+  color:#16334e!important;
+}
+.specialty-home-v717 .specialty-card:hover,
+.specialty-home-v717 .clinic-service-card:hover{
+  transform:translateY(-2px)!important;
+  box-shadow:0 14px 30px rgba(22,56,81,.09)!important;
+  border-color:#c9d9e4!important;
+}
+.specialty-home-v717 .specialty-card-arrow,
+.specialty-home-v717 .specialty-card-copy small,
+.specialty-home-v717 .clinic-service-copy small{
+  display:none!important;
+}
+.specialty-home-v717 .specialty-card-drag{
+  position:absolute!important;
+  top:10px!important;
+  right:10px!important;
+  font-size:16px!important;
+  line-height:1!important;
+  color:#90a7b7!important;
+  letter-spacing:-2px!important;
+  padding:2px 4px!important;
+  z-index:2!important;
+}
+.specialty-home-v717 .specialty-card-copy,
+.specialty-home-v717 .clinic-service-copy{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:0!important;
+  text-align:center!important;
+}
+.specialty-home-v717 .specialty-card-copy strong,
+.specialty-home-v717 .clinic-service-copy strong{
+  font-size:24px!important;
+  font-weight:800!important;
+  line-height:1.45!important;
+  color:#163a59!important;
+}
+.specialty-home-v717 .anatomical-hologram-tile,
+.specialty-home-v717 .realistic-hologram-tile,
+.specialty-home-v717 .real-anatomy-hologram,
+.specialty-home-v717 .specialty-card-icon,
+.specialty-home-v717 .clinic-service-icon{
+  width:84px!important;
+  height:84px!important;
+  min-width:84px!important;
+  min-height:84px!important;
+  border-radius:18px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  overflow:hidden!important;
+  background:#ffffff!important;
+  border:1px solid #dbe6ef!important;
+  box-shadow:0 8px 18px rgba(21,50,75,.05)!important;
+  padding:0!important;
+  margin:0 auto!important;
+}
+.specialty-home-v717 .anatomical-hologram-tile:after,
+.specialty-home-v717 .realistic-hologram-tile:after,
+.specialty-home-v717 .real-anatomy-hologram:after{display:none!important;content:none!important}
+.specialty-home-v717 .anatomical-hologram-tile img,
+.specialty-home-v717 .realistic-hologram-tile img,
+.specialty-home-v717 .real-anatomy-hologram img,
+.specialty-home-v717 .specialty-card-icon img,
+.specialty-home-v717 .clinic-service-icon img{
+  width:68px!important;
+  height:68px!important;
+  object-fit:contain!important;
+  padding:0!important;
+  filter: brightness(0) saturate(100%) invert(17%) sepia(19%) saturate(1498%) hue-rotate(176deg) brightness(94%) contrast(92%) !important;
+  opacity:1!important;
+}
+.specialty-home-v717 .home-section-title strong{color:#163a59!important}
+.specialty-home-v717 .home-section-title small{color:#8093a1!important}
+.specialty-home-v717 .specialty-home-hero{
+  background:#ffffff!important;
+  border:1px solid #d9e6ef!important;
+  box-shadow:0 8px 22px rgba(22,56,81,.05)!important;
+}
+.specialty-home-v717 .specialty-home-hero h2{color:#163a59!important}
+.specialty-home-v717 .specialty-home-hero p{color:#7a8c9a!important}
+.specialty-home-v717 .specialty-home-day{
+  background:#f0f6fa!important;
+  color:#163a59!important;
+  border:1px solid #dce8f0!important;
+}
+.specialty-home-v717 .specialty-home-day span,
+.specialty-home-v717 .specialty-home-day small{color:#7f92a0!important}
+.specialty-home-v717 .home-quick-actions button{
+  background:#ffffff!important;
+  border:1px solid #d9e6ef!important;
+  color:#21455f!important;
+  box-shadow:0 4px 10px rgba(22,56,81,.04)!important;
+}
+.specialty-home-v717 .v71-build-stamp{color:#9aabb5!important}
+.specialty-home-v717 .is-dragging{opacity:.55!important;transform:scale(.98)!important}
+.specialty-home-v717 .is-drag-over{outline:2px dashed #9fb8ca!important;outline-offset:-6px!important}
+@media(max-width:1250px){
+  .specialty-home-v717 .specialty-grid,
+  .specialty-home-v717 .clinic-services-grid{grid-template-columns:repeat(3,minmax(200px,1fr))}
+}
+@media(max-width:980px){
+  .specialty-home-v717 .specialty-grid,
+  .specialty-home-v717 .clinic-services-grid{grid-template-columns:repeat(2,minmax(170px,1fr))}
+}
