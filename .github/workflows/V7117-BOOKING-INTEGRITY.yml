@@ -1,0 +1,146 @@
+name: Clinic Cases V7.1.17 Booking Integrity
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Apply booking safety fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+          p=Path('src/main.ts'); s=p.read_text(encoding='utf-8')
+          old='''       let patientId='';
+                 let reused=false;'''
+          # Only edit the specialty booking form; fail closed on changed upstream text.
+          old='''       let patientId='';
+                 let reused=false;
+                 if(existingPatient && existingPatient.phone.trim()===phone){
+                   patientId=existingPatient.id;
+                   reused=true;
+                 }else{
+                   const result=await invoke<{id:string,existed:boolean}>('register_patient',{input:{
+           fullName:String(fd.get('fullName')||'').trim(),
+           phone,
+           age:rawAge?Number(rawAge):null,
+           gender:'',
+           address:''
+                   }});
+                   patientId=result.id;
+                   reused=result.existed;
+                 }'''
+          new='''       // SQLite decides whether this phone belongs to an existing patient.
+                 const result=await invoke<{id:string,existed:boolean}>('register_patient',{input:{
+                   fullName:String(fd.get('fullName')||'').trim(),
+                   phone,
+                   age:rawAge?Number(rawAge):null,
+                   gender:'',
+                   address:''
+                 }});
+                 const patientId=result.id;
+                 const reused=result.existed;'''
+          assert s.count(old)==1,'Registration block changed; stopping to protect code'
+          s=s.replace(old,new,1)
+          old='''     const rawAge=String(fd.get('age')||'').trim();
+               try{'''
+          new='''     const rawAge=String(fd.get('age')||'').trim();
+               const saveButton=form.querySelector<HTMLButtonElement>('button.btn.primary')!;
+               if(saveButton.disabled)return;
+               saveButton.disabled=true;
+               try{'''
+          assert s.count(old)==1,'Save block changed'
+          s=s.replace(old,new,1)
+          old="""     }catch(err){toast(`تعذر حفظ الحجز: ${String(err)}`,'error')}
+             };
+           }"""
+          new="""     }catch(err){toast(`تعذر حفظ الحجز: ${String(err)}`,'error')}
+               finally{saveButton.disabled=false}
+             };
+           }"""
+          assert s.count(old)==1,'Error handler changed'
+          s=s.replace(old,new,1)
+          s=s.replace('V7.1.16 • CLICK BOOKING PATIENT','V7.1.17 • BOOKING INTEGRITY',1)
+          p.write_text(s,encoding='utf-8')
+          for f in ['package.json','src-tauri/tauri.conf.json']:
+            q=Path(f); d=json.loads(q.read_text(encoding='utf-8'))
+            assert d['version']=='7.1.16',(f,d['version'])
+            d['version']='7.1.17'; q.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          q=Path('package-lock.json');s=q.read_text(encoding='utf-8');s,n=re.subn(r'("version"\s*:\s*")7\.1\.16(")',r'\g<1>7.1.17\2',s,count=2);assert n==2;n and q.write_text(s,encoding='utf-8')
+          for f,pattern,repl in [
+            ('src-tauri/Cargo.toml',r'(?m)^version\s*=\s*"7\.1\.16"\s*$', 'version = "7.1.17"'),
+            ('src-tauri/Cargo.lock',r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.16(")',r'\g<1>7.1.17\2')]:
+            q=Path(f);s=q.read_text(encoding='utf-8');s,n=re.subn(pattern,repl,s,count=1);assert n==1,f;q.write_text(s,encoding='utf-8')
+          PY
+      - name: Verify booking path and duplicate protection
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('src/main.ts').read_text(encoding='utf-8')
+          b=Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')
+          checks={
+            'database patient reuse': 'const reused=result.existed;' in s and 'SELECT id,archived FROM patients WHERE phone=?1' in b,
+            'disable save on submit': 'if(saveButton.disabled)return;' in s and 'saveButton.disabled=true;' in s,
+            'restore save on failure': 'finally{saveButton.disabled=false}' in s,
+            'specialty visit link': 'specialty:specialty.label' in s,
+            'day filter': "invoke<ReportResult>('run_report',{query:{from:dateKey,to:dateKey,doctor:''}})" in s,
+            'open patient': "openPatient(row.dataset.bookingPatientRow||'')" in s,
+            'status change': "await invoke('set_visit_status'" in s,
+            'booking day': 'specialtyBookingStoredVisitDate(operationalBookingDay,bookingTime)' in s,
+          }
+          for k,v in checks.items(): print(k, 'OK' if v else 'FAIL')
+          assert all(checks.values()),checks
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        shell: bash
+        run: npm ci
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build Windows installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if npx tauri build --bundles nsis; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep 20; fi
+          done
+          exit 1
+      - name: Verify Windows installer
+        shell: pwsh
+        run: |
+          $i=Get-ChildItem 'src-tauri\target\release\bundle\nsis\*-setup.exe' | Where-Object { $_.Name -match '7\.1\.17' } | Select-Object -First 1
+          if(-not $i){throw 'V7.1.17 installer missing'}
+          if($i.Length -lt 80000000){throw 'Installer too small'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.17-Booking-Integrity
+          path: src-tauri/target/release/bundle/nsis/*7.1.17*-setup.exe
+          if-no-files-found: error
+      - name: Save validated changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json package-lock.json
+          git commit -m 'V7.1.17 booking integrity: atomic patient reuse and single submission'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
