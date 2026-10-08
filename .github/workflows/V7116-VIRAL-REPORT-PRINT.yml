@@ -1,0 +1,287 @@
+name: Clinic Cases V7.1.16 Viral Report Print
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply V7.1.16 viral report print
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          main_p=Path('src/main.ts')
+          css_p=Path('src/style.css')
+          tauri_p=Path('src-tauri/tauri.conf.json')
+          cargo_p=Path('src-tauri/Cargo.toml')
+          lock_p=Path('src-tauri/Cargo.lock')
+          pkg_p=Path('package.json')
+          pkglock_p=Path('package-lock.json')
+
+          m=main_p.read_text(encoding='utf-8')
+          c=css_p.read_text(encoding='utf-8')
+
+          tauri=json.loads(tauri_p.read_text(encoding='utf-8'))
+          tauri['version']='7.1.16'
+          tauri_p.write_text(json.dumps(tauri,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+
+          pkg=json.loads(pkg_p.read_text(encoding='utf-8'))
+          pkg['version']='7.1.16'
+          pkg_p.write_text(json.dumps(pkg,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+
+          pl=pkglock_p.read_text(encoding='utf-8')
+          pl=re.sub(r'("version"\s*:\s*")7\.1\.\d+(")',r'\g<1>7.1.16\2',pl,count=2)
+          pkglock_p.write_text(pl,encoding='utf-8')
+
+          cg=cargo_p.read_text(encoding='utf-8')
+          cg=re.sub(r'(?m)^version\s*=\s*"7\.1\.\d+"\s*$', 'version = "7.1.16"', cg, count=1)
+          cargo_p.write_text(cg,encoding='utf-8')
+
+          cl=lock_p.read_text(encoding='utf-8')
+          cl=re.sub(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.\d+(")',r'\g<1>7.1.16\2',cl,count=1)
+          lock_p.write_text(cl,encoding='utf-8')
+
+          start=m.index('async function exportReportFile')
+          end=m.index('\n\nlet caseMenuPatientId', start)
+
+          new_report = r'''function viralReportSheet(title:string, subtitle:string, body:string){
+            return `
+              <div class="export-document viral-report-document">
+                <div class="viral-report-topbar"></div>
+
+                <div class="viral-report-brand">
+                  <div class="viral-report-brand-copy">
+                    <img src="/patient-print-logo.jpg" alt="لوجو عيادات العقاد التخصصية" />
+                    <div>
+                      <h1>${esc(appSettings.clinicName)}</h1>
+                      <p>${esc(appSettings.clinicSlogan)}</p>
+                    </div>
+                  </div>
+                  <div class="viral-report-badge">
+                    <span>تقرير</span>
+                    <strong>تشغيلي ومالي</strong>
+                  </div>
+                </div>
+
+                <div class="viral-report-title">
+                  <div>
+                    <span class="viral-report-kicker">CLINIC PERFORMANCE REPORT</span>
+                    <h2>${esc(title)}</h2>
+                    <p>${esc(subtitle)}</p>
+                  </div>
+                  <div class="viral-report-datebox">
+                    <span>تاريخ الإصدار</span>
+                    <strong>${esc(displayDate(today()))}</strong>
+                  </div>
+                </div>
+
+                ${body}
+
+                <div class="viral-report-footer">
+                  <div class="viral-report-contact"><span>واتساب</span><strong class="ltr">${esc(appSettings.whatsappNumber)}</strong></div>
+                  <div class="viral-report-contact"><span>هاتف</span><strong class="ltr">${esc(appSettings.phoneNumber)}</strong></div>
+                  <div class="viral-report-address">${esc(appSettings.clinicAddress)}</div>
+                </div>
+              </div>`;
+          }
+
+          async function exportReportFile(result: ReportResult, from: string, to: string, doctor: string, format: ExportFormat) {
+            const metrics = reportMetrics(result.rows);
+            const doctorRows = doctorBreakdown(result.rows);
+
+            const doctorSummary = doctorRows.length ? `
+              <div class="viral-report-section-head">
+                <div><span>DOCTORS SUMMARY</span><h3>ملخص الأطباء</h3></div>
+                <b>${doctorRows.length} طبيب</b>
+              </div>
+
+              <div class="viral-doctor-grid">
+                ${doctorRows.map(([name,item],index)=>`
+                  <article class="viral-doctor-card">
+                    <div class="viral-doctor-rank">${index+1}</div>
+                    <div class="viral-doctor-main"><strong>${esc(name)}</strong><span>${item.count} حالة</span></div>
+                    <div class="viral-doctor-money"><small>إجمالي الكشف</small><b class="ltr">${item.revenue.toFixed(2)} ج.م</b></div>
+                    <div class="viral-doctor-split">
+                      <span>العيادات <b class="ltr">${item.clinicTotal.toFixed(2)}</b></span>
+                      <span>الطبيب <b class="ltr">${item.doctorTotal.toFixed(2)}</b></span>
+                    </div>
+                  </article>
+                `).join('')}
+              </div>
+            ` : '';
+
+            const body = `
+              <div class="viral-report-meta">
+                <div><span>الفترة</span><strong>${esc(reportPeriodLabel(from,to))}</strong></div>
+                <div><span>الطبيب</span><strong>${esc(doctor || 'كل الأطباء')}</strong></div>
+              </div>
+
+              <div class="viral-kpi-grid">
+                <div class="viral-kpi primary"><span>عدد الزيارات</span><strong>${metrics.totalVisits}</strong><small>إجمالي الحالات المسجلة</small></div>
+                <div class="viral-kpi"><span>مرضى مختلفون</span><strong>${metrics.uniquePatients}</strong><small>بدون تكرار المريض</small></div>
+                <div class="viral-kpi money"><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)}</strong><small>جنيه مصري</small></div>
+                <div class="viral-kpi clinic"><span>مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)}</strong><small>جنيه مصري</small></div>
+                <div class="viral-kpi doctor"><span>مبلغ الأطباء</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)}</strong><small>جنيه مصري</small></div>
+                <div class="viral-kpi visits"><span>كشف / استشارة</span><strong>${metrics.newVisits} / ${metrics.consultations}</strong><small>توزيع نوع الزيارة</small></div>
+              </div>
+
+              ${doctorSummary}
+
+              <div class="viral-report-section-head visits">
+                <div><span>VISITS DETAILS</span><h3>تفاصيل الزيارات</h3></div>
+                <b>${result.rows.length} زيارة</b>
+              </div>
+
+              <div class="viral-report-table-wrap">
+                ${exportVisitRows(result.rows,true)}
+              </div>
+            `;
+
+            await captureAndSaveExport(
+              viralReportSheet('تقرير الحالات', reportPeriodLabel(from,to), body),
+              `تقرير الحالات - ${from} - ${to}`,
+              format
+            );
+          }
+          '''
+
+          m=m[:start]+new_report+m[end:]
+          m=re.sub(r'V7\.1\.\d+ • [^<]+','V7.1.16 • VIRAL REPORT PRINT',m,count=1)
+          main_p.write_text(m,encoding='utf-8')
+
+          if 'V7.1.16 VIRAL REPORT PRINT' not in c:
+              c += r'''
+
+          /* ===== V7.1.16 VIRAL REPORT PRINT ===== */
+          .viral-report-document{
+            position:relative!important;
+            padding:0 46px 34px!important;
+            overflow:hidden!important;
+            color:#102a43!important;
+            background:radial-gradient(circle at 92% 7%,rgba(24,164,174,.10),transparent 20%),radial-gradient(circle at 6% 18%,rgba(10,35,66,.06),transparent 22%),#fff!important;
+          }
+          .viral-report-topbar{height:13px;margin:0 -46px 26px;background:linear-gradient(90deg,#0a2342 0%,#0d5268 48%,#16a4ae 100%)}
+          .viral-report-brand{display:flex;align-items:center;justify-content:space-between;gap:24px}
+          .viral-report-brand-copy{display:flex;align-items:center;gap:17px}
+          .viral-report-brand-copy img{width:120px;height:92px;object-fit:contain;border-radius:16px;background:#fff;box-shadow:0 8px 24px rgba(10,35,66,.08)}
+          .viral-report-brand-copy h1{margin:0;color:#0a2342;font-size:28px;font-weight:900}
+          .viral-report-brand-copy p{margin:6px 0 0;color:#168f99;font-size:14px;font-weight:800}
+          .viral-report-badge{min-width:145px;padding:13px 17px;border-radius:17px;text-align:center;color:#fff;background:linear-gradient(145deg,#0a2342,#164d67);box-shadow:0 12px 25px rgba(10,35,66,.14)}
+          .viral-report-badge span,.viral-report-badge strong{display:block}.viral-report-badge span{font-size:10px;opacity:.72;margin-bottom:4px}.viral-report-badge strong{font-size:16px}
+          .viral-report-title{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:24px 0 19px;margin:20px 0 20px;border-top:1px solid #e5eef3;border-bottom:1px solid #e5eef3}
+          .viral-report-kicker{display:block;margin-bottom:6px;color:#12a0aa;font-size:9px;font-weight:900;letter-spacing:1.2px}
+          .viral-report-title h2{margin:0;color:#0a2342;font-size:29px;font-weight:900}.viral-report-title p{margin:5px 0 0;color:#73879a;font-size:13px;font-weight:700}
+          .viral-report-datebox{min-width:145px;text-align:left}.viral-report-datebox span,.viral-report-datebox strong{display:block}.viral-report-datebox span{color:#8a9bab;font-size:10px;margin-bottom:4px}.viral-report-datebox strong{color:#0a2342;font-size:14px}
+          .viral-report-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:13px}.viral-report-meta>div{padding:10px 13px;border:1px solid #dce8ef;border-radius:12px;background:#f8fbfd}.viral-report-meta span{display:block;color:#8496a5;font-size:10px;margin-bottom:4px}.viral-report-meta strong{font-size:13px;color:#153a59}
+          .viral-kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:23px}
+          .viral-kpi{position:relative;min-height:94px;padding:13px 15px;border-radius:15px;border:1px solid #dce7ee;background:#fff;box-shadow:0 6px 17px rgba(21,52,77,.055);overflow:hidden}
+          .viral-kpi:after{content:'';position:absolute;width:54px;height:54px;border-radius:50%;left:-17px;bottom:-22px;background:rgba(22,164,174,.07)}
+          .viral-kpi.primary{color:#fff;border-color:transparent;background:linear-gradient(145deg,#0a2342,#164f69)}.viral-kpi.primary span,.viral-kpi.primary strong,.viral-kpi.primary small{color:#fff!important}
+          .viral-kpi span,.viral-kpi strong,.viral-kpi small{display:block}.viral-kpi span{color:#778a9b;font-size:10px;font-weight:800}.viral-kpi strong{margin:6px 0 3px;color:#0a2342;font-size:24px;line-height:1;font-weight:900}.viral-kpi small{color:#9aa8b4;font-size:9px}
+          .viral-kpi.money{border-top:4px solid #13a8b2}.viral-kpi.clinic{border-top:4px solid #4b79a1}.viral-kpi.doctor{border-top:4px solid #8c6bb1}.viral-kpi.visits{border-top:4px solid #e2a642}
+          .viral-report-section-head{display:flex;align-items:center;justify-content:space-between;gap:15px;margin:22px 0 10px}.viral-report-section-head span{display:block;color:#15a0aa;font-size:8px;font-weight:900;letter-spacing:1px}.viral-report-section-head h3{margin:2px 0 0;color:#0a2342;font-size:18px;font-weight:900}.viral-report-section-head>b{padding:6px 10px;border-radius:999px;background:#eef7f8;color:#117d86;font-size:10px}
+          .viral-doctor-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.viral-doctor-card{display:grid;grid-template-columns:34px 1fr auto;gap:8px 10px;align-items:center;padding:11px 12px;border:1px solid #dfe9ef;border-radius:13px;background:#fbfdfe}.viral-doctor-rank{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;color:#fff;font-size:12px;font-weight:900;background:linear-gradient(145deg,#0a2342,#1697a1)}
+          .viral-doctor-main strong,.viral-doctor-main span{display:block}.viral-doctor-main strong{color:#153a59;font-size:12px}.viral-doctor-main span{margin-top:2px;color:#899aa8;font-size:9px}.viral-doctor-money{text-align:left}.viral-doctor-money small,.viral-doctor-money b{display:block}.viral-doctor-money small{color:#97a5b0;font-size:8px}.viral-doctor-money b{margin-top:3px;color:#0f818a;font-size:11px}.viral-doctor-split{grid-column:2/4;display:flex;gap:14px;padding-top:6px;border-top:1px dashed #e1e9ee;color:#8192a0;font-size:9px}.viral-doctor-split b{color:#28475f}
+          .viral-report-table-wrap{border:1px solid #dce7ee;border-radius:13px;overflow:hidden}.viral-report-table-wrap .export-table{margin:0!important;font-size:10px!important}.viral-report-table-wrap .export-table th{padding:9px 6px!important;border-color:#163e5d!important;color:#fff!important;background:#123b5b!important;font-size:9px!important}.viral-report-table-wrap .export-table td{padding:8px 6px!important;border-color:#e6edf1!important;color:#314d64!important}.viral-report-table-wrap .export-table tbody tr:nth-child(even) td{background:#f8fbfd!important}
+          .viral-report-footer{display:grid;grid-template-columns:auto auto 1fr;gap:14px;align-items:center;margin-top:25px;padding:14px 16px;border-radius:15px;color:#fff;background:linear-gradient(100deg,#0a2342,#164e67)}.viral-report-contact span,.viral-report-contact strong{display:block}.viral-report-contact span{font-size:8px;opacity:.68}.viral-report-contact strong{margin-top:2px;font-size:11px}.viral-report-address{text-align:left;font-size:9px;line-height:1.5;opacity:.86}
+          .export-capture-host .viral-report-document *{box-sizing:border-box}
+          '''
+          css_p.write_text(c,encoding='utf-8')
+          print('V7.1.16 viral report print applied')
+          PY
+
+      - name: Verify V7.1.16
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          m=Path('src/main.ts').read_text(encoding='utf-8')
+          c=Path('src/style.css').read_text(encoding='utf-8')
+          t=json.loads(Path('src-tauri/tauri.conf.json').read_text(encoding='utf-8'))
+          checks={
+           'version':t.get('version')=='7.1.16',
+           'sheet':'function viralReportSheet' in m,
+           'logo':'src="/patient-print-logo.jpg"' in m[m.index('function viralReportSheet'):m.index('let caseMenuPatientId')],
+           'viral_export':"viralReportSheet('تقرير الحالات'" in m,
+           'kpis':'viral-kpi-grid' in m,
+           'doctor_cards':'viral-doctor-grid' in m,
+           'footer':'viral-report-footer' in c,
+           'marker':'V7.1.16 VIRAL REPORT PRINT' in c,
+          }
+          for k,v in checks.items(): print(k,'OK' if v else 'FAIL')
+          assert all(checks.values()), checks
+          print('V7.1.16 verification passed')
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows installer with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "NSIS build attempt $attempt/3"
+            if npx tauri build --bundles nsis; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep 20; fi
+          done
+          exit 1
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $i=Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" |
+            Where-Object { $_.Name -match "7\.1\.16" } |
+            Select-Object -First 1
+          if(-not $i){throw "V7.1.16 installer missing"}
+          if($i.Length -lt 80000000){throw "Installer too small"}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.16-Viral-Report-Print
+          path: src-tauri/target/release/bundle/nsis/*7.1.16*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated V7.1.16
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src/style.css src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json package-lock.json
+          if git diff --cached --quiet; then echo "No changes"; else git commit -m "V7.1.16: viral report print design"; fi
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
