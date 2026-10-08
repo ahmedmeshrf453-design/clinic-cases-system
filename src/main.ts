@@ -3304,7 +3304,7 @@ async function renderDashboard(){
     </div>
 
     <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
-    <div class="v71-build-stamp">V7.1.14 • BOOKING DAY FIX</div>
+    <div class="v71-build-stamp">V7.1.15 • BOOKING TYPE AND PRICE</div>
   </section>`,'الرئيسية','التخصصات والخدمات');
 
   document.querySelectorAll<HTMLButtonElement>('[data-specialty-home]').forEach(b=>b.onclick=async()=>{doctorSpecialtyFilter=b.dataset.specialtyHome||'';await navigate('doctors')});
@@ -4724,35 +4724,23 @@ function specialtyBookingRowsHtml(rows: Visit[], patientMap: Map<string, Patient
   return `<div class="specialty-booking-table-wrap"><table class="specialty-booking-table">
     <thead><tr>
       <th>الدور</th><th>الوقت</th><th>اسم الحالة</th><th>السن</th><th>الموبايل</th>
-      <th>النوع</th><th>الطبيب</th><th>الحالة</th><th>إجراءات</th>
+      <th>الطبيب</th><th>نوع الكشف</th><th>سعر الكشف</th>
     </tr></thead>
     <tbody>${rows.length ? rows.map((v,index)=>{
       const p=patientMap.get(v.patientId);
-      const status=specialtyBookingStatusLabel(v.status);
-      return `<tr data-booking-search="${esc(`${v.patientName||''} ${v.patientPhone||''} ${v.doctor||''}`.toLowerCase())}">
+      const visitType=v.visitType==='كشف جديد'?'كشف':(v.visitType||'—');
+      const fee=String(v.fee||'').trim();
+      return `<tr data-booking-search="${esc(`${v.patientName||''} ${v.patientPhone||''} ${v.doctor||''} ${visitType}`.toLowerCase())}">
         <td><span class="booking-turn">${index+1}</span></td>
         <td class="ltr">${esc(v.visitTime||'—')}</td>
         <td><button type="button" class="booking-patient-link" data-booking-patient="${esc(v.patientId)}">${esc(v.patientName||'—')}</button></td>
         <td>${p?.age ?? '—'}</td>
         <td class="ltr">${esc(v.patientPhone||'—')}</td>
-        <td><span class="visit-type-badge">${esc(v.visitType==='كشف جديد'?'كشف':(v.visitType||'—'))}</span></td>
         <td>${esc(v.doctor||'بدون طبيب')}</td>
-        <td>
-          <select class="booking-status-select ${specialtyBookingStatusClass(v.status)}" data-booking-status="${esc(v.id)}">
-            <option value="منتظر" ${status==='منتظر'?'selected':''}>منتظر</option>
-            <option value="حضر" ${status==='حضر'?'selected':''}>حضر</option>
-            <option value="تم الكشف" ${status==='تم الكشف'?'selected':''}>تم الكشف</option>
-            <option value="لم يحضر" ${status==='لم يحضر'?'selected':''}>لم يحضر</option>
-            <option value="مؤجل" ${status==='مؤجل'?'selected':''}>مؤجل</option>
-            <option value="ملغي" ${status==='ملغي'?'selected':''}>ملغي</option>
-          </select>
-        </td>
-        <td><div class="visit-row-actions">
-          <button class="icon-action edit" type="button" data-edit-visit="${esc(v.id)}" title="تعديل">✎</button>
-          <button class="icon-action danger" type="button" data-delete-visit="${esc(v.id)}" title="حذف">🗑</button>
-        </div></td>
+        <td><span class="visit-type-badge">${esc(visitType)}</span></td>
+        <td class="ltr">${fee?`${esc(fee)} ج.م`:'—'}</td>
       </tr>`;
-    }).join('') : '<tr><td colspan="9" class="empty-row">لا توجد حجوزات في هذا اليوم</td></tr>'}
+    }).join('') : '<tr><td colspan="8" class="empty-row">لا توجد حجوزات في هذا اليوم</td></tr>'}
     </tbody>
   </table></div>`;
 }
