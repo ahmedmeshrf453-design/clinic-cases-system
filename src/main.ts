@@ -4939,6 +4939,21 @@ function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
   const form=document.querySelector<HTMLFormElement>('#specialtyBookingForm')!;
   const phoneInput=form.querySelector<HTMLInputElement>('input[name="phone"]')!;
   const typeInput=form.querySelector<HTMLSelectElement>('select[name="visitType"]')!;
+  // Default fee allocation: 60% physician, 40% clinic. Both shares remain editable.
+const feeInput=form.querySelector<HTMLInputElement>('input[name="fee"]')!;
+const clinicInput=form.querySelector<HTMLInputElement>('input[name="clinicAmount"]')!;
+const doctorInput=form.querySelector<HTMLInputElement>('input[name="doctorAmount"]')!;
+const updateShares=()=>{
+  const raw=feeInput.value.trim();
+  if(!raw){clinicInput.value='';doctorInput.value='';return}
+  const cents=Math.round(Number(raw)*100);
+  if(!Number.isFinite(cents)||cents<0)return;
+  const doctorCents=Math.round(cents*0.6);
+  doctorInput.value=(doctorCents/100).toFixed(2);
+  clinicInput.value=((cents-doctorCents)/100).toFixed(2);
+};
+feeInput.addEventListener('input',updateShares);
+
   const alertHost=document.querySelector<HTMLDivElement>('#specialtyDuplicateAlert')!;
   let existingPatient:Patient|null=null;
   let timer:number|undefined;
@@ -4977,6 +4992,15 @@ function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
     saveButton.disabled=true;
     try{
       if(phone.length<7)throw new Error('رقم الموبايل غير صالح');
+      const feeText=String(fd.get('fee')||'').trim();
+const clinicText=String(fd.get('clinicAmount')||'').trim();
+const doctorText=String(fd.get('doctorAmount')||'').trim();
+if(feeText && clinicText && doctorText){
+  const cents=Math.round(Number(feeText)*100);
+  const shares=Math.round(Number(clinicText)*100)+Math.round(Number(doctorText)*100);
+  if(!Number.isFinite(cents)||!Number.isFinite(shares)||Math.abs(cents-shares)>1)
+    throw new Error('مجموع مبلغ العيادة والطبيب لازم يساوي سعر الكشف');
+}
       const result=await invoke<{id:string,existed:boolean}>('register_patient',{input:{
           fullName:String(fd.get('fullName')||'').trim(),
           phone,
