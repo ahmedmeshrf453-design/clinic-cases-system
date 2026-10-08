@@ -4766,3 +4766,62 @@ table td{font-size:13px !important}
 .booking-status-select{min-width:96px;height:32px;border-radius:9px;border:1px solid #d3e1e9;padding:0 7px;font-weight:700;background:#fff}.booking-status-select.waiting{color:#9b6800;background:#fff9e8}.booking-status-select.arrived{color:#087b5a;background:#edf9f5}.booking-status-select.done{color:#145f9d;background:#edf6ff}.booking-status-select.absent,.booking-status-select.cancelled{color:#9f3340;background:#fff0f2}.booking-status-select.delayed{color:#7b5d00;background:#fff8df}
 .specialty-booking-modal{max-width:840px!important}.specialty-booking-form-grid{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:10px;margin-bottom:14px}.specialty-booking-form-grid .name{grid-column:span 2}.specialty-booking-form-grid label{display:grid;gap:5px;font-size:12px;color:#536f82}.specialty-booking-form-grid input,.specialty-booking-form-grid select{height:40px;border:1px solid #d4e1e9;border-radius:10px;padding:0 10px;background:#fff}.specialty-duplicate-alert{display:grid;gap:3px;padding:10px 12px;border-radius:12px;margin:-3px 0 14px;border:1px solid #cfe5ee;background:#f3fbfe}.specialty-duplicate-alert.warning{border-color:#f1d792;background:#fff9e8}.specialty-duplicate-alert.warning strong{color:#9a6800}.specialty-duplicate-alert.found strong{color:#087b5a}.specialty-duplicate-alert span{font-weight:700;color:#173650}.specialty-duplicate-alert small{color:#718695}
 @media(max-width:1000px){.specialty-bookings-head{align-items:stretch;flex-direction:column}.specialty-booking-metrics{grid-template-columns:repeat(3,1fr)}.specialty-booking-form-grid{grid-template-columns:repeat(2,1fr)}}
+
+
+/* ===== V7.1.13 EASY SINGLE COLUMN BOOKING ===== */
+.specialty-booking-modal{
+  max-width:560px!important;
+  width:min(560px,calc(100vw - 30px))!important;
+  max-height:90vh!important;
+  overflow:auto!important;
+}
+.specialty-booking-modal .modal-head{
+  position:sticky!important;
+  top:0!important;
+  z-index:5!important;
+  background:#fff!important;
+  padding-bottom:12px!important;
+  border-bottom:1px solid #e4edf3!important;
+}
+.specialty-booking-modal .modal-head h2{font-size:22px!important;margin:0!important}
+.specialty-booking-modal .modal-head p{font-size:12px!important;margin-top:3px!important}
+.specialty-booking-modal #specialtyBookingForm{display:grid!important;gap:12px!important}
+.specialty-booking-modal .specialty-step-title{
+  display:flex!important;align-items:center!important;gap:8px!important;
+  margin:4px 0 0!important;font-size:17px!important;font-weight:900!important;color:#153c5b!important
+}
+.specialty-booking-modal .specialty-step-title span{
+  display:inline-grid!important;place-items:center!important;width:28px!important;height:28px!important;
+  border-radius:9px!important;background:#123b5c!important;color:#fff!important;font-size:14px!important
+}
+.specialty-booking-modal .specialty-booking-form-grid{
+  display:grid!important;grid-template-columns:1fr!important;gap:10px!important;margin-bottom:2px!important
+}
+.specialty-booking-modal .specialty-booking-form-grid .name{grid-column:auto!important}
+.specialty-booking-modal .specialty-booking-form-grid label{
+  display:grid!important;gap:6px!important;font-size:13px!important;font-weight:800!important;color:#4d697c!important
+}
+.specialty-booking-modal .specialty-booking-form-grid input,
+.specialty-booking-modal .specialty-booking-form-grid select{
+  width:100%!important;height:48px!important;min-height:48px!important;border:1px solid #cfdde7!important;
+  border-radius:12px!important;padding:0 13px!important;background:#fff!important;color:#153650!important;
+  font-size:15px!important;box-sizing:border-box!important
+}
+.specialty-booking-modal .specialty-booking-form-grid input:focus,
+.specialty-booking-modal .specialty-booking-form-grid select:focus{
+  outline:none!important;border-color:#4aa8d7!important;box-shadow:0 0 0 3px rgba(74,168,215,.12)!important
+}
+.specialty-booking-modal .required-star{color:#c0392b!important;font-weight:900!important}
+.specialty-booking-modal .specialty-duplicate-alert{margin:0!important;padding:11px 12px!important;font-size:12px!important}
+.specialty-booking-help{
+  background:#f4f8fb!important;border:1px solid #dbe7ef!important;border-radius:11px!important;
+  padding:9px 11px!important;color:#698091!important;font-size:12px!important
+}
+.specialty-booking-actions{
+  position:sticky!important;bottom:0!important;z-index:4!important;background:#fff!important;
+  padding-top:10px!important;border-top:1px solid #e5edf2!important
+}
+.specialty-booking-actions .btn{min-height:44px!important}
+@media(max-width:620px){
+  .specialty-booking-modal{width:calc(100vw - 18px)!important;max-height:94vh!important}
+}

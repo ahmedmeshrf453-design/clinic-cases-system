@@ -3295,7 +3295,7 @@ async function renderDashboard(){
     </div>
 
     <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
-    <div class="v71-build-stamp">V7.1.12 • SPECIALTY BOOKING SYSTEM</div>
+    <div class="v71-build-stamp">V7.1.13 • EASY SINGLE-COLUMN BOOKING</div>
   </section>`,'الرئيسية','التخصصات والخدمات');
 
   document.querySelectorAll<HTMLButtonElement>('[data-specialty-home]').forEach(b=>b.onclick=async()=>{doctorSpecialtyFilter=b.dataset.specialtyHome||'';await navigate('doctors')});
@@ -4844,16 +4844,16 @@ function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
   root.innerHTML=`<div class="modal-backdrop" id="specialtyBookingBackdrop"><section class="modal form-modal specialty-booking-modal">
     <div class="modal-head"><div><h2>حجز جديد — ${esc(specialty.label)}</h2><p>بيانات الحالة والحجز</p></div><button class="modal-close" id="closeSpecialtyBooking">×</button></div>
     <form id="specialtyBookingForm">
-      <div class="section-title">بيانات الحالة</div>
+      <div class="section-title specialty-step-title"><span>1</span> بيانات الحالة</div>
       <div class="specialty-booking-form-grid patient-data">
-        <label class="name">الاسم بالكامل<input name="fullName" required autocomplete="off"></label>
-        <label>السن<input name="age" type="number" min="0" max="130" required></label>
-        <label>رقم الموبايل<input name="phone" class="ltr" inputmode="tel" required autocomplete="off"></label>
-        <label>نوع الزيارة<select name="visitType" id="specialtyBookingType"><option value="كشف جديد">كشف</option><option value="استشارة">استشارة</option></select></label>
+        <label class="name">الاسم بالكامل <b class="required-star">*</b><input name="fullName" required autocomplete="off" placeholder="اكتب اسم المريض بالكامل"></label>
+        <label>السن <b class="required-star">*</b><input name="age" type="number" min="0" max="130" required placeholder="مثال: 35"></label>
+        <label>رقم الموبايل <b class="required-star">*</b><input name="phone" class="ltr" inputmode="tel" required autocomplete="off" placeholder="01xxxxxxxxx"></label>
+        <label>نوع الزيارة <b class="required-star">*</b><select name="visitType" id="specialtyBookingType"><option value="كشف جديد">كشف</option><option value="استشارة">استشارة</option></select></label>
       </div>
       <div id="specialtyDuplicateAlert" class="specialty-duplicate-alert" hidden></div>
 
-      <div class="section-title">بيانات الحجز</div>
+      <div class="section-title specialty-step-title"><span>2</span> بيانات الحجز</div>
       <div class="specialty-booking-form-grid booking-data">
         <label>الطبيب<select name="doctor" ${specialtyDoctors.length?'required':''}>${doctorOptionsHtml}</select></label>
         <label>مصدر الحجز<select name="bookingSource">${bookingSourceOptions('عادي')}</select></label>
@@ -4863,7 +4863,7 @@ function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
         <label>مبلغ العيادات<input name="clinicAmount" class="ltr" type="number" min="0" step="0.01" placeholder="اختياري"></label>
         <label>مبلغ الطبيب<input name="doctorAmount" class="ltr" type="number" min="0" step="0.01" placeholder="اختياري"></label>
       </div>
-      <div class="form-actions"><button type="button" class="btn ghost" id="cancelSpecialtyBooking">إلغاء</button><button class="btn primary">✓ حفظ الحجز</button></div>
+      <div class="specialty-booking-help">راجع البيانات ثم اضغط حفظ الحجز.</div><div class="form-actions specialty-booking-actions"><button type="button" class="btn ghost" id="cancelSpecialtyBooking">إلغاء</button><button class="btn primary">✓ حفظ الحجز</button></div>
     </form>
   </section></div>`;
 
