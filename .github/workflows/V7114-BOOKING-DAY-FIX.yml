@@ -1,0 +1,236 @@
+name: Clinic Cases V7.1.14 Booking Day Fix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply V7.1.14 booking day fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          main_p = Path('src/main.ts')
+          rust_p = Path('src-tauri/src/lib.rs')
+          tauri_p = Path('src-tauri/tauri.conf.json')
+          cargo_p = Path('src-tauri/Cargo.toml')
+          lock_p = Path('src-tauri/Cargo.lock')
+          pkg_p = Path('package.json')
+          pkglock_p = Path('package-lock.json')
+
+          m = main_p.read_text(encoding='utf-8')
+          r = rust_p.read_text(encoding='utf-8')
+
+          # version bump
+          tauri = json.loads(tauri_p.read_text(encoding='utf-8'))
+          tauri['version'] = '7.1.14'
+          tauri_p.write_text(json.dumps(tauri, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          pkg = json.loads(pkg_p.read_text(encoding='utf-8'))
+          pkg['version'] = '7.1.14'
+          pkg_p.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          pl = pkglock_p.read_text(encoding='utf-8')
+          pl = re.sub(r'("version"\s*:\s*")7\.1\.\d+(")', r'\g<1>7.1.14\2', pl, count=2)
+          pkglock_p.write_text(pl, encoding='utf-8')
+
+          cg = cargo_p.read_text(encoding='utf-8')
+          cg = re.sub(r'(?m)^version\s*=\s*"7\.1\.\d+"\s*$', 'version = "7.1.14"', cg, count=1)
+          cargo_p.write_text(cg, encoding='utf-8')
+
+          cl = lock_p.read_text(encoding='utf-8')
+          cl = re.sub(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.\d+(")', r'\g<1>7.1.14\2', cl, count=1)
+          lock_p.write_text(cl, encoding='utf-8')
+
+          # frontend helper
+          helper = '''function specialtyBookingStoredVisitDate(operationalDay:string, visitTime:string){
+            const raw=String(visitTime||'00:00');
+            const hour=Math.max(0,Math.min(23,Number(raw.split(':')[0])||0));
+            const start=Number.isFinite(appSettings.operationalStartHour)
+              ? Math.max(0,Math.min(23,appSettings.operationalStartHour))
+              : 11;
+            return hour < start ? addIsoDays(operationalDay,1) : operationalDay;
+          }
+
+          '''
+          if 'function specialtyBookingStoredVisitDate(' not in m:
+              anchor = 'function timeNow() {'
+              pos = m.index(anchor)
+              m = m[:pos] + helper + m[pos:]
+
+          old = '''      await invoke('add_visit',{input:{
+                  patientId,
+                  visitType:String(fd.get('visitType')||'كشف جديد'),
+                  bookingSource:String(fd.get('bookingSource')||'عادي'),
+                  doctor:String(fd.get('doctor')||'').trim(),
+                  fee:String(fd.get('fee')||'').trim(),
+                  clinicAmount:String(fd.get('clinicAmount')||'').trim(),
+                  doctorAmount:String(fd.get('doctorAmount')||'').trim(),
+                  status:'منتظر',
+                  visitDate:String(fd.get('visitDate')||bookingDate),
+                  visitTime:String(fd.get('visitTime')||timeNow()),
+                  specialty:specialty.label
+                }});
+
+                specialtyBookingDay=String(fd.get('visitDate')||bookingDate);'''
+
+          new = '''      const operationalBookingDay=String(fd.get('visitDate')||bookingDate);
+                const bookingTime=String(fd.get('visitTime')||timeNow());
+                const storedVisitDate=specialtyBookingStoredVisitDate(operationalBookingDay,bookingTime);
+
+                await invoke('add_visit',{input:{
+                  patientId,
+                  visitType:String(fd.get('visitType')||'كشف جديد'),
+                  bookingSource:String(fd.get('bookingSource')||'عادي'),
+                  doctor:String(fd.get('doctor')||'').trim(),
+                  fee:String(fd.get('fee')||'').trim(),
+                  clinicAmount:String(fd.get('clinicAmount')||'').trim(),
+                  doctorAmount:String(fd.get('doctorAmount')||'').trim(),
+                  status:'منتظر',
+                  visitDate:storedVisitDate,
+                  visitTime:bookingTime,
+                  specialty:specialty.label
+                }});
+
+                specialtyBookingDay=operationalBookingDay;'''
+
+          if old not in m:
+              raise SystemExit('specialty booking submit block not found')
+          m = m.replace(old, new, 1)
+          m = re.sub(r'V7\.1\.\d+ • [^<]+', 'V7.1.14 • BOOKING DAY FIX', m, count=1)
+          main_p.write_text(m, encoding='utf-8')
+
+          # backend repair for already-created hidden bookings
+          seed_anchor = """    conn.execute_batch(
+                  r#\"
+                INSERT OR IGNORE INTO app_meta(key,value) VALUES('contact_whatsapp','01102233167');
+                INSERT OR IGNORE INTO app_meta(key,value) VALUES('contact_phone','01107072134');
+                INSERT OR IGNORE INTO app_meta(key,value) VALUES('operational_start_hour','11');
+              \"#,
+              )
+              .map_err(|e| e.to_string())?;
+          """
+
+          repair = seed_anchor + """
+
+              // V7.1.14: repair specialty bookings created after midnight that were
+              // stored under the operational-day date instead of the calendar date.
+              let booking_boundary = format!(\"{:02}:00\", get_operational_start_hour(&conn)?);
+              conn.execute(
+                  \"UPDATE visits
+                   SET visit_date=date(visit_date,'+1 day'),
+                       updated_at=datetime('now','localtime')
+                   WHERE status='منتظر'
+                     AND COALESCE(specialty,'')<>''
+                     AND COALESCE(visit_time,'')<>''
+                     AND visit_time < ?1
+                     AND date(created_at)=date(visit_date,'+1 day')
+                     AND created_at >= '2026-10-08 00:00:00'\",
+                  params![booking_boundary],
+              )
+              .map_err(|e| e.to_string())?;
+          """
+
+          if 'V7.1.14: repair specialty bookings' not in r:
+              if seed_anchor not in r:
+                  raise SystemExit('app_meta seed anchor not found')
+              r = r.replace(seed_anchor, repair, 1)
+
+          rust_p.write_text(r, encoding='utf-8')
+          print('V7.1.14 booking day fix applied')
+          PY
+
+      - name: Verify V7.1.14 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          m=Path('src/main.ts').read_text(encoding='utf-8')
+          r=Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')
+          t=json.loads(Path('src-tauri/tauri.conf.json').read_text(encoding='utf-8'))
+          checks={
+            'version': t.get('version')=='7.1.14',
+            'helper': 'function specialtyBookingStoredVisitDate(' in m,
+            'stored_date': 'visitDate:storedVisitDate' in m,
+            'keep_operational_day': 'specialtyBookingDay=operationalBookingDay' in m,
+            'repair': 'V7.1.14: repair specialty bookings' in r,
+            'repair_predicate': "date(created_at)=date(visit_date,'+1 day')" in r,
+            'marker': 'V7.1.14 • BOOKING DAY FIX' in m,
+          }
+          for k,v in checks.items(): print(k,'OK' if v else 'FAIL')
+          assert all(checks.values()),checks
+          print('V7.1.14 verification passed')
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows installer with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "NSIS build attempt $attempt/3"
+            if npx tauri build --bundles nsis; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep 20; fi
+          done
+          exit 1
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $i=Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" |
+            Where-Object { $_.Name -match "7\.1\.14" } |
+            Select-Object -First 1
+          if(-not $i){throw "V7.1.14 installer missing"}
+          if($i.Length -lt 80000000){throw "Installer too small"}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.14-Booking-Day-Fix
+          path: src-tauri/target/release/bundle/nsis/*7.1.14*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated V7.1.14
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src-tauri/src/lib.rs src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json package-lock.json
+          if git diff --cached --quiet; then echo "No changes"; else git commit -m "V7.1.14: fix specialty booking operational day"; fi
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
