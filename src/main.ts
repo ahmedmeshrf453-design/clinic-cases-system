@@ -519,6 +519,15 @@ function operationalStartLabel() {
   return `${String(appSettings.operationalStartHour).padStart(2, '0')}:00`;
 }
 
+function specialtyBookingStoredVisitDate(operationalDay:string, visitTime:string){
+  const raw=String(visitTime||'00:00');
+  const hour=Math.max(0,Math.min(23,Number(raw.split(':')[0])||0));
+  const start=Number.isFinite(appSettings.operationalStartHour)
+    ? Math.max(0,Math.min(23,appSettings.operationalStartHour))
+    : 11;
+  return hour < start ? addIsoDays(operationalDay,1) : operationalDay;
+}
+
 function timeNow() {
   const d = new Date();
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
@@ -3295,7 +3304,7 @@ async function renderDashboard(){
     </div>
 
     <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
-    <div class="v71-build-stamp">V7.1.13 • EASY SINGLE-COLUMN BOOKING</div>
+    <div class="v71-build-stamp">V7.1.14 • BOOKING DAY FIX</div>
   </section>`,'الرئيسية','التخصصات والخدمات');
 
   document.querySelectorAll<HTMLButtonElement>('[data-specialty-home]').forEach(b=>b.onclick=async()=>{doctorSpecialtyFilter=b.dataset.specialtyHome||'';await navigate('doctors')});
@@ -4922,6 +4931,10 @@ function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
         reused=result.existed;
       }
 
+      const operationalBookingDay=String(fd.get('visitDate')||bookingDate);
+      const bookingTime=String(fd.get('visitTime')||timeNow());
+      const storedVisitDate=specialtyBookingStoredVisitDate(operationalBookingDay,bookingTime);
+
       await invoke('add_visit',{input:{
         patientId,
         visitType:String(fd.get('visitType')||'كشف جديد'),
@@ -4931,12 +4944,12 @@ function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
         clinicAmount:String(fd.get('clinicAmount')||'').trim(),
         doctorAmount:String(fd.get('doctorAmount')||'').trim(),
         status:'منتظر',
-        visitDate:String(fd.get('visitDate')||bookingDate),
-        visitTime:String(fd.get('visitTime')||timeNow()),
+        visitDate:storedVisitDate,
+        visitTime:bookingTime,
         specialty:specialty.label
       }});
 
-      specialtyBookingDay=String(fd.get('visitDate')||bookingDate);
+      specialtyBookingDay=operationalBookingDay;
       close();
       toast(reused?'تم حفظ الحجز وربطه بملف المريض الموجود':'تم تسجيل المريض وحفظ الحجز');
       await renderSpecialtyBookings();

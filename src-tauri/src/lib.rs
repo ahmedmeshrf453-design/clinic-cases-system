@@ -1190,6 +1190,24 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
 
 
+    // V7.1.14: repair specialty bookings created after midnight that were
+    // stored under the operational-day date instead of the calendar date.
+    let booking_boundary = format!("{:02}:00", get_operational_start_hour(&conn)?);
+    conn.execute(
+        "UPDATE visits
+         SET visit_date=date(visit_date,'+1 day'),
+             updated_at=datetime('now','localtime')
+         WHERE status='منتظر'
+           AND COALESCE(specialty,'')<>''
+           AND COALESCE(visit_time,'')<>''
+           AND visit_time < ?1
+           AND date(created_at)=date(visit_date,'+1 day')
+           AND created_at >= '2026-10-08 00:00:00'",
+        params![booking_boundary],
+    )
+    .map_err(|e| e.to_string())?;
+
+
     // V7.0 core tables and audit trail.
     conn.execute_batch(r#"
       CREATE TABLE IF NOT EXISTS patient_attachments(
