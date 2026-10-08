@@ -4860,3 +4860,10 @@ table td{font-size:13px !important}
 .viral-report-table-wrap{border:1px solid #dce7ee;border-radius:13px;overflow:hidden}.viral-report-table-wrap .export-table{margin:0!important;font-size:10px!important}.viral-report-table-wrap .export-table th{padding:9px 6px!important;border-color:#163e5d!important;color:#fff!important;background:#123b5b!important;font-size:9px!important}.viral-report-table-wrap .export-table td{padding:8px 6px!important;border-color:#e6edf1!important;color:#314d64!important}.viral-report-table-wrap .export-table tbody tr:nth-child(even) td{background:#f8fbfd!important}
 .viral-report-footer{display:grid;grid-template-columns:auto auto 1fr;gap:14px;align-items:center;margin-top:25px;padding:14px 16px;border-radius:15px;color:#fff;background:linear-gradient(100deg,#0a2342,#164e67)}.viral-report-contact span,.viral-report-contact strong{display:block}.viral-report-contact span{font-size:8px;opacity:.68}.viral-report-contact strong{margin-top:2px;font-size:11px}.viral-report-address{text-align:left;font-size:9px;line-height:1.5;opacity:.86}
 .export-capture-host .viral-report-document *{box-sizing:border-box}
+
+
+/* ===== V7.1.16 CLICK BOOKING PATIENT ===== */
+.specialty-booking-patient-row{cursor:pointer!important;transition:background .14s ease,box-shadow .14s ease!important}
+.specialty-booking-patient-row:hover{background:#f3f9fd!important;box-shadow:inset 3px 0 0 #3d91bf!important}
+.specialty-booking-patient-row:focus{outline:2px solid #76b7d8!important;outline-offset:-2px!important}
+.specialty-booking-patient-row .booking-patient-link{cursor:pointer!important;font-weight:800!important}

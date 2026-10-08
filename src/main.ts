@@ -3359,7 +3359,7 @@ async function renderDashboard(){
     </div>
 
     <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
-    <div class="v71-build-stamp">V7.1.16 • VIRAL REPORT PRINT</div>
+    <div class="v71-build-stamp">V7.1.16 • CLICK BOOKING PATIENT</div>
   </section>`,'الرئيسية','التخصصات والخدمات');
 
   document.querySelectorAll<HTMLButtonElement>('[data-specialty-home]').forEach(b=>b.onclick=async()=>{doctorSpecialtyFilter=b.dataset.specialtyHome||'';await navigate('doctors')});
@@ -4785,7 +4785,7 @@ function specialtyBookingRowsHtml(rows: Visit[], patientMap: Map<string, Patient
       const p=patientMap.get(v.patientId);
       const visitType=v.visitType==='كشف جديد'?'كشف':(v.visitType||'—');
       const fee=String(v.fee||'').trim();
-      return `<tr data-booking-search="${esc(`${v.patientName||''} ${v.patientPhone||''} ${v.doctor||''} ${visitType}`.toLowerCase())}">
+      return `<tr class="specialty-booking-patient-row" data-booking-patient-row="${esc(v.patientId)}" data-booking-search="${esc(`${v.patientName||''} ${v.patientPhone||''} ${v.doctor||''} ${visitType}`.toLowerCase())}" role="button" tabindex="0" title="فتح ملف المريض">
         <td><span class="booking-turn">${index+1}</span></td>
         <td class="ltr">${esc(v.visitTime||'—')}</td>
         <td><button type="button" class="booking-patient-link" data-booking-patient="${esc(v.patientId)}">${esc(v.patientName||'—')}</button></td>
@@ -4870,7 +4870,24 @@ async function renderSpecialtyBookings(): Promise<void> {
   };
 
   document.querySelectorAll<HTMLButtonElement>('[data-booking-patient]').forEach(btn=>{
-    btn.onclick=()=>openPatient(btn.dataset.bookingPatient||'');
+    btn.onclick=e=>{
+      e.stopPropagation();
+      openPatient(btn.dataset.bookingPatient||'');
+    };
+  });
+
+  document.querySelectorAll<HTMLElement>('[data-booking-patient-row]').forEach(row=>{
+    const open=()=>openPatient(row.dataset.bookingPatientRow||'');
+    row.onclick=e=>{
+      if((e.target as HTMLElement).closest('button,select,input,a')) return;
+      open();
+    };
+    row.onkeydown=e=>{
+      if(e.key==='Enter' || e.key===' '){
+        e.preventDefault();
+        open();
+      }
+    };
   });
 
   document.querySelectorAll<HTMLSelectElement>('[data-booking-status]').forEach(select=>{
