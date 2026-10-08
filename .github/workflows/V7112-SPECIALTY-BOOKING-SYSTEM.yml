@@ -1,0 +1,551 @@
+name: Clinic Cases V7.1.12 Specialty Booking System
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply V7.1.12 booking system
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          main_p = Path('src/main.ts')
+          css_p = Path('src/style.css')
+          rust_p = Path('src-tauri/src/lib.rs')
+          tauri_p = Path('src-tauri/tauri.conf.json')
+          cargo_p = Path('src-tauri/Cargo.toml')
+          lock_p = Path('src-tauri/Cargo.lock')
+          pkg_p = Path('package.json')
+          pkglock_p = Path('package-lock.json')
+
+          m = main_p.read_text(encoding='utf-8')
+          c = css_p.read_text(encoding='utf-8')
+          r = rust_p.read_text(encoding='utf-8')
+
+          # ---- Version 7.1.12 ----
+          tauri = json.loads(tauri_p.read_text(encoding='utf-8'))
+          tauri['version'] = '7.1.12'
+          tauri_p.write_text(json.dumps(tauri, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          pkg = json.loads(pkg_p.read_text(encoding='utf-8'))
+          pkg['version'] = '7.1.12'
+          pkg_p.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          pl = pkglock_p.read_text(encoding='utf-8')
+          pl = re.sub(r'("version"\s*:\s*")7\.1\.\d+(")', r'\g<1>7.1.12\2', pl, count=2)
+          pkglock_p.write_text(pl, encoding='utf-8')
+
+          cg = cargo_p.read_text(encoding='utf-8')
+          cg = re.sub(r'(?m)^version\s*=\s*"7\.1\.\d+"\s*$', 'version = "7.1.12"', cg, count=1)
+          cargo_p.write_text(cg, encoding='utf-8')
+
+          cl = lock_p.read_text(encoding='utf-8')
+          cl = re.sub(
+              r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.\d+(")',
+              r'\g<1>7.1.12\2',
+              cl,
+              count=1
+          )
+          lock_p.write_text(cl, encoding='utf-8')
+
+          # ---- Backend: allow specialty bookings even if there is no doctor configured ----
+          old_struct = '''struct AddVisitInput {
+              patient_id: String,
+              visit_type: String,
+              booking_source: String,
+              doctor: String,
+              fee: String,
+              clinic_amount: String,
+              doctor_amount: String,
+              status: String,
+              visit_date: String,
+              visit_time: String,
+          }'''
+          new_struct = '''struct AddVisitInput {
+              patient_id: String,
+              visit_type: String,
+              booking_source: String,
+              doctor: String,
+              fee: String,
+              clinic_amount: String,
+              doctor_amount: String,
+              status: String,
+              visit_date: String,
+              visit_time: String,
+              specialty: Option<String>,
+          }'''
+          if old_struct not in r:
+              raise SystemExit('AddVisitInput shape not found')
+          r = r.replace(old_struct, new_struct, 1)
+
+          old_specialty = '''let specialty: String = if input.doctor.trim().is_empty() {
+                  String::new()
+              } else {
+                  tx.query_row(
+                      "SELECT specialty FROM doctors WHERE name=?1 LIMIT 1",
+                      params![input.doctor.trim()],
+                      |row| row.get(0),
+                  )
+                  .optional()
+                  .map_err(|e| e.to_string())?
+                  .unwrap_or_default()
+              };'''
+          new_specialty = '''let specialty_override = input.specialty.as_deref().unwrap_or("").trim();
+              let specialty: String = if !specialty_override.is_empty() {
+                  if specialty_override.len() > 160 {
+                      return Err("اسم التخصص أطول من المسموح".into());
+                  }
+                  specialty_override.to_string()
+              } else if input.doctor.trim().is_empty() {
+                  String::new()
+              } else {
+                  tx.query_row(
+                      "SELECT specialty FROM doctors WHERE name=?1 LIMIT 1",
+                      params![input.doctor.trim()],
+                      |row| row.get(0),
+                  )
+                  .optional()
+                  .map_err(|e| e.to_string())?
+                  .unwrap_or_default()
+              };'''
+          if old_specialty not in r:
+              raise SystemExit('add_visit specialty block not found')
+          r = r.replace(old_specialty, new_specialty, 1)
+
+          r = r.replace(
+              'let allowed_status = ["لم يحدد", "حضر", "لم يحضر", "ملغي", "مؤجل"];',
+              'let allowed_status = ["لم يحدد", "منتظر", "حضر", "تم الكشف", "لم يحضر", "ملغي", "مؤجل"];',
+              1
+          )
+          r = r.replace(
+              'let allowed = ["لم يحدد", "حضر", "لم يحضر", "ملغي", "مؤجل"];',
+              'let allowed = ["لم يحدد", "منتظر", "حضر", "تم الكشف", "لم يحضر", "ملغي", "مؤجل"];',
+              1
+          )
+          rust_p.write_text(r, encoding='utf-8')
+
+          # ---- Frontend state/navigation ----
+          if "let specialtyBookingDay = '';" not in m:
+              m = m.replace("let doctorSpecialtyFilter = '';", "let doctorSpecialtyFilter = '';\nlet specialtyBookingDay = '';", 1)
+
+          old_nav = """async function navigate(next: Screen, remember = true) {
+            if (screen === 'lab2lab' && next !== 'lab2lab') lab2labSessionPin = '';"""
+          new_nav = """async function navigate(next: Screen, remember = true) {
+            if (screen === 'lab2lab' && next !== 'lab2lab') lab2labSessionPin = '';
+            if (screen === 'doctors' && next !== 'doctors') {
+              doctorSpecialtyFilter = '';
+              specialtyBookingDay = '';
+            }"""
+          if old_nav not in m:
+              raise SystemExit('navigate function anchor not found')
+          m = m.replace(old_nav, new_nav, 1)
+
+          helper = r'''
+          function specialtyBookingStatusLabel(status: string) {
+            const value = String(status || '').trim();
+            return !value || value === 'لم يحدد' ? 'منتظر' : value;
+          }
+
+          function specialtyBookingStatusClass(status: string) {
+            const value = specialtyBookingStatusLabel(status);
+            if (value === 'حضر') return 'arrived';
+            if (value === 'تم الكشف') return 'done';
+            if (value === 'لم يحضر') return 'absent';
+            if (value === 'ملغي') return 'cancelled';
+            if (value === 'مؤجل') return 'delayed';
+            return 'waiting';
+          }
+
+          function specialtyBookingRowsHtml(rows: Visit[], patientMap: Map<string, Patient>) {
+            return `<div class="specialty-booking-table-wrap"><table class="specialty-booking-table">
+              <thead><tr>
+                <th>الدور</th><th>الوقت</th><th>اسم الحالة</th><th>السن</th><th>الموبايل</th>
+                <th>النوع</th><th>الطبيب</th><th>الحالة</th><th>إجراءات</th>
+              </tr></thead>
+              <tbody>${rows.length ? rows.map((v,index)=>{
+                const p=patientMap.get(v.patientId);
+                const status=specialtyBookingStatusLabel(v.status);
+                return `<tr data-booking-search="${esc(`${v.patientName||''} ${v.patientPhone||''} ${v.doctor||''}`.toLowerCase())}">
+                  <td><span class="booking-turn">${index+1}</span></td>
+                  <td class="ltr">${esc(v.visitTime||'—')}</td>
+                  <td><button type="button" class="booking-patient-link" data-booking-patient="${esc(v.patientId)}">${esc(v.patientName||'—')}</button></td>
+                  <td>${p?.age ?? '—'}</td>
+                  <td class="ltr">${esc(v.patientPhone||'—')}</td>
+                  <td><span class="visit-type-badge">${esc(v.visitType==='كشف جديد'?'كشف':(v.visitType||'—'))}</span></td>
+                  <td>${esc(v.doctor||'بدون طبيب')}</td>
+                  <td>
+                    <select class="booking-status-select ${specialtyBookingStatusClass(v.status)}" data-booking-status="${esc(v.id)}">
+                      <option value="منتظر" ${status==='منتظر'?'selected':''}>منتظر</option>
+                      <option value="حضر" ${status==='حضر'?'selected':''}>حضر</option>
+                      <option value="تم الكشف" ${status==='تم الكشف'?'selected':''}>تم الكشف</option>
+                      <option value="لم يحضر" ${status==='لم يحضر'?'selected':''}>لم يحضر</option>
+                      <option value="مؤجل" ${status==='مؤجل'?'selected':''}>مؤجل</option>
+                      <option value="ملغي" ${status==='ملغي'?'selected':''}>ملغي</option>
+                    </select>
+                  </td>
+                  <td><div class="visit-row-actions">
+                    <button class="icon-action edit" type="button" data-edit-visit="${esc(v.id)}" title="تعديل">✎</button>
+                    <button class="icon-action danger" type="button" data-delete-visit="${esc(v.id)}" title="حذف">🗑</button>
+                  </div></td>
+                </tr>`;
+              }).join('') : '<tr><td colspan="9" class="empty-row">لا توجد حجوزات في هذا اليوم</td></tr>'}
+              </tbody>
+            </table></div>`;
+          }
+
+          async function renderSpecialtyBookings() {
+            const specialty=specialtyMeta(doctorSpecialtyFilter);
+            if(!specialty){
+              doctorSpecialtyFilter='';
+              return renderDoctors();
+            }
+
+            const dateKey=specialtyBookingDay || businessDay();
+            specialtyBookingDay=dateKey;
+            const [report,patients]=await Promise.all([
+              invoke<ReportResult>('run_report',{query:{from:dateKey,to:dateKey,doctor:''}}),
+              invoke<Patient[]>('list_patients',{query:{search:'',archivedOnly:false,limit:5000}})
+            ]);
+            const patientMap=new Map(patients.map(p=>[p.id,p]));
+            const rows=report.rows
+              .filter(v=>specialtyMatches(doctorSpecialtyFilter,`${v.specialty||''} ${doctors.find(d=>d.name===v.doctor)?.specialty||''}`))
+              .sort((a,b)=>(a.visitTime||'99:99').localeCompare(b.visitTime||'99:99'));
+
+            const waiting=rows.filter(v=>specialtyBookingStatusLabel(v.status)==='منتظر').length;
+            const arrived=rows.filter(v=>specialtyBookingStatusLabel(v.status)==='حضر').length;
+            const done=rows.filter(v=>specialtyBookingStatusLabel(v.status)==='تم الكشف').length;
+            const absent=rows.filter(v=>specialtyBookingStatusLabel(v.status)==='لم يحضر').length;
+
+            shell(`<section class="specialty-bookings-page">
+              <div class="specialty-bookings-head">
+                <div>
+                  <span class="specialty-bookings-kicker">حجوزات التخصص</span>
+                  <h2>${esc(specialty.label)}</h2>
+                  <p>تسجيل ومتابعة حجوزات المرضى داخل التخصص مباشرة</p>
+                </div>
+                <div class="specialty-bookings-head-actions">
+                  <label>اليوم<input id="specialtyBookingDate" type="date" value="${esc(dateKey)}"></label>
+                  <button class="btn ghost" id="backSpecialtyHome">← التخصصات</button>
+                  <button class="btn primary" id="newSpecialtyBooking">＋ حجز جديد</button>
+                </div>
+              </div>
+
+              <div class="specialty-booking-metrics">
+                <div><span>إجمالي الحجوزات</span><strong>${rows.length}</strong></div>
+                <div class="waiting"><span>منتظر</span><strong>${waiting}</strong></div>
+                <div class="arrived"><span>حضر</span><strong>${arrived}</strong></div>
+                <div class="done"><span>تم الكشف</span><strong>${done}</strong></div>
+                <div class="absent"><span>لم يحضر</span><strong>${absent}</strong></div>
+              </div>
+
+              <div class="specialty-bookings-toolbar">
+                <input id="specialtyBookingSearch" class="search-input" placeholder="بحث بالاسم أو رقم الموبايل أو الطبيب...">
+                <span>${displayDate(dateKey)}</span>
+              </div>
+              <div id="specialtyBookingRows">${specialtyBookingRowsHtml(rows,patientMap)}</div>
+            </section>`, specialty.label, `حجوزات ${specialty.label}`);
+
+            document.querySelector<HTMLButtonElement>('#newSpecialtyBooking')!.onclick=()=>openSpecialtyBookingModal(doctorSpecialtyFilter,dateKey);
+            document.querySelector<HTMLButtonElement>('#backSpecialtyHome')!.onclick=async()=>{
+              doctorSpecialtyFilter=''; specialtyBookingDay=''; await navigate('dashboard');
+            };
+            document.querySelector<HTMLInputElement>('#specialtyBookingDate')!.onchange=async e=>{
+              specialtyBookingDay=(e.currentTarget as HTMLInputElement).value||businessDay();
+              await renderSpecialtyBookings();
+            };
+
+            const search=document.querySelector<HTMLInputElement>('#specialtyBookingSearch')!;
+            search.oninput=()=>{
+              const q=search.value.trim().toLowerCase();
+              document.querySelectorAll<HTMLElement>('#specialtyBookingRows tbody tr[data-booking-search]').forEach(row=>{
+                row.style.display=!q || (row.dataset.bookingSearch||'').includes(q) ? '' : 'none';
+              });
+            };
+
+            document.querySelectorAll<HTMLButtonElement>('[data-booking-patient]').forEach(btn=>{
+              btn.onclick=()=>openPatient(btn.dataset.bookingPatient||'');
+            });
+
+            document.querySelectorAll<HTMLSelectElement>('[data-booking-status]').forEach(select=>{
+              select.onchange=async()=>{
+                try{
+                  await invoke('set_visit_status',{input:{id:select.dataset.bookingStatus||'',status:select.value}});
+                  toast('تم تحديث حالة الحجز');
+                  await renderSpecialtyBookings();
+                }catch(err){toast(`تعذر تحديث الحالة: ${String(err)}`,'error')}
+              };
+            });
+          }
+
+          function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
+            const specialty=specialtyMeta(specialtyKey);
+            if(!specialty)return;
+            const specialtyDoctors=doctors.filter(d=>d.active&&specialtyMatches(specialtyKey,d.specialty));
+            const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
+            const doctorOptionsHtml=specialtyDoctors.length
+              ? `<option value="">— اختر الطبيب —</option>${specialtyDoctors.map(d=>`<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}`
+              : '<option value="">بدون طبيب محدد</option>';
+
+            root.innerHTML=`<div class="modal-backdrop" id="specialtyBookingBackdrop"><section class="modal form-modal specialty-booking-modal">
+              <div class="modal-head"><div><h2>حجز جديد — ${esc(specialty.label)}</h2><p>بيانات الحالة والحجز</p></div><button class="modal-close" id="closeSpecialtyBooking">×</button></div>
+              <form id="specialtyBookingForm">
+                <div class="section-title">بيانات الحالة</div>
+                <div class="specialty-booking-form-grid patient-data">
+                  <label class="name">الاسم بالكامل<input name="fullName" required autocomplete="off"></label>
+                  <label>السن<input name="age" type="number" min="0" max="130" required></label>
+                  <label>رقم الموبايل<input name="phone" class="ltr" inputmode="tel" required autocomplete="off"></label>
+                  <label>نوع الزيارة<select name="visitType" id="specialtyBookingType"><option value="كشف جديد">كشف</option><option value="استشارة">استشارة</option></select></label>
+                </div>
+                <div id="specialtyDuplicateAlert" class="specialty-duplicate-alert" hidden></div>
+
+                <div class="section-title">بيانات الحجز</div>
+                <div class="specialty-booking-form-grid booking-data">
+                  <label>الطبيب<select name="doctor" ${specialtyDoctors.length?'required':''}>${doctorOptionsHtml}</select></label>
+                  <label>مصدر الحجز<select name="bookingSource">${bookingSourceOptions('عادي')}</select></label>
+                  <label>التاريخ<input name="visitDate" type="date" value="${esc(bookingDate)}" required></label>
+                  <label>الوقت<input name="visitTime" type="time" value="${timeNow()}" required></label>
+                  <label>سعر الكشف<input name="fee" class="ltr" type="number" min="0" step="0.01" placeholder="اختياري"></label>
+                  <label>مبلغ العيادات<input name="clinicAmount" class="ltr" type="number" min="0" step="0.01" placeholder="اختياري"></label>
+                  <label>مبلغ الطبيب<input name="doctorAmount" class="ltr" type="number" min="0" step="0.01" placeholder="اختياري"></label>
+                </div>
+                <div class="form-actions"><button type="button" class="btn ghost" id="cancelSpecialtyBooking">إلغاء</button><button class="btn primary">✓ حفظ الحجز</button></div>
+              </form>
+            </section></div>`;
+
+            const form=document.querySelector<HTMLFormElement>('#specialtyBookingForm')!;
+            const phoneInput=form.querySelector<HTMLInputElement>('input[name="phone"]')!;
+            const typeInput=form.querySelector<HTMLSelectElement>('select[name="visitType"]')!;
+            const alertHost=document.querySelector<HTMLDivElement>('#specialtyDuplicateAlert')!;
+            let existingPatient:Patient|null=null;
+            let timer:number|undefined;
+
+            const close=()=>root.innerHTML='';
+            document.querySelector<HTMLButtonElement>('#closeSpecialtyBooking')!.onclick=close;
+            document.querySelector<HTMLButtonElement>('#cancelSpecialtyBooking')!.onclick=close;
+            document.querySelector<HTMLDivElement>('#specialtyBookingBackdrop')!.onclick=e=>{if(e.target===e.currentTarget)close()};
+
+            const checkDuplicate=async()=>{
+              const phone=phoneInput.value.trim();
+              existingPatient=null;
+              if(phone.length<7){alertHost.hidden=true;alertHost.innerHTML='';return}
+              try{
+                const matches=await invoke<Patient[]>('list_patients',{query:{search:phone,archivedOnly:false,limit:20}});
+                existingPatient=matches.find(p=>p.phone.trim()===phone)||null;
+                if(!existingPatient){alertHost.hidden=true;alertHost.innerHTML='';return}
+                const isNew=typeInput.value==='كشف جديد';
+                alertHost.hidden=false;
+                alertHost.className=`specialty-duplicate-alert ${isNew?'warning':'found'}`;
+                alertHost.innerHTML=`<strong>${isNew?'⚠ المريض مسجل من قبل':'✓ تم العثور على ملف المريض'}</strong>
+                  <span>${esc(existingPatient.fullName)} • <span class="ltr">${esc(existingPatient.phone)}</span></span>
+                  <small>${existingPatient.lastVisitDate?`آخر زيارة: ${esc(displayDate(existingPatient.lastVisitDate))}`:'لا توجد زيارة سابقة'} — سيتم ربط الحجز بنفس الملف ولن يتم إنشاء ملف مكرر.</small>`;
+              }catch{alertHost.hidden=true}
+            };
+            phoneInput.oninput=()=>{window.clearTimeout(timer);timer=window.setTimeout(checkDuplicate,120)};
+            typeInput.onchange=checkDuplicate;
+
+            form.onsubmit=async e=>{
+              e.preventDefault();
+              const fd=new FormData(form);
+              const phone=String(fd.get('phone')||'').trim();
+              const rawAge=String(fd.get('age')||'').trim();
+              try{
+                if(phone.length<7)throw new Error('رقم الموبايل غير صالح');
+                let patientId='';
+                let reused=false;
+                if(existingPatient && existingPatient.phone.trim()===phone){
+                  patientId=existingPatient.id;
+                  reused=true;
+                }else{
+                  const result=await invoke<{id:string,existed:boolean}>('register_patient',{input:{
+                    fullName:String(fd.get('fullName')||'').trim(),
+                    phone,
+                    age:rawAge?Number(rawAge):null,
+                    gender:'',
+                    address:''
+                  }});
+                  patientId=result.id;
+                  reused=result.existed;
+                }
+
+                await invoke('add_visit',{input:{
+                  patientId,
+                  visitType:String(fd.get('visitType')||'كشف جديد'),
+                  bookingSource:String(fd.get('bookingSource')||'عادي'),
+                  doctor:String(fd.get('doctor')||'').trim(),
+                  fee:String(fd.get('fee')||'').trim(),
+                  clinicAmount:String(fd.get('clinicAmount')||'').trim(),
+                  doctorAmount:String(fd.get('doctorAmount')||'').trim(),
+                  status:'منتظر',
+                  visitDate:String(fd.get('visitDate')||bookingDate),
+                  visitTime:String(fd.get('visitTime')||timeNow()),
+                  specialty:specialty.label
+                }});
+
+                specialtyBookingDay=String(fd.get('visitDate')||bookingDate);
+                close();
+                toast(reused?'تم حفظ الحجز وربطه بملف المريض الموجود':'تم تسجيل المريض وحفظ الحجز');
+                await renderSpecialtyBookings();
+              }catch(err){toast(`تعذر حفظ الحجز: ${String(err)}`,'error')}
+            };
+          }
+          '''.strip()
+
+          anchor = 'async function renderDoctors() {'
+          if 'async function renderSpecialtyBookings()' not in m:
+              if anchor not in m:
+                  raise SystemExit('renderDoctors anchor missing')
+              m = m.replace(anchor, helper + '\n\n' + anchor, 1)
+
+          old_doctors_start = """async function renderDoctors() {
+            const dayKey = businessDay();"""
+          new_doctors_start = """async function renderDoctors() {
+            if (doctorSpecialtyFilter) return renderSpecialtyBookings();
+            const dayKey = businessDay();"""
+          if old_doctors_start not in m:
+              raise SystemExit('renderDoctors start shape missing')
+          m = m.replace(old_doctors_start, new_doctors_start, 1)
+
+          m = re.sub(r'V7\.1\.\d+ • [^<]+', 'V7.1.12 • SPECIALTY BOOKING SYSTEM', m, count=1)
+          main_p.write_text(m, encoding='utf-8')
+
+          # ---- Styles ----
+          if 'V7.1.12 SPECIALTY BOOKING SYSTEM' not in c:
+              c += r'''
+
+          /* ===== V7.1.12 SPECIALTY BOOKING SYSTEM ===== */
+          .specialty-bookings-page{display:grid;gap:14px}
+          .specialty-bookings-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;background:#fff;border:1px solid #dbe7ef;border-radius:20px;padding:18px 20px;box-shadow:0 8px 22px rgba(20,50,74,.05)}
+          .specialty-bookings-kicker{display:block;font-size:12px;color:#7890a1;margin-bottom:4px}
+          .specialty-bookings-head h2{margin:0;color:#123b5c;font-size:27px}
+          .specialty-bookings-head p{margin:4px 0 0;color:#8294a1}
+          .specialty-bookings-head-actions{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap}
+          .specialty-bookings-head-actions label{display:grid;gap:4px;font-size:11px;color:#6f8494}
+          .specialty-bookings-head-actions input{height:38px;border:1px solid #d4e1ea;border-radius:10px;padding:0 9px;background:#fff;color:#173a57}
+          .specialty-booking-metrics{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:10px}
+          .specialty-booking-metrics>div{background:#fff;border:1px solid #dce7ef;border-radius:15px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 5px 14px rgba(20,50,74,.035)}
+          .specialty-booking-metrics span{font-size:12px;color:#758b9b}.specialty-booking-metrics strong{font-size:22px;color:#143c5c}
+          .specialty-booking-metrics .waiting strong{color:#bd7a00}.specialty-booking-metrics .arrived strong{color:#087b5a}.specialty-booking-metrics .done strong{color:#1765aa}.specialty-booking-metrics .absent strong{color:#aa3440}
+          .specialty-bookings-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}.specialty-bookings-toolbar .search-input{max-width:430px}.specialty-bookings-toolbar>span{font-size:12px;color:#7b8f9e}
+          .specialty-booking-table-wrap{overflow:auto;background:#fff;border:1px solid #dce7ef;border-radius:17px;box-shadow:0 7px 18px rgba(20,50,74,.04)}
+          .specialty-booking-table{width:100%;border-collapse:collapse;min-width:980px}.specialty-booking-table th{background:#f4f8fb;color:#5f7789;font-size:11px;padding:10px 8px;border-bottom:1px solid #dfe8ee}.specialty-booking-table td{padding:9px 8px;border-bottom:1px solid #edf2f5;text-align:center;font-size:12px;color:#173650}.specialty-booking-table tbody tr:last-child td{border-bottom:0}
+          .booking-turn{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:9px;background:#eef6fa;color:#173f5e;font-weight:800}.booking-patient-link{border:0;background:transparent;color:#0d5f97;font-weight:800;cursor:pointer}.booking-patient-link:hover{text-decoration:underline}
+          .booking-status-select{min-width:96px;height:32px;border-radius:9px;border:1px solid #d3e1e9;padding:0 7px;font-weight:700;background:#fff}.booking-status-select.waiting{color:#9b6800;background:#fff9e8}.booking-status-select.arrived{color:#087b5a;background:#edf9f5}.booking-status-select.done{color:#145f9d;background:#edf6ff}.booking-status-select.absent,.booking-status-select.cancelled{color:#9f3340;background:#fff0f2}.booking-status-select.delayed{color:#7b5d00;background:#fff8df}
+          .specialty-booking-modal{max-width:840px!important}.specialty-booking-form-grid{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:10px;margin-bottom:14px}.specialty-booking-form-grid .name{grid-column:span 2}.specialty-booking-form-grid label{display:grid;gap:5px;font-size:12px;color:#536f82}.specialty-booking-form-grid input,.specialty-booking-form-grid select{height:40px;border:1px solid #d4e1e9;border-radius:10px;padding:0 10px;background:#fff}.specialty-duplicate-alert{display:grid;gap:3px;padding:10px 12px;border-radius:12px;margin:-3px 0 14px;border:1px solid #cfe5ee;background:#f3fbfe}.specialty-duplicate-alert.warning{border-color:#f1d792;background:#fff9e8}.specialty-duplicate-alert.warning strong{color:#9a6800}.specialty-duplicate-alert.found strong{color:#087b5a}.specialty-duplicate-alert span{font-weight:700;color:#173650}.specialty-duplicate-alert small{color:#718695}
+          @media(max-width:1000px){.specialty-bookings-head{align-items:stretch;flex-direction:column}.specialty-booking-metrics{grid-template-columns:repeat(3,1fr)}.specialty-booking-form-grid{grid-template-columns:repeat(2,1fr)}}
+          '''
+          css_p.write_text(c, encoding='utf-8')
+
+          print('V7.1.12 specialty booking system applied')
+          PY
+
+      - name: Verify V7.1.12 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          m=Path("src/main.ts").read_text(encoding="utf-8")
+          c=Path("src/style.css").read_text(encoding="utf-8")
+          r=Path("src-tauri/src/lib.rs").read_text(encoding="utf-8")
+          t=json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+
+          checks={
+            "version": t.get("version")=="7.1.12",
+            "booking_screen": "async function renderSpecialtyBookings()" in m,
+            "booking_modal": "function openSpecialtyBookingModal" in m,
+            "duplicate_alert": "المريض مسجل من قبل" in m,
+            "booking_status": "status:'منتظر'" in m,
+            "specialty_override_frontend": "specialty:specialty.label" in m,
+            "specialty_override_backend": "specialty: Option<String>" in r and "specialty_override" in r,
+            "status_backend": '"منتظر"' in r and '"تم الكشف"' in r,
+            "styles": "V7.1.12 SPECIALTY BOOKING SYSTEM" in c,
+          }
+          for k,v in checks.items():
+              print(k, "OK" if v else "FAIL")
+          assert all(checks.values()), checks
+          print("V7.1.12 source verification passed")
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows installer with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "NSIS build attempt $attempt/3"
+            if npx tauri build --bundles nsis; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Transient bundler/download failure. Retrying in 20 seconds..."
+              sleep 20
+            fi
+          done
+          exit 1
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $i = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" |
+            Where-Object { $_.Name -match "7\.1\.12" } |
+            Select-Object -First 1
+          if(-not $i){ throw "V7.1.12 installer missing" }
+          if($i.Length -lt 80000000){ throw "Installer too small" }
+          Write-Host "Verified $($i.Name) $($i.Length)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.12-Specialty-Booking-System
+          path: src-tauri/target/release/bundle/nsis/*7.1.12*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated V7.1.12
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src/style.css src-tauri/src/lib.rs src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "V7.1.12: specialty booking system"
+          fi
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
