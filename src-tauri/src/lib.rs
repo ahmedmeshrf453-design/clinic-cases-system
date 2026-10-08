@@ -135,6 +135,7 @@ struct AddVisitInput {
     status: String,
     visit_date: String,
     visit_time: String,
+    specialty: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -807,7 +808,7 @@ fn validate_visit_fields(
     visit_date: &str,
     visit_time: &str,
 ) -> Result<(), String> {
-    let allowed_status = ["لم يحدد", "حضر", "لم يحضر", "ملغي", "مؤجل"];
+    let allowed_status = ["لم يحدد", "منتظر", "حضر", "تم الكشف", "لم يحضر", "ملغي", "مؤجل"];
     if !allowed_status.contains(&status.trim()) {
         return Err("حالة الزيارة غير صالحة".into());
     }
@@ -1493,7 +1494,13 @@ fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, Str
         return Err("ملف المريض غير موجود".into());
     }
 
-    let specialty: String = if input.doctor.trim().is_empty() {
+    let specialty_override = input.specialty.as_deref().unwrap_or("").trim();
+    let specialty: String = if !specialty_override.is_empty() {
+        if specialty_override.len() > 160 {
+            return Err("اسم التخصص أطول من المسموح".into());
+        }
+        specialty_override.to_string()
+    } else if input.doctor.trim().is_empty() {
         String::new()
     } else {
         tx.query_row(
@@ -1647,7 +1654,7 @@ fn delete_visit(state: State<AppState>, id: String) -> Result<(), String> {
 
 #[tauri::command]
 fn set_visit_status(state: State<AppState>, input: VisitStatusInput) -> Result<(), String> {
-    let allowed = ["لم يحدد", "حضر", "لم يحضر", "ملغي", "مؤجل"];
+    let allowed = ["لم يحدد", "منتظر", "حضر", "تم الكشف", "لم يحضر", "ملغي", "مؤجل"];
     if !allowed.contains(&input.status.trim()) {
         return Err("حالة الزيارة غير صالحة".into());
     }

@@ -487,6 +487,7 @@ let v7SecurityStatus:SecurityStatus={pinSet:false,autoLockMinutes:10,recoverySet
 let v7LastActivityAt=Date.now();
 let v7SecurityTimer:number|undefined;
 let doctorSpecialtyFilter = '';
+let specialtyBookingDay = '';
 
 function esc(v: unknown) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({
@@ -2185,6 +2186,10 @@ function toast(message: string, type: 'ok'|'error'='ok') {
 
 async function navigate(next: Screen, remember = true) {
   if (screen === 'lab2lab' && next !== 'lab2lab') lab2labSessionPin = '';
+  if (screen === 'doctors' && next !== 'doctors') {
+    doctorSpecialtyFilter = '';
+    specialtyBookingDay = '';
+  }
   if (next === screen) {
     await renderScreen();
     return;
@@ -3290,7 +3295,7 @@ async function renderDashboard(){
     </div>
 
     <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
-    <div class="v71-build-stamp">V7.1.11 • COMPACT IMAGE CARDS FIX</div>
+    <div class="v71-build-stamp">V7.1.12 • SPECIALTY BOOKING SYSTEM</div>
   </section>`,'الرئيسية','التخصصات والخدمات');
 
   document.querySelectorAll<HTMLButtonElement>('[data-specialty-home]').forEach(b=>b.onclick=async()=>{doctorSpecialtyFilter=b.dataset.specialtyHome||'';await navigate('doctors')});
@@ -4691,7 +4696,256 @@ async function renderLab2Lab() {
   setTimeout(() => searchInput.focus(), 0);
 }
 
-async function renderDoctors() {
+function specialtyBookingStatusLabel(status: string) {
+  const value = String(status || '').trim();
+  return !value || value === 'لم يحدد' ? 'منتظر' : value;
+}
+
+function specialtyBookingStatusClass(status: string) {
+  const value = specialtyBookingStatusLabel(status);
+  if (value === 'حضر') return 'arrived';
+  if (value === 'تم الكشف') return 'done';
+  if (value === 'لم يحضر') return 'absent';
+  if (value === 'ملغي') return 'cancelled';
+  if (value === 'مؤجل') return 'delayed';
+  return 'waiting';
+}
+
+function specialtyBookingRowsHtml(rows: Visit[], patientMap: Map<string, Patient>) {
+  return `<div class="specialty-booking-table-wrap"><table class="specialty-booking-table">
+    <thead><tr>
+      <th>الدور</th><th>الوقت</th><th>اسم الحالة</th><th>السن</th><th>الموبايل</th>
+      <th>النوع</th><th>الطبيب</th><th>الحالة</th><th>إجراءات</th>
+    </tr></thead>
+    <tbody>${rows.length ? rows.map((v,index)=>{
+      const p=patientMap.get(v.patientId);
+      const status=specialtyBookingStatusLabel(v.status);
+      return `<tr data-booking-search="${esc(`${v.patientName||''} ${v.patientPhone||''} ${v.doctor||''}`.toLowerCase())}">
+        <td><span class="booking-turn">${index+1}</span></td>
+        <td class="ltr">${esc(v.visitTime||'—')}</td>
+        <td><button type="button" class="booking-patient-link" data-booking-patient="${esc(v.patientId)}">${esc(v.patientName||'—')}</button></td>
+        <td>${p?.age ?? '—'}</td>
+        <td class="ltr">${esc(v.patientPhone||'—')}</td>
+        <td><span class="visit-type-badge">${esc(v.visitType==='كشف جديد'?'كشف':(v.visitType||'—'))}</span></td>
+        <td>${esc(v.doctor||'بدون طبيب')}</td>
+        <td>
+          <select class="booking-status-select ${specialtyBookingStatusClass(v.status)}" data-booking-status="${esc(v.id)}">
+            <option value="منتظر" ${status==='منتظر'?'selected':''}>منتظر</option>
+            <option value="حضر" ${status==='حضر'?'selected':''}>حضر</option>
+            <option value="تم الكشف" ${status==='تم الكشف'?'selected':''}>تم الكشف</option>
+            <option value="لم يحضر" ${status==='لم يحضر'?'selected':''}>لم يحضر</option>
+            <option value="مؤجل" ${status==='مؤجل'?'selected':''}>مؤجل</option>
+            <option value="ملغي" ${status==='ملغي'?'selected':''}>ملغي</option>
+          </select>
+        </td>
+        <td><div class="visit-row-actions">
+          <button class="icon-action edit" type="button" data-edit-visit="${esc(v.id)}" title="تعديل">✎</button>
+          <button class="icon-action danger" type="button" data-delete-visit="${esc(v.id)}" title="حذف">🗑</button>
+        </div></td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="9" class="empty-row">لا توجد حجوزات في هذا اليوم</td></tr>'}
+    </tbody>
+  </table></div>`;
+}
+
+async function renderSpecialtyBookings(): Promise<void> {
+  const specialty=specialtyMeta(doctorSpecialtyFilter);
+  if(!specialty){
+    doctorSpecialtyFilter='';
+    return renderDoctors();
+  }
+
+  const dateKey=specialtyBookingDay || businessDay();
+  specialtyBookingDay=dateKey;
+  const [report,patients]=await Promise.all([
+    invoke<ReportResult>('run_report',{query:{from:dateKey,to:dateKey,doctor:''}}),
+    invoke<Patient[]>('list_patients',{query:{search:'',archivedOnly:false,limit:5000}})
+  ]);
+  const patientMap=new Map(patients.map(p=>[p.id,p]));
+  const rows=report.rows
+    .filter(v=>specialtyMatches(doctorSpecialtyFilter,`${v.specialty||''} ${doctors.find(d=>d.name===v.doctor)?.specialty||''}`))
+    .sort((a,b)=>(a.visitTime||'99:99').localeCompare(b.visitTime||'99:99'));
+
+  const waiting=rows.filter(v=>specialtyBookingStatusLabel(v.status)==='منتظر').length;
+  const arrived=rows.filter(v=>specialtyBookingStatusLabel(v.status)==='حضر').length;
+  const done=rows.filter(v=>specialtyBookingStatusLabel(v.status)==='تم الكشف').length;
+  const absent=rows.filter(v=>specialtyBookingStatusLabel(v.status)==='لم يحضر').length;
+
+  shell(`<section class="specialty-bookings-page">
+    <div class="specialty-bookings-head">
+      <div>
+        <span class="specialty-bookings-kicker">حجوزات التخصص</span>
+        <h2>${esc(specialty.label)}</h2>
+        <p>تسجيل ومتابعة حجوزات المرضى داخل التخصص مباشرة</p>
+      </div>
+      <div class="specialty-bookings-head-actions">
+        <label>اليوم<input id="specialtyBookingDate" type="date" value="${esc(dateKey)}"></label>
+        <button class="btn ghost" id="backSpecialtyHome">← التخصصات</button>
+        <button class="btn primary" id="newSpecialtyBooking">＋ حجز جديد</button>
+      </div>
+    </div>
+
+    <div class="specialty-booking-metrics">
+      <div><span>إجمالي الحجوزات</span><strong>${rows.length}</strong></div>
+      <div class="waiting"><span>منتظر</span><strong>${waiting}</strong></div>
+      <div class="arrived"><span>حضر</span><strong>${arrived}</strong></div>
+      <div class="done"><span>تم الكشف</span><strong>${done}</strong></div>
+      <div class="absent"><span>لم يحضر</span><strong>${absent}</strong></div>
+    </div>
+
+    <div class="specialty-bookings-toolbar">
+      <input id="specialtyBookingSearch" class="search-input" placeholder="بحث بالاسم أو رقم الموبايل أو الطبيب...">
+      <span>${displayDate(dateKey)}</span>
+    </div>
+    <div id="specialtyBookingRows">${specialtyBookingRowsHtml(rows,patientMap)}</div>
+  </section>`, specialty.label, `حجوزات ${specialty.label}`);
+
+  document.querySelector<HTMLButtonElement>('#newSpecialtyBooking')!.onclick=()=>openSpecialtyBookingModal(doctorSpecialtyFilter,dateKey);
+  document.querySelector<HTMLButtonElement>('#backSpecialtyHome')!.onclick=async()=>{
+    doctorSpecialtyFilter=''; specialtyBookingDay=''; await navigate('dashboard');
+  };
+  document.querySelector<HTMLInputElement>('#specialtyBookingDate')!.onchange=async e=>{
+    specialtyBookingDay=(e.currentTarget as HTMLInputElement).value||businessDay();
+    await renderSpecialtyBookings();
+  };
+
+  const search=document.querySelector<HTMLInputElement>('#specialtyBookingSearch')!;
+  search.oninput=()=>{
+    const q=search.value.trim().toLowerCase();
+    document.querySelectorAll<HTMLElement>('#specialtyBookingRows tbody tr[data-booking-search]').forEach(row=>{
+      row.style.display=!q || (row.dataset.bookingSearch||'').includes(q) ? '' : 'none';
+    });
+  };
+
+  document.querySelectorAll<HTMLButtonElement>('[data-booking-patient]').forEach(btn=>{
+    btn.onclick=()=>openPatient(btn.dataset.bookingPatient||'');
+  });
+
+  document.querySelectorAll<HTMLSelectElement>('[data-booking-status]').forEach(select=>{
+    select.onchange=async()=>{
+      try{
+        await invoke('set_visit_status',{input:{id:select.dataset.bookingStatus||'',status:select.value}});
+        toast('تم تحديث حالة الحجز');
+        await renderSpecialtyBookings();
+      }catch(err){toast(`تعذر تحديث الحالة: ${String(err)}`,'error')}
+    };
+  });
+}
+
+function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
+  const specialty=specialtyMeta(specialtyKey);
+  if(!specialty)return;
+  const specialtyDoctors=doctors.filter(d=>d.active&&specialtyMatches(specialtyKey,d.specialty));
+  const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
+  const doctorOptionsHtml=specialtyDoctors.length
+    ? `<option value="">— اختر الطبيب —</option>${specialtyDoctors.map(d=>`<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}`
+    : '<option value="">بدون طبيب محدد</option>';
+
+  root.innerHTML=`<div class="modal-backdrop" id="specialtyBookingBackdrop"><section class="modal form-modal specialty-booking-modal">
+    <div class="modal-head"><div><h2>حجز جديد — ${esc(specialty.label)}</h2><p>بيانات الحالة والحجز</p></div><button class="modal-close" id="closeSpecialtyBooking">×</button></div>
+    <form id="specialtyBookingForm">
+      <div class="section-title">بيانات الحالة</div>
+      <div class="specialty-booking-form-grid patient-data">
+        <label class="name">الاسم بالكامل<input name="fullName" required autocomplete="off"></label>
+        <label>السن<input name="age" type="number" min="0" max="130" required></label>
+        <label>رقم الموبايل<input name="phone" class="ltr" inputmode="tel" required autocomplete="off"></label>
+        <label>نوع الزيارة<select name="visitType" id="specialtyBookingType"><option value="كشف جديد">كشف</option><option value="استشارة">استشارة</option></select></label>
+      </div>
+      <div id="specialtyDuplicateAlert" class="specialty-duplicate-alert" hidden></div>
+
+      <div class="section-title">بيانات الحجز</div>
+      <div class="specialty-booking-form-grid booking-data">
+        <label>الطبيب<select name="doctor" ${specialtyDoctors.length?'required':''}>${doctorOptionsHtml}</select></label>
+        <label>مصدر الحجز<select name="bookingSource">${bookingSourceOptions('عادي')}</select></label>
+        <label>التاريخ<input name="visitDate" type="date" value="${esc(bookingDate)}" required></label>
+        <label>الوقت<input name="visitTime" type="time" value="${timeNow()}" required></label>
+        <label>سعر الكشف<input name="fee" class="ltr" type="number" min="0" step="0.01" placeholder="اختياري"></label>
+        <label>مبلغ العيادات<input name="clinicAmount" class="ltr" type="number" min="0" step="0.01" placeholder="اختياري"></label>
+        <label>مبلغ الطبيب<input name="doctorAmount" class="ltr" type="number" min="0" step="0.01" placeholder="اختياري"></label>
+      </div>
+      <div class="form-actions"><button type="button" class="btn ghost" id="cancelSpecialtyBooking">إلغاء</button><button class="btn primary">✓ حفظ الحجز</button></div>
+    </form>
+  </section></div>`;
+
+  const form=document.querySelector<HTMLFormElement>('#specialtyBookingForm')!;
+  const phoneInput=form.querySelector<HTMLInputElement>('input[name="phone"]')!;
+  const typeInput=form.querySelector<HTMLSelectElement>('select[name="visitType"]')!;
+  const alertHost=document.querySelector<HTMLDivElement>('#specialtyDuplicateAlert')!;
+  let existingPatient:Patient|null=null;
+  let timer:number|undefined;
+
+  const close=()=>root.innerHTML='';
+  document.querySelector<HTMLButtonElement>('#closeSpecialtyBooking')!.onclick=close;
+  document.querySelector<HTMLButtonElement>('#cancelSpecialtyBooking')!.onclick=close;
+  document.querySelector<HTMLDivElement>('#specialtyBookingBackdrop')!.onclick=e=>{if(e.target===e.currentTarget)close()};
+
+  const checkDuplicate=async()=>{
+    const phone=phoneInput.value.trim();
+    existingPatient=null;
+    if(phone.length<7){alertHost.hidden=true;alertHost.innerHTML='';return}
+    try{
+      const matches=await invoke<Patient[]>('list_patients',{query:{search:phone,archivedOnly:false,limit:20}});
+      existingPatient=matches.find(p=>p.phone.trim()===phone)||null;
+      if(!existingPatient){alertHost.hidden=true;alertHost.innerHTML='';return}
+      const isNew=typeInput.value==='كشف جديد';
+      alertHost.hidden=false;
+      alertHost.className=`specialty-duplicate-alert ${isNew?'warning':'found'}`;
+      alertHost.innerHTML=`<strong>${isNew?'⚠ المريض مسجل من قبل':'✓ تم العثور على ملف المريض'}</strong>
+        <span>${esc(existingPatient.fullName)} • <span class="ltr">${esc(existingPatient.phone)}</span></span>
+        <small>${existingPatient.lastVisitDate?`آخر زيارة: ${esc(displayDate(existingPatient.lastVisitDate))}`:'لا توجد زيارة سابقة'} — سيتم ربط الحجز بنفس الملف ولن يتم إنشاء ملف مكرر.</small>`;
+    }catch{alertHost.hidden=true}
+  };
+  phoneInput.oninput=()=>{window.clearTimeout(timer);timer=window.setTimeout(checkDuplicate,120)};
+  typeInput.onchange=checkDuplicate;
+
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    const fd=new FormData(form);
+    const phone=String(fd.get('phone')||'').trim();
+    const rawAge=String(fd.get('age')||'').trim();
+    try{
+      if(phone.length<7)throw new Error('رقم الموبايل غير صالح');
+      let patientId='';
+      let reused=false;
+      if(existingPatient && existingPatient.phone.trim()===phone){
+        patientId=existingPatient.id;
+        reused=true;
+      }else{
+        const result=await invoke<{id:string,existed:boolean}>('register_patient',{input:{
+          fullName:String(fd.get('fullName')||'').trim(),
+          phone,
+          age:rawAge?Number(rawAge):null,
+          gender:'',
+          address:''
+        }});
+        patientId=result.id;
+        reused=result.existed;
+      }
+
+      await invoke('add_visit',{input:{
+        patientId,
+        visitType:String(fd.get('visitType')||'كشف جديد'),
+        bookingSource:String(fd.get('bookingSource')||'عادي'),
+        doctor:String(fd.get('doctor')||'').trim(),
+        fee:String(fd.get('fee')||'').trim(),
+        clinicAmount:String(fd.get('clinicAmount')||'').trim(),
+        doctorAmount:String(fd.get('doctorAmount')||'').trim(),
+        status:'منتظر',
+        visitDate:String(fd.get('visitDate')||bookingDate),
+        visitTime:String(fd.get('visitTime')||timeNow()),
+        specialty:specialty.label
+      }});
+
+      specialtyBookingDay=String(fd.get('visitDate')||bookingDate);
+      close();
+      toast(reused?'تم حفظ الحجز وربطه بملف المريض الموجود':'تم تسجيل المريض وحفظ الحجز');
+      await renderSpecialtyBookings();
+    }catch(err){toast(`تعذر حفظ الحجز: ${String(err)}`,'error')}
+  };
+}
+
+async function renderDoctors(): Promise<void> {
+  if (doctorSpecialtyFilter) return renderSpecialtyBookings();
   const dayKey = businessDay();
   const todayReport = await invoke<ReportResult>('run_report', {
     query: { from: dayKey, to: dayKey, doctor: '' }
