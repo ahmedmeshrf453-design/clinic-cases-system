@@ -3359,7 +3359,7 @@ async function renderDashboard(){
     </div>
 
     <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
-    <div class="v71-build-stamp">V7.1.16 • CLICK BOOKING PATIENT</div>
+    <div class="v71-build-stamp">V7.1.17 • BOOKING INTEGRITY</div>
   </section>`,'الرئيسية','التخصصات والخدمات');
 
   document.querySelectorAll<HTMLButtonElement>('[data-specialty-home]').forEach(b=>b.onclick=async()=>{doctorSpecialtyFilter=b.dataset.specialtyHome||'';await navigate('doctors')});
@@ -4972,26 +4972,22 @@ function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
     const fd=new FormData(form);
     const phone=String(fd.get('phone')||'').trim();
     const rawAge=String(fd.get('age')||'').trim();
+    const saveButton=form.querySelector<HTMLButtonElement>('button.btn.primary')!;
+    if(saveButton.disabled)return;
+    saveButton.disabled=true;
     try{
       if(phone.length<7)throw new Error('رقم الموبايل غير صالح');
-      let patientId='';
-      let reused=false;
-      if(existingPatient && existingPatient.phone.trim()===phone){
-        patientId=existingPatient.id;
-        reused=true;
-      }else{
-        const result=await invoke<{id:string,existed:boolean}>('register_patient',{input:{
+      const result=await invoke<{id:string,existed:boolean}>('register_patient',{input:{
           fullName:String(fd.get('fullName')||'').trim(),
           phone,
           age:rawAge?Number(rawAge):null,
           gender:'',
           address:''
         }});
-        patientId=result.id;
-        reused=result.existed;
-      }
+        const patientId=result.id;
+        const reused=result.existed;
 
-      const operationalBookingDay=String(fd.get('visitDate')||bookingDate);
+        const operationalBookingDay=String(fd.get('visitDate')||bookingDate);
       const bookingTime=String(fd.get('visitTime')||timeNow());
       const storedVisitDate=specialtyBookingStoredVisitDate(operationalBookingDay,bookingTime);
 
@@ -5014,6 +5010,7 @@ function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
       toast(reused?'تم حفظ الحجز وربطه بملف المريض الموجود':'تم تسجيل المريض وحفظ الحجز');
       await renderSpecialtyBookings();
     }catch(err){toast(`تعذر حفظ الحجز: ${String(err)}`,'error')}
+    finally{saveButton.disabled=false}
   };
 }
 
