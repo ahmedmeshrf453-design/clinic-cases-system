@@ -1710,46 +1710,101 @@ async function exportPatientFile(file: PatientFileSnapshot, format: ExportFormat
   );
 }
 
+function viralReportSheet(title:string, subtitle:string, body:string){
+  return `
+    <div class="export-document viral-report-document">
+      <div class="viral-report-topbar"></div>
+
+      <div class="viral-report-brand">
+        <div class="viral-report-brand-copy">
+          <img src="/patient-print-logo.jpg" alt="لوجو عيادات العقاد التخصصية" />
+          <div>
+            <h1>${esc(appSettings.clinicName)}</h1>
+            <p>${esc(appSettings.clinicSlogan)}</p>
+          </div>
+        </div>
+        <div class="viral-report-badge">
+          <span>تقرير</span>
+          <strong>تشغيلي ومالي</strong>
+        </div>
+      </div>
+
+      <div class="viral-report-title">
+        <div>
+          <span class="viral-report-kicker">CLINIC PERFORMANCE REPORT</span>
+          <h2>${esc(title)}</h2>
+          <p>${esc(subtitle)}</p>
+        </div>
+        <div class="viral-report-datebox">
+          <span>تاريخ الإصدار</span>
+          <strong>${esc(displayDate(today()))}</strong>
+        </div>
+      </div>
+
+      ${body}
+
+      <div class="viral-report-footer">
+        <div class="viral-report-contact"><span>واتساب</span><strong class="ltr">${esc(appSettings.whatsappNumber)}</strong></div>
+        <div class="viral-report-contact"><span>هاتف</span><strong class="ltr">${esc(appSettings.phoneNumber)}</strong></div>
+        <div class="viral-report-address">${esc(appSettings.clinicAddress)}</div>
+      </div>
+    </div>`;
+}
+
 async function exportReportFile(result: ReportResult, from: string, to: string, doctor: string, format: ExportFormat) {
   const metrics = reportMetrics(result.rows);
   const doctorRows = doctorBreakdown(result.rows);
 
   const doctorSummary = doctorRows.length ? `
-    <h3 class="export-section-heading">ملخص الأطباء</h3>
-    <table class="export-table">
-      <thead>
-        <tr><th>الطبيب</th><th>عدد الحالات</th><th>إجمالي الكشف</th><th>مبلغ العيادات</th><th>مبلغ الطبيب</th></tr>
-      </thead>
-      <tbody>
-        ${doctorRows.map(([name, item]) => `
-          <tr>
-            <td>${esc(name)}</td>
-            <td>${item.count}</td>
-            <td class="ltr">${item.revenue.toFixed(2)} ج.م</td>
-            <td class="ltr">${item.clinicTotal.toFixed(2)} ج.م</td>
-            <td class="ltr">${item.doctorTotal.toFixed(2)} ج.م</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
+    <div class="viral-report-section-head">
+      <div><span>DOCTORS SUMMARY</span><h3>ملخص الأطباء</h3></div>
+      <b>${doctorRows.length} طبيب</b>
+    </div>
+
+    <div class="viral-doctor-grid">
+      ${doctorRows.map(([name,item],index)=>`
+        <article class="viral-doctor-card">
+          <div class="viral-doctor-rank">${index+1}</div>
+          <div class="viral-doctor-main"><strong>${esc(name)}</strong><span>${item.count} حالة</span></div>
+          <div class="viral-doctor-money"><small>إجمالي الكشف</small><b class="ltr">${item.revenue.toFixed(2)} ج.م</b></div>
+          <div class="viral-doctor-split">
+            <span>العيادات <b class="ltr">${item.clinicTotal.toFixed(2)}</b></span>
+            <span>الطبيب <b class="ltr">${item.doctorTotal.toFixed(2)}</b></span>
+          </div>
+        </article>
+      `).join('')}
+    </div>
   ` : '';
 
   const body = `
-    <div class="export-summary export-summary-v48">
-      <div><span>الفترة</span><strong>${esc(reportPeriodLabel(from, to))}</strong></div>
+    <div class="viral-report-meta">
+      <div><span>الفترة</span><strong>${esc(reportPeriodLabel(from,to))}</strong></div>
       <div><span>الطبيب</span><strong>${esc(doctor || 'كل الأطباء')}</strong></div>
-      <div><span>عدد الزيارات</span><strong>${metrics.totalVisits}</strong></div>
-      <div><span>عدد المرضى</span><strong>${metrics.uniquePatients}</strong></div>
-      <div><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)} ج.م</strong></div>
-      <div><span>مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)} ج.م</strong></div>
-      <div><span>مبلغ الأطباء</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)} ج.م</strong></div>
     </div>
+
+    <div class="viral-kpi-grid">
+      <div class="viral-kpi primary"><span>عدد الزيارات</span><strong>${metrics.totalVisits}</strong><small>إجمالي الحالات المسجلة</small></div>
+      <div class="viral-kpi"><span>مرضى مختلفون</span><strong>${metrics.uniquePatients}</strong><small>بدون تكرار المريض</small></div>
+      <div class="viral-kpi money"><span>إجمالي الكشف</span><strong class="ltr">${metrics.revenue.toFixed(2)}</strong><small>جنيه مصري</small></div>
+      <div class="viral-kpi clinic"><span>مبلغ العيادات</span><strong class="ltr">${metrics.clinicTotal.toFixed(2)}</strong><small>جنيه مصري</small></div>
+      <div class="viral-kpi doctor"><span>مبلغ الأطباء</span><strong class="ltr">${metrics.doctorTotal.toFixed(2)}</strong><small>جنيه مصري</small></div>
+      <div class="viral-kpi visits"><span>كشف / استشارة</span><strong>${metrics.newVisits} / ${metrics.consultations}</strong><small>توزيع نوع الزيارة</small></div>
+    </div>
+
     ${doctorSummary}
-    <h3 class="export-section-heading">تفاصيل الزيارات</h3>
-    ${exportVisitRows(result.rows, true)}
+
+    <div class="viral-report-section-head visits">
+      <div><span>VISITS DETAILS</span><h3>تفاصيل الزيارات</h3></div>
+      <b>${result.rows.length} زيارة</b>
+    </div>
+
+    <div class="viral-report-table-wrap">
+      ${exportVisitRows(result.rows,true)}
+    </div>
   `;
+
   await captureAndSaveExport(
-    exportSheet('ملخص الحالات والتقرير', reportPeriodLabel(from, to), body),
+    viralReportSheet('تقرير الحالات', reportPeriodLabel(from,to), body),
     `تقرير الحالات - ${from} - ${to}`,
     format
   );
@@ -3304,7 +3359,7 @@ async function renderDashboard(){
     </div>
 
     <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
-    <div class="v71-build-stamp">V7.1.15 • BOOKING TYPE AND PRICE</div>
+    <div class="v71-build-stamp">V7.1.16 • VIRAL REPORT PRINT</div>
   </section>`,'الرئيسية','التخصصات والخدمات');
 
   document.querySelectorAll<HTMLButtonElement>('[data-specialty-home]').forEach(b=>b.onclick=async()=>{doctorSpecialtyFilter=b.dataset.specialtyHome||'';await navigate('doctors')});

@@ -4825,3 +4825,38 @@ table td{font-size:13px !important}
 @media(max-width:620px){
   .specialty-booking-modal{width:calc(100vw - 18px)!important;max-height:94vh!important}
 }
+
+
+/* ===== V7.1.16 VIRAL REPORT PRINT ===== */
+.viral-report-document{
+  position:relative!important;
+  padding:0 46px 34px!important;
+  overflow:hidden!important;
+  color:#102a43!important;
+  background:radial-gradient(circle at 92% 7%,rgba(24,164,174,.10),transparent 20%),radial-gradient(circle at 6% 18%,rgba(10,35,66,.06),transparent 22%),#fff!important;
+}
+.viral-report-topbar{height:13px;margin:0 -46px 26px;background:linear-gradient(90deg,#0a2342 0%,#0d5268 48%,#16a4ae 100%)}
+.viral-report-brand{display:flex;align-items:center;justify-content:space-between;gap:24px}
+.viral-report-brand-copy{display:flex;align-items:center;gap:17px}
+.viral-report-brand-copy img{width:120px;height:92px;object-fit:contain;border-radius:16px;background:#fff;box-shadow:0 8px 24px rgba(10,35,66,.08)}
+.viral-report-brand-copy h1{margin:0;color:#0a2342;font-size:28px;font-weight:900}
+.viral-report-brand-copy p{margin:6px 0 0;color:#168f99;font-size:14px;font-weight:800}
+.viral-report-badge{min-width:145px;padding:13px 17px;border-radius:17px;text-align:center;color:#fff;background:linear-gradient(145deg,#0a2342,#164d67);box-shadow:0 12px 25px rgba(10,35,66,.14)}
+.viral-report-badge span,.viral-report-badge strong{display:block}.viral-report-badge span{font-size:10px;opacity:.72;margin-bottom:4px}.viral-report-badge strong{font-size:16px}
+.viral-report-title{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:24px 0 19px;margin:20px 0 20px;border-top:1px solid #e5eef3;border-bottom:1px solid #e5eef3}
+.viral-report-kicker{display:block;margin-bottom:6px;color:#12a0aa;font-size:9px;font-weight:900;letter-spacing:1.2px}
+.viral-report-title h2{margin:0;color:#0a2342;font-size:29px;font-weight:900}.viral-report-title p{margin:5px 0 0;color:#73879a;font-size:13px;font-weight:700}
+.viral-report-datebox{min-width:145px;text-align:left}.viral-report-datebox span,.viral-report-datebox strong{display:block}.viral-report-datebox span{color:#8a9bab;font-size:10px;margin-bottom:4px}.viral-report-datebox strong{color:#0a2342;font-size:14px}
+.viral-report-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:13px}.viral-report-meta>div{padding:10px 13px;border:1px solid #dce8ef;border-radius:12px;background:#f8fbfd}.viral-report-meta span{display:block;color:#8496a5;font-size:10px;margin-bottom:4px}.viral-report-meta strong{font-size:13px;color:#153a59}
+.viral-kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:23px}
+.viral-kpi{position:relative;min-height:94px;padding:13px 15px;border-radius:15px;border:1px solid #dce7ee;background:#fff;box-shadow:0 6px 17px rgba(21,52,77,.055);overflow:hidden}
+.viral-kpi:after{content:'';position:absolute;width:54px;height:54px;border-radius:50%;left:-17px;bottom:-22px;background:rgba(22,164,174,.07)}
+.viral-kpi.primary{color:#fff;border-color:transparent;background:linear-gradient(145deg,#0a2342,#164f69)}.viral-kpi.primary span,.viral-kpi.primary strong,.viral-kpi.primary small{color:#fff!important}
+.viral-kpi span,.viral-kpi strong,.viral-kpi small{display:block}.viral-kpi span{color:#778a9b;font-size:10px;font-weight:800}.viral-kpi strong{margin:6px 0 3px;color:#0a2342;font-size:24px;line-height:1;font-weight:900}.viral-kpi small{color:#9aa8b4;font-size:9px}
+.viral-kpi.money{border-top:4px solid #13a8b2}.viral-kpi.clinic{border-top:4px solid #4b79a1}.viral-kpi.doctor{border-top:4px solid #8c6bb1}.viral-kpi.visits{border-top:4px solid #e2a642}
+.viral-report-section-head{display:flex;align-items:center;justify-content:space-between;gap:15px;margin:22px 0 10px}.viral-report-section-head span{display:block;color:#15a0aa;font-size:8px;font-weight:900;letter-spacing:1px}.viral-report-section-head h3{margin:2px 0 0;color:#0a2342;font-size:18px;font-weight:900}.viral-report-section-head>b{padding:6px 10px;border-radius:999px;background:#eef7f8;color:#117d86;font-size:10px}
+.viral-doctor-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.viral-doctor-card{display:grid;grid-template-columns:34px 1fr auto;gap:8px 10px;align-items:center;padding:11px 12px;border:1px solid #dfe9ef;border-radius:13px;background:#fbfdfe}.viral-doctor-rank{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;color:#fff;font-size:12px;font-weight:900;background:linear-gradient(145deg,#0a2342,#1697a1)}
+.viral-doctor-main strong,.viral-doctor-main span{display:block}.viral-doctor-main strong{color:#153a59;font-size:12px}.viral-doctor-main span{margin-top:2px;color:#899aa8;font-size:9px}.viral-doctor-money{text-align:left}.viral-doctor-money small,.viral-doctor-money b{display:block}.viral-doctor-money small{color:#97a5b0;font-size:8px}.viral-doctor-money b{margin-top:3px;color:#0f818a;font-size:11px}.viral-doctor-split{grid-column:2/4;display:flex;gap:14px;padding-top:6px;border-top:1px dashed #e1e9ee;color:#8192a0;font-size:9px}.viral-doctor-split b{color:#28475f}
+.viral-report-table-wrap{border:1px solid #dce7ee;border-radius:13px;overflow:hidden}.viral-report-table-wrap .export-table{margin:0!important;font-size:10px!important}.viral-report-table-wrap .export-table th{padding:9px 6px!important;border-color:#163e5d!important;color:#fff!important;background:#123b5b!important;font-size:9px!important}.viral-report-table-wrap .export-table td{padding:8px 6px!important;border-color:#e6edf1!important;color:#314d64!important}.viral-report-table-wrap .export-table tbody tr:nth-child(even) td{background:#f8fbfd!important}
+.viral-report-footer{display:grid;grid-template-columns:auto auto 1fr;gap:14px;align-items:center;margin-top:25px;padding:14px 16px;border-radius:15px;color:#fff;background:linear-gradient(100deg,#0a2342,#164e67)}.viral-report-contact span,.viral-report-contact strong{display:block}.viral-report-contact span{font-size:8px;opacity:.68}.viral-report-contact strong{margin-top:2px;font-size:11px}.viral-report-address{text-align:left;font-size:9px;line-height:1.5;opacity:.86}
+.export-capture-host .viral-report-document *{box-sizing:border-box}
