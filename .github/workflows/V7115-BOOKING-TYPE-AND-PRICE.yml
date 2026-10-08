@@ -1,0 +1,175 @@
+name: Clinic Cases V7.1.15 Booking Type And Price
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply V7.1.15 booking columns
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          main_p=Path("src/main.ts")
+          tauri_p=Path("src-tauri/tauri.conf.json")
+          cargo_p=Path("src-tauri/Cargo.toml")
+          lock_p=Path("src-tauri/Cargo.lock")
+          pkg_p=Path("package.json")
+          pkglock_p=Path("package-lock.json")
+
+          m=main_p.read_text(encoding="utf-8")
+
+          tauri=json.loads(tauri_p.read_text(encoding="utf-8"))
+          tauri["version"]="7.1.15"
+          tauri_p.write_text(json.dumps(tauri,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+
+          pkg=json.loads(pkg_p.read_text(encoding="utf-8"))
+          pkg["version"]="7.1.15"
+          pkg_p.write_text(json.dumps(pkg,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+
+          pl=pkglock_p.read_text(encoding="utf-8")
+          pl=re.sub(r'("version"\s*:\s*")7\.1\.\d+(")',r'\g<1>7.1.15\2',pl,count=2)
+          pkglock_p.write_text(pl,encoding="utf-8")
+
+          cg=cargo_p.read_text(encoding="utf-8")
+          cg=re.sub(r'(?m)^version\s*=\s*"7\.1\.\d+"\s*$', 'version = "7.1.15"', cg, count=1)
+          cargo_p.write_text(cg,encoding="utf-8")
+
+          cl=lock_p.read_text(encoding="utf-8")
+          cl=re.sub(
+              r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.\d+(")',
+              r'\g<1>7.1.15\2',
+              cl,
+              count=1
+          )
+          lock_p.write_text(cl,encoding="utf-8")
+
+          start=m.index("function specialtyBookingRowsHtml")
+          end=m.index("\nasync function renderSpecialtyBookings", start)
+
+          new_func = r'''function specialtyBookingRowsHtml(rows: Visit[], patientMap: Map<string, Patient>) {
+            return `<div class="specialty-booking-table-wrap"><table class="specialty-booking-table">
+              <thead><tr>
+                <th>الدور</th><th>الوقت</th><th>اسم الحالة</th><th>السن</th><th>الموبايل</th>
+                <th>الطبيب</th><th>نوع الكشف</th><th>سعر الكشف</th>
+              </tr></thead>
+              <tbody>${rows.length ? rows.map((v,index)=>{
+                const p=patientMap.get(v.patientId);
+                const visitType=v.visitType==='كشف جديد'?'كشف':(v.visitType||'—');
+                const fee=String(v.fee||'').trim();
+                return `<tr data-booking-search="${esc(`${v.patientName||''} ${v.patientPhone||''} ${v.doctor||''} ${visitType}`.toLowerCase())}">
+                  <td><span class="booking-turn">${index+1}</span></td>
+                  <td class="ltr">${esc(v.visitTime||'—')}</td>
+                  <td><button type="button" class="booking-patient-link" data-booking-patient="${esc(v.patientId)}">${esc(v.patientName||'—')}</button></td>
+                  <td>${p?.age ?? '—'}</td>
+                  <td class="ltr">${esc(v.patientPhone||'—')}</td>
+                  <td>${esc(v.doctor||'بدون طبيب')}</td>
+                  <td><span class="visit-type-badge">${esc(visitType)}</span></td>
+                  <td class="ltr">${fee?`${esc(fee)} ج.م`:'—'}</td>
+                </tr>`;
+              }).join('') : '<tr><td colspan="8" class="empty-row">لا توجد حجوزات في هذا اليوم</td></tr>'}
+              </tbody>
+            </table></div>`;
+          }
+          '''
+
+          m=m[:start]+new_func+m[end:]
+          m=re.sub(r'V7\.1\.\d+ • [^<]+','V7.1.15 • BOOKING TYPE AND PRICE',m,count=1)
+          main_p.write_text(m,encoding="utf-8")
+
+          print("V7.1.15 booking columns applied")
+          PY
+
+      - name: Verify V7.1.15
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          m=Path("src/main.ts").read_text(encoding="utf-8")
+          t=json.loads(Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+          part=m[m.index("function specialtyBookingRowsHtml"):m.index("async function renderSpecialtyBookings")]
+          checks={
+            "version":t.get("version")=="7.1.15",
+            "type":"<th>نوع الكشف</th>" in part,
+            "price":"<th>سعر الكشف</th>" in part,
+            "no_status":"<th>الحالة</th>" not in part,
+            "no_actions":"<th>إجراءات</th>" not in part,
+            "marker":"V7.1.15 • BOOKING TYPE AND PRICE" in m,
+          }
+          for k,v in checks.items():
+              print(k,"OK" if v else "FAIL")
+          assert all(checks.values()),checks
+          print("V7.1.15 verification passed")
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+
+      - name: Rust tests
+        shell: bash
+        env:
+          RUST_BACKTRACE: "1"
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build Windows installer with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if npx tauri build --bundles nsis; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep 20; fi
+          done
+          exit 1
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $i=Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" |
+            Where-Object { $_.Name -match "7\.1\.15" } |
+            Select-Object -First 1
+          if(-not $i){throw "V7.1.15 installer missing"}
+          if($i.Length -lt 80000000){throw "Installer too small"}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.15-Booking-Type-And-Price
+          path: src-tauri/target/release/bundle/nsis/*7.1.15*-setup.exe
+          if-no-files-found: error
+
+      - name: Commit validated V7.1.15
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.ts src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json package-lock.json
+          if git diff --cached --quiet; then echo "No changes"; else git commit -m "V7.1.15: show booking type and price"; fi
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
