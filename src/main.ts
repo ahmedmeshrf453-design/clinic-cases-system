@@ -3262,38 +3262,23 @@ const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v7121';
 const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v7121';
 
 const HOME_SPECIALTY_ICON_SRC:Record<string,string>={
-  urology:'/holograms/urology.svg',
-  internal:'/holograms/internal.svg',
-  cardio:'/holograms/cardio.svg',
-  endocrine:'/holograms/endocrine.svg',
-  pediatrics:'/holograms/pediatrics.svg',
-  dermatology:'/holograms/dermatology.svg',
-  behavior:'/holograms/behavior.svg',
-  dental:'/holograms/dental.svg',
-  ortho:'/holograms/ortho.svg',
-  surgery:'/holograms/surgery.svg',
-  eye:'/holograms/eye.svg',
-  neuro:'/holograms/neuro.svg',
-  obgyn:'/holograms/obgyn.svg',
-  ent:'/holograms/ent.svg',
-  nutrition:'/holograms/nutrition.svg',
-  vascular:'/holograms/vascular.svg',
-  audiology:'/holograms/audiology.svg'
+  urology:'/holograms/urology.webp', internal:'/holograms/internal.webp',
+  cardio:'/holograms/cardio.webp', endocrine:'/holograms/endocrine.webp',
+  pediatrics:'/holograms/pediatrics.webp', dermatology:'/holograms/dermatology.webp',
+  behavior:'/holograms/behavior.webp', dental:'/holograms/dental.webp',
+  ortho:'/holograms/ortho.webp', surgery:'/holograms/surgery.webp',
+  eye:'/holograms/eye.webp', neuro:'/holograms/neuro.webp',
+  obgyn:'/holograms/obgyn.webp', ent:'/holograms/ent.webp',
+  nutrition:'/holograms/nutrition.webp', vascular:'/holograms/vascular.webp',
+  audiology:'/holograms/ent.webp'
 };
-
-function homeSpecialtyIconSrc(key:string){return HOME_SPECIALTY_ICON_SRC[key]||'/holograms/internal.svg'}
-
+function homeSpecialtyIconSrc(key:string){return HOME_SPECIALTY_ICON_SRC[key]||'/holograms/internal.webp'}
 const HOME_SERVICE_ICON_SRC:Record<string,string>={
-  labs:'/holograms/labs.svg',
-  radiology:'/holograms/radiology.svg',
-  physio:'/holograms/physio.svg',
-  nursing:'/holograms/nursing.svg',
-  emergency:'/holograms/emergency.svg',
-  others:'/holograms/others.svg'
+  labs:'/home-icons/organ-sprite.webp',radiology:'/home-icons/organ-sprite.webp',
+  physio:'/home-icons/organ-sprite.webp',nursing:'/home-icons/organ-sprite.webp',
+  emergency:'/holograms/emergency.webp',others:'/holograms/others.webp'
 };
-
-function homeServiceIconSrc(key:string){return HOME_SERVICE_ICON_SRC[key]||'/holograms/others.svg'}
-
+function homeServiceIconSrc(key:string){return HOME_SERVICE_ICON_SRC[key]||'/holograms/others.webp'}
 function specialtyMeta(key:string){return HOME_SPECIALTIES.find(x=>x.key===key)}
 function specialtyMatches(key:string,text:string){const x=specialtyMeta(key);if(!x)return true;const v=String(text||'').toLowerCase();return x.keys.some(k=>v.includes(k.toLowerCase()))}
 function orderedHomeItems<T extends {key:string}>(items:readonly T[],storageKey:string){
@@ -3393,7 +3378,7 @@ async function renderDashboard(){
         const todayCount=x.key==='labs'?labs.length:x.key==='radiology'?rad.length:x.key==='physio'?physio.length:nursing.length;
         return `<button class="clinic-service-card home-sortable-card" data-home-service="${x.screen}" data-order-id="${x.key}" type="button" draggable="true">
           <span class="specialty-card-drag" title="اسحب لتغيير الترتيب">⋮⋮</span>
-          <span class="clinic-service-icon service-hologram-icon"><img src="${homeServiceIconSrc(x.key)}" alt="${esc(x.label)}"></span>
+          <span class="clinic-service-icon ${x.key==='emergency'||x.key==='others'?'service-hologram-icon':`photo-sprite-tile ${x.iconClass}`}">${x.key==='emergency'||x.key==='others'?`<img src="${homeServiceIconSrc(x.key)}" alt="${esc(x.label)}">`:''}</span>
           <span class="clinic-service-copy"><strong>${x.label}</strong><small>${todayCount} حالة اليوم</small></span>
         </button>`;
       }).join('')}
