@@ -1,0 +1,96 @@
+name: Clinic Cases V7.1.28 Compact Doctor Cards
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Compact doctor cards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+          csspath=Path('src/style.css')
+          css=csspath.read_text(encoding='utf-8')
+          marker='/* V7.1.28 COMPACT DOCTOR CARDS ONLY */'
+          assert '.doctor-icon-grid' in css and '.shared-doctor-animation' in css
+          assert marker not in css, 'Already applied'
+          css += """
+
+          /* V7.1.28 COMPACT DOCTOR CARDS ONLY */
+          .doctor-icon-grid{grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:10px!important}
+          .doctor-icon-grid .doctor-icon-card{min-width:0!important;min-height:178px!important;height:auto!important;padding:10px 12px!important;gap:5px!important;border-radius:13px!important}
+          .doctor-icon-grid .doctor-icon-visual,.doctor-icon-grid .shared-doctor-animation{width:38px!important;height:38px!important;min-width:38px!important;min-height:38px!important;flex:0 0 38px!important;align-self:center!important;margin:0 auto!important}
+          .doctor-icon-grid .shared-doctor-animation img{width:100%!important;height:100%!important;object-fit:contain!important}
+          .doctor-icon-grid .doctor-icon-copy{min-height:39px!important;height:auto!important;margin:0!important;text-align:center!important}
+          .doctor-icon-grid .doctor-icon-copy strong{font-size:13px!important;line-height:1.4!important}
+          .doctor-icon-grid .doctor-icon-copy span{margin-top:2px!important;font-size:10px!important;line-height:1.4!important}
+          .doctor-icon-grid .doctor-icon-today{width:100%!important;height:auto!important;min-height:31px!important;min-width:0!important;flex:0 0 auto!important;aspect-ratio:auto!important;display:flex!important;justify-content:space-between!important;align-items:center!important;flex-wrap:wrap!important;gap:3px 6px!important;padding:5px 7px!important;font-size:10px!important}
+          .doctor-icon-grid .doctor-icon-today span,.doctor-icon-grid .doctor-icon-today b{width:auto!important;height:auto!important;font-size:10px!important;line-height:1.4!important}
+          .doctor-icon-grid .doctor-icon-actions{min-height:34px!important;gap:4px!important;padding-top:5px!important;margin-top:auto!important}
+          .doctor-icon-grid .doctor-icon-actions .icon-action{width:30px!important;height:30px!important;min-width:30px!important;padding:3px!important}
+          .doctor-icon-grid .doctor-icon-actions .switch{font-size:10px!important}
+          @media(max-width:1400px){.doctor-icon-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
+          @media(max-width:1050px){.doctor-icon-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+          @media(max-width:740px){.doctor-icon-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+          @media(max-width:420px){.doctor-icon-grid{grid-template-columns:1fr!important}}
+          """
+          csspath.write_text(css,encoding='utf-8')
+          new='7.1.28'
+          for path in ['package.json','src-tauri/tauri.conf.json']:
+              p=Path(path);o=json.loads(p.read_text(encoding='utf-8'));o['version']=new;p.write_text(json.dumps(o,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          p=Path('package-lock.json');s=p.read_text(encoding='utf-8');s,n=re.subn(r'("version"\s*:\s*")(7\.1\.2[67])(")',lambda m:m.group(1)+new+m.group(3),s,count=2);assert n==2,('package-lock',n);p.write_text(s,encoding='utf-8')
+          p=Path('src-tauri/Cargo.toml');s=p.read_text(encoding='utf-8');s,n=re.subn(r'(?m)^version\s*=\s*"7\.1\.2[67]"\s*$', 'version = "'+new+'"',s,count=1);assert n==1,('Cargo.toml',n);p.write_text(s,encoding='utf-8')
+          p=Path('src-tauri/Cargo.lock');s=p.read_text(encoding='utf-8');s,n=re.subn(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.2[67](")',lambda m:m.group(1)+new+m.group(2),s,count=1);assert n==1,('Cargo.lock',n);p.write_text(s,encoding='utf-8')
+          print('Compact doctor cards patch installed')
+
+          PY
+      - name: Verify patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          assert json.loads(Path('package.json').read_text())['version']=='7.1.28'
+          s=Path('src/style.css').read_text()
+          assert 'V7.1.28 COMPACT DOCTOR CARDS ONLY' in s
+          assert 'repeat(5,minmax(0,1fr))' in s
+          print('Patch verified')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Frontend build
+        shell: bash
+        run: |
+          npm ci
+          npm run build
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build Windows installer
+        run: npx tauri build --bundles nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-V7.1.28-Compact-Doctor-Cards
+          path: src-tauri/target/release/bundle/nsis/*7.1.28*-setup.exe
+          if-no-files-found: error
+      - name: Commit after successful build
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/style.css package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m 'V7.1.28 compact doctor cards only'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
