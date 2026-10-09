@@ -3877,7 +3877,10 @@ async function openDoctorProfile(doctor: Doctor) {
           <button class="btn ghost small" id="doctorMonthRange">الشهر الحالي</button>
           <label>من<input id="doctorFrom" type="date" value="${activeDay}"></label>
           <label>إلى<input id="doctorTo" type="date" value="${activeDay}"></label>
-          <button class="btn primary small" id="doctorRunRange">عرض الفترة</button>
+          <label>من الساعة<input id="doctorFromTime" type="time" value="00:00"></label>
+          <label>إلى الساعة<input id="doctorToTime" type="time" value="23:59"></label>
+          <button class="btn ghost small" id="doctorLastHour">ساعة واحدة</button>
+          <button class="btn primary small" id="doctorRunRange">عرض التقرير</button>
         </div>
 
         <div class="doctor-profile-export-bar">
@@ -3906,9 +3909,12 @@ async function openDoctorProfile(doctor: Doctor) {
   const fromInput = document.querySelector<HTMLInputElement>('#doctorFrom')!;
   const toInput = document.querySelector<HTMLInputElement>('#doctorTo')!;
   const body = document.querySelector<HTMLDivElement>('#doctorProfileBody')!;
+  const fromTimeInput=document.querySelector<HTMLInputElement>('#doctorFromTime')!;
+  const toTimeInput=document.querySelector<HTMLInputElement>('#doctorToTime')!;
 
   let currentResult: ReportResult = { totalVisits: 0, uniquePatients: 0, rows: [] };
   let selectedDoctorSource = '';
+  let filteredResult:ReportResult={totalVisits:0,uniquePatients:0,rows:[]};
 
   const renderSourceDetails = () => {
     const filteredRows = currentResult.rows.filter(v =>
@@ -3944,8 +3950,17 @@ async function openDoctorProfile(doctor: Doctor) {
         query: { from, to, doctor: doctor.name }
       });
 
-      const metrics = reportMetrics(currentResult.rows);
-      const sources = doctorSourceSummary(currentResult.rows);
+      const t1=fromTimeInput.value||'00:00';
+      const t2=toTimeInput.value||'23:59';
+      if(from>to || (from===to && t1>t2))throw new Error('الفترة الزمنية غير صالحة');
+      const rows=currentResult.rows.filter(v=>{
+        const point=`${v.visitDate} ${v.visitTime||'00:00'}`;
+        return point>=`${from} ${t1}` && point<=`${to} ${t2}`;
+      });
+      filteredResult={...currentResult,rows,totalVisits:rows.length,uniquePatients:new Set(rows.map(v=>v.patientId)).size};
+      currentResult=filteredResult;
+      const metrics = reportMetrics(filteredResult.rows);
+      const sources = doctorSourceSummary(filteredResult.rows);
 
       body.innerHTML = `
         <div class="doctor-profile-total-grid">
@@ -4016,6 +4031,14 @@ async function openDoctorProfile(doctor: Doctor) {
   };
 
   document.querySelector<HTMLButtonElement>('#doctorRunRange')!.onclick = render;
+  document.querySelector<HTMLButtonElement>('#doctorLastHour')!.onclick=async()=>{
+    const today=businessDay();fromInput.value=today;toInput.value=today;
+    const now=new Date();const end=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const start=new Date(now.getTime()-3600000);
+    if(start.getDate()!==now.getDate())fromInput.value=`${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}`;
+    fromTimeInput.value=`${String(start.getHours()).padStart(2,'0')}:${String(start.getMinutes()).padStart(2,'0')}`;
+    toTimeInput.value=end;await render();
+  };
 
   document.querySelectorAll<HTMLButtonElement>('[data-doctor-source-filter]').forEach(button => {
     button.onclick = () => {
@@ -4026,12 +4049,12 @@ async function openDoctorProfile(doctor: Doctor) {
 
   document.querySelector<HTMLButtonElement>('#doctorProfilePng')!.onclick = async () => {
     await render();
-    await exportDoctorProfileReport(doctor, currentResult, fromInput.value, toInput.value, 'png');
+    await exportDoctorProfileReport(doctor, filteredResult, fromInput.value, toInput.value, 'png');
   };
 
   document.querySelector<HTMLButtonElement>('#doctorProfilePdf')!.onclick = async () => {
     await render();
-    await exportDoctorProfileReport(doctor, currentResult, fromInput.value, toInput.value, 'pdf');
+    await exportDoctorProfileReport(doctor, filteredResult, fromInput.value, toInput.value, 'pdf');
   };
 
   await render();
@@ -4841,6 +4864,10 @@ function specialtyBookingRowsHtml(rows: Visit[], patientMap: Map<string, Patient
 }
 
 async function renderSpecialtyBookings(): Promise<void> {
+  return renderSpecialtyDoctorDirectory();
+}
+
+async function renderSpecialtyBookingLegacy(): Promise<void> {
   const specialty=specialtyMeta(doctorSpecialtyFilter);
   if(!specialty){
     doctorSpecialtyFilter='';
@@ -4939,6 +4966,39 @@ async function renderSpecialtyBookings(): Promise<void> {
       }catch(err){toast(`تعذر تحديث الحالة: ${String(err)}`,'error')}
     };
   });
+}
+
+async function renderSpecialtyDoctorDirectory(): Promise<void> {
+  const specialty=specialtyMeta(doctorSpecialtyFilter);
+  if(!specialty){doctorSpecialtyFilter='';return renderDoctors()}
+  const day=specialtyBookingDay||businessDay();
+  specialtyBookingDay=day;
+  const report=await invoke<ReportResult>('run_report',{query:{from:day,to:day,doctor:''}});
+  const activeDoctors=doctors.filter(d=>d.active).sort((a,b)=>a.name.localeCompare(b.name,'ar'));
+  const countFor=(name:string)=>report.rows.filter(v=>v.doctor===name).length;
+  shell(`<section class="specialty-doctors-page">
+    <div class="specialty-bookings-head">
+      <div><span class="specialty-bookings-kicker">ملفات الأطباء</span><h2>${esc(specialty.label)}</h2>
+      <p>اختار الطبيب لعرض حجوزاته وتقريراته حسب الساعة أو اليوم أو أي فترة.</p></div>
+      <div class="specialty-bookings-head-actions">
+      <label>اليوم<input id="doctorDirectoryDay" type="date" value="${esc(day)}"></label>
+      <button class="btn ghost" id="doctorsBackHome">← التخصصات</button>
+      <button class="btn primary" id="doctorsNewBooking">＋ حجز جديد</button></div>
+    </div>
+    <div class="specialty-doctor-tools"><input id="specialtyDoctorSearch" class="search-input" placeholder="ابحث باسم الطبيب..." autocomplete="off"><span>${activeDoctors.length} طبيب متاح للاختيار</span></div>
+    <div class="specialty-doctor-grid">${activeDoctors.length?activeDoctors.map(d=>`<article class="specialty-doctor-card" data-specialty-doctor-search="${esc(d.name.toLowerCase())}">
+      <div class="specialty-doctor-avatar">${esc(doctorInitials(d.name))}</div>
+      <div class="specialty-doctor-name"><strong>${esc(d.name)}</strong><small>${esc(d.specialty||'طبيب مسجل')}</small></div>
+      <div class="specialty-doctor-count">${countFor(d.name)} حجز في اليوم المحدد</div>
+      <button class="btn primary specialty-doctor-open" data-doctor-file="${esc(d.id)}" type="button">فتح ملف الطبيب والتقارير</button>
+    </article>`).join(''):'<div class="empty-block">لا يوجد أطباء مسجلون. أضف طبيبًا من إدارة الأطباء أولًا.</div>'}</div>
+  </section>`,specialty.label,`أطباء ${specialty.label}`);
+  document.querySelector<HTMLButtonElement>('#doctorsNewBooking')!.onclick=()=>openSpecialtyBookingModal(doctorSpecialtyFilter,day);
+  document.querySelector<HTMLButtonElement>('#doctorsBackHome')!.onclick=async()=>{doctorSpecialtyFilter='';specialtyBookingDay='';await navigate('dashboard')};
+  document.querySelector<HTMLInputElement>('#doctorDirectoryDay')!.onchange=async e=>{specialtyBookingDay=(e.currentTarget as HTMLInputElement).value||businessDay();await renderSpecialtyDoctorDirectory()};
+  const search=document.querySelector<HTMLInputElement>('#specialtyDoctorSearch')!;
+  search.oninput=()=>{const q=search.value.trim().toLowerCase();document.querySelectorAll<HTMLElement>('[data-specialty-doctor-search]').forEach(el=>{el.style.display=el.dataset.specialtyDoctorSearch?.includes(q)?'':'none'})};
+  document.querySelectorAll<HTMLButtonElement>('[data-doctor-file]').forEach(btn=>{btn.onclick=()=>{const doctor=activeDoctors.find(d=>d.id===btn.dataset.doctorFile);if(doctor)void openDoctorProfile(doctor)}});
 }
 
 function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
