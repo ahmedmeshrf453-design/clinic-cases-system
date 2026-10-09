@@ -4878,3 +4878,28 @@ table td{font-size:13px !important}
 .hologram-specialty-card .specialty-card-copy strong{font-size:18px!important;line-height:1.25!important;color:#173650!important}
 .hologram-specialty-card .specialty-card-copy small{margin-top:0!important;font-size:10px!important;line-height:1.5!important;color:#83929d!important}
 .hologram-specialty-card .specialty-card-arrow{margin-top:2px!important;align-self:center!important}
+
+/* V7.1.20 - restore specialty names below hologram icons (scoped only) */
+.specialty-home-v7110 .specialty-grid .hologram-specialty-card{
+  height:auto!important;min-height:184px!important;overflow:visible!important;
+  display:flex!important;flex-direction:column!important;gap:5px!important;
+  align-items:center!important;justify-content:center!important;
+  padding:9px 7px 12px!important;
+}
+.specialty-home-v7110 .specialty-grid .hologram-specialty-card .specialty-hologram-icon{
+  width:100px!important;height:100px!important;min-width:100px!important;min-height:100px!important;
+  flex:0 0 100px!important;margin:0 auto!important;background:transparent!important;
+}
+.specialty-home-v7110 .specialty-grid .hologram-specialty-card .specialty-card-copy{
+  display:flex!important;flex-direction:column!important;align-items:center!important;
+  justify-content:center!important;flex:0 0 auto!important;height:auto!important;
+  min-height:36px!important;max-height:none!important;overflow:visible!important;
+  width:100%!important;margin:2px 0 0!important;
+}
+.specialty-home-v7110 .specialty-grid .hologram-specialty-card .specialty-card-copy strong{
+  display:block!important;visibility:visible!important;opacity:1!important;
+  position:static!important;color:#173650!important;font-size:12.5px!important;
+  font-weight:800!important;line-height:1.5!important;
+  max-width:100%!important;white-space:normal!important;
+  overflow:visible!important;text-align:center!important;
+}
