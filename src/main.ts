@@ -3253,6 +3253,22 @@ const HOME_SERVICES=[
 const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v7110';
 const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v7110';
 
+const HOME_SPECIALTY_ICON_SRC:Record<string,string>={
+  urology:'/holograms/urology.webp',
+  internal:'/holograms/internal.webp',
+  ortho:'/holograms/ortho.webp',
+  surgery:'/holograms/surgery.webp',
+  eye:'/holograms/eye.webp',
+  neuro:'/holograms/neuro.webp',
+  obgyn:'/holograms/obgyn.webp',
+  ent:'/holograms/ent.webp',
+  nutrition:'/holograms/nutrition.webp',
+  vascular:'/holograms/vascular.webp',
+  audiology:'/holograms/ent.webp'
+};
+
+function homeSpecialtyIconSrc(key:string){return HOME_SPECIALTY_ICON_SRC[key]||'/holograms/internal.webp'}
+
 function specialtyMeta(key:string){return HOME_SPECIALTIES.find(x=>x.key===key)}
 function specialtyMatches(key:string,text:string){const x=specialtyMeta(key);if(!x)return true;const v=String(text||'').toLowerCase();return x.keys.some(k=>v.includes(k.toLowerCase()))}
 function orderedHomeItems<T extends {key:string}>(items:readonly T[],storageKey:string){
@@ -3338,9 +3354,9 @@ async function renderDashboard(){
 
     <div class="home-section-title"><strong>التخصصات</strong><small>اضغط واسحب أي كارت لتغيير ترتيبه</small></div>
     <div class="specialty-grid home-sortable-grid" id="specialtyGridHome">
-      ${orderedSpecialties.map(x=>`<button class="specialty-card home-sortable-card" data-specialty-home="${x.key}" data-order-id="${x.key}" type="button" draggable="true">
+      ${orderedSpecialties.map(x=>`<button class="specialty-card home-sortable-card hologram-specialty-card" data-specialty-home="${x.key}" data-order-id="${x.key}" type="button" draggable="true">
         <span class="specialty-card-drag" title="اسحب لتغيير الترتيب">⋮⋮</span>
-        <span class="specialty-card-icon photo-sprite-tile ${x.iconClass}"></span>
+        <span class="specialty-card-icon specialty-hologram-icon"><img src="${homeSpecialtyIconSrc(x.key)}" alt="${esc(x.label)}"></span>
         <span class="specialty-card-copy"><strong>${x.label}</strong><small>${doctors.filter(d=>d.active&&specialtyMatches(x.key,d.specialty)).length} طبيب • ${count(x.key)} حالة اليوم</small></span>
         <span class="specialty-card-arrow">←</span>
       </button>`).join('')}

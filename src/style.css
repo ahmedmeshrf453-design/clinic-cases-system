@@ -4867,3 +4867,14 @@ table td{font-size:13px !important}
 .specialty-booking-patient-row:hover{background:#f3f9fd!important;box-shadow:inset 3px 0 0 #3d91bf!important}
 .specialty-booking-patient-row:focus{outline:2px solid #76b7d8!important;outline-offset:-2px!important}
 .specialty-booking-patient-row .booking-patient-link{cursor:pointer!important;font-weight:800!important}
+
+
+/* ===== V7.1.19 HOLOGRAM SPECIALTY ICONS ONLY ===== */
+.hologram-specialty-card{position:relative!important;grid-template-columns:1fr!important;grid-auto-rows:auto!important;justify-items:center!important;align-items:center!important;text-align:center!important;gap:8px!important;padding:14px 12px 12px!important;min-height:210px!important;background:#fff!important}
+.hologram-specialty-card .specialty-card-drag{position:absolute!important;top:10px!important;left:12px!important;right:auto!important;align-self:auto!important;padding-top:0!important;letter-spacing:-2px!important}
+.hologram-specialty-card .specialty-card-icon{width:114px!important;height:114px!important;min-width:114px!important;min-height:114px!important;border:none!important;background:transparent!important;box-shadow:none!important;border-radius:0!important;margin:8px auto 2px!important;display:grid!important;place-items:center!important}
+.hologram-specialty-card .specialty-card-icon img{width:100%!important;height:100%!important;object-fit:contain!important;display:block!important;filter:drop-shadow(0 12px 24px rgba(0,163,255,.18))}
+.hologram-specialty-card .specialty-card-copy{display:flex!important;flex-direction:column!important;align-items:center!important;gap:4px!important;text-align:center!important}
+.hologram-specialty-card .specialty-card-copy strong{font-size:18px!important;line-height:1.25!important;color:#173650!important}
+.hologram-specialty-card .specialty-card-copy small{margin-top:0!important;font-size:10px!important;line-height:1.5!important;color:#83929d!important}
+.hologram-specialty-card .specialty-card-arrow{margin-top:2px!important;align-self:center!important}
