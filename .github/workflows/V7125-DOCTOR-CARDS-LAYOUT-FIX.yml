@@ -1,0 +1,87 @@
+name: Clinic Cases V7.1.25 Doctor Card Layout Fix
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Fix doctor card layout only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+          p=Path('src/style.css')
+          s=p.read_text(encoding='utf-8')
+          marker='/* V7.1.25 Doctor card layout repair - doctors only */'
+          assert marker not in s, 'Layout repair already installed'
+          assert '.doctor-icon-today' in s and '.doctor-icon-card' in s
+          p.write_text(s+'\n'+'\n/* V7.1.25 Doctor card layout repair - doctors only */\n.doctor-icon-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:14px!important}\n.doctor-icon-grid .doctor-icon-card{\n  box-sizing:border-box!important;display:flex!important;flex-direction:column!important;\n  align-items:stretch!important;gap:10px!important;min-width:0!important;\n  min-height:228px!important;height:auto!important;padding:16px!important;\n  overflow:hidden!important;background:#fff!important\n}\n.doctor-icon-grid .doctor-icon-visual{\n  width:56px!important;height:56px!important;min-width:56px!important;\n  flex:0 0 56px!important;align-self:flex-start!important\n}\n.doctor-icon-grid .doctor-icon-copy{\n  min-height:58px!important;height:auto!important;min-width:0!important;\n  width:100%!important;overflow:visible!important\n}\n.doctor-icon-grid .doctor-icon-copy strong{\n  display:block!important;font-size:16px!important;line-height:1.5!important;\n  white-space:normal!important;overflow-wrap:anywhere!important\n}\n.doctor-icon-grid .doctor-icon-copy span{\n  display:block!important;font-size:11px!important;line-height:1.6!important;\n  overflow-wrap:anywhere!important\n}\n.doctor-icon-grid .doctor-icon-today{\n  box-sizing:border-box!important;display:flex!important;flex-wrap:wrap!important;\n  justify-content:space-between!important;align-items:center!important;\n  width:100%!important;height:auto!important;min-height:46px!important;\n  min-width:0!important;flex:0 0 auto!important;aspect-ratio:auto!important;\n  gap:6px 10px!important;padding:10px!important;font-size:12px!important;\n  line-height:1.5!important;white-space:normal!important;\n}\n.doctor-icon-grid .doctor-icon-today span,\n.doctor-icon-grid .doctor-icon-today b{\n  display:inline!important;width:auto!important;height:auto!important;min-width:0!important;\n  font-size:12px!important;line-height:1.5!important;white-space:normal!important;\n}\n.doctor-icon-grid .doctor-icon-actions{\n  position:static!important;display:flex!important;flex-wrap:wrap!important;\n  align-items:center!important;gap:7px!important;width:100%!important;\n  min-height:46px!important;margin-top:auto!important;padding-top:10px!important\n}\n@media(max-width:1160px){.doctor-icon-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}\n@media(max-width:860px){.doctor-icon-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}\n@media(max-width:520px){.doctor-icon-grid{grid-template-columns:1fr!important}}\n'+'\n',encoding='utf-8')
+          for file in ['package.json','src-tauri/tauri.conf.json']:
+              p=Path(file);o=json.loads(p.read_text(encoding='utf-8'))
+              assert o['version']=='7.1.24',(file,o['version'])
+              o['version']='7.1.25'
+              p.write_text(json.dumps(o,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          p=Path('package-lock.json');s=p.read_text(encoding='utf-8')
+          s,n=re.subn(r'("version"\s*:\s*")7\.1\.24(")',r'\g<1>7.1.25\2',s,count=2)
+          assert n==2,n
+          p.write_text(s,encoding='utf-8')
+          p=Path('src-tauri/Cargo.toml');s=p.read_text(encoding='utf-8')
+          s,n=re.subn(r'(?m)^version\s*=\s*"7\.1\.24"\s*$', 'version = "7.1.25"',s,count=1)
+          assert n==1
+          p.write_text(s,encoding='utf-8')
+          p=Path('src-tauri/Cargo.lock');s=p.read_text(encoding='utf-8')
+          s,n=re.subn(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.24(")',r'\g<1>7.1.25\2',s,count=1)
+          assert n==1
+          p.write_text(s,encoding='utf-8')
+          print('CSS-only doctor layout fix applied')
+          
+          PY
+      - name: Verify scope
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('src/style.css').read_text(encoding='utf-8')
+          assert 'V7.1.25 Doctor card layout repair - doctors only' in s
+          assert 'aspect-ratio:auto!important' in s
+          assert 'height:auto!important' in s
+          print('doctor card regression CSS present')
+          
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: npm ci
+      - name: Frontend build
+        run: npm run build
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Windows installer
+        run: npx tauri build --bundles nsis
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.25-Doctor-Layout
+          path: src-tauri/target/release/bundle/nsis/*7.1.25*-setup.exe
+          if-no-files-found: error
+      - name: Commit successful patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/style.css package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m 'V7.1.25 fix doctor card layout without UI redesign'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
