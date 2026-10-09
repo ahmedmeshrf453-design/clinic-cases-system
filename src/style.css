@@ -4967,3 +4967,9 @@ table td{font-size:13px !important}
 @media(max-width:860px){.doctor-icon-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(max-width:520px){.doctor-icon-grid{grid-template-columns:1fr!important}}
 
+
+/* V7.1.26: one universal animated doctor icon, doctor cards ONLY */
+.doctor-icon-grid .shared-doctor-animation{width:76px!important;height:76px!important;min-width:76px!important;flex:0 0 76px!important;aspect-ratio:1/1!important;background:transparent!important;border:0!important;overflow:visible!important;animation:unified-doctor-float 3.6s ease-in-out infinite!important}
+.doctor-icon-grid .shared-doctor-animation img{display:block!important;width:100%!important;height:100%!important;object-fit:contain!important;filter:drop-shadow(0 6px 9px rgba(19,143,197,.16))}
+@keyframes unified-doctor-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@media(prefers-reduced-motion:reduce){.doctor-icon-grid .shared-doctor-animation{animation:none!important}}

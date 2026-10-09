@@ -5173,10 +5173,7 @@ async function renderDoctors(): Promise<void> {
           const todayItem = todayByDoctor.get(d.name) || { count: 0, doctorAmount: 0 };
           return `
             <article class="doctor-icon-card ${d.active ? '' : 'inactive'}" data-doctor-open="${esc(d.id)}" role="button" tabindex="0">
-              <div class="doctor-icon-visual">
-                <span class="doctor-icon-symbol">⚕</span>
-                <span class="doctor-icon-initials">${esc(doctorInitials(d.name))}</span>
-              </div>
+              <div class="doctor-icon-visual shared-doctor-animation"><img src="/doctor-icons/unified-doctor.svg" alt="أيقونة طبيب" draggable="false"></div>
 
               <div class="doctor-icon-copy">
                 <strong>${esc(d.name)}</strong>
