@@ -1,7 +1,7 @@
 {
   "name": "clinic-cases-system",
   "private": true,
-  "version": "7.1.20",
+  "version": "7.1.21",
   "type": "module",
   "scripts": {
     "dev": "vite --port 1420",

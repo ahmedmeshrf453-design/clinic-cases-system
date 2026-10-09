@@ -4903,3 +4903,10 @@ table td{font-size:13px !important}
   max-width:100%!important;white-space:normal!important;
   overflow:visible!important;text-align:center!important;
 }
+
+
+/* ===== V7.1.21 GLOBAL DOCTORS + NEW HOLOGRAMS ===== */
+.hologram-specialty-card .specialty-card-copy strong{display:block!important;max-width:100%!important;white-space:normal!important;overflow:visible!important;text-overflow:unset!important}
+.hologram-specialty-card .specialty-card-copy small{display:block!important}
+.service-hologram-icon{width:58px!important;height:58px!important;min-width:58px!important;min-height:58px!important;display:grid!important;place-items:center!important;background:transparent!important;border:none!important;box-shadow:none!important;border-radius:0!important;margin:0 auto!important}
+.service-hologram-icon img{width:100%!important;height:100%!important;display:block!important;object-fit:contain!important;filter:drop-shadow(0 10px 22px rgba(0,163,255,.18))}

@@ -3232,6 +3232,12 @@ async function renderTrash() {
 const HOME_SPECIALTIES=[
   {key:'urology',label:'مسالك بولية وذكورة',iconClass:'organ-urology',keys:['مسالك','ذكورة']},
   {key:'internal',label:'باطنة وجهاز هضمي',iconClass:'organ-internal',keys:['باطنة','جهاز هضمي']},
+  {key:'cardio',label:'قلب وأوعية',iconClass:'organ-cardio',keys:['قلب','اوعية','أوعية','cardio']},
+  {key:'endocrine',label:'غدد صماء',iconClass:'organ-endocrine',keys:['غدد','سكر','صماء','endocrine']},
+  {key:'pediatrics',label:'أطفال وحديثي الولادة',iconClass:'organ-pediatrics',keys:['اطفال','أطفال','حديثي الولادة','neonat']},
+  {key:'dermatology',label:'جلدية',iconClass:'organ-dermatology',keys:['جلدية','جلد']},
+  {key:'behavior',label:'تعديل سلوك',iconClass:'organ-behavior',keys:['تعديل سلوك','سلوك','behavior']},
+  {key:'dental',label:'أسنان',iconClass:'organ-dental',keys:['أسنان','اسنان','فم']},
   {key:'ortho',label:'عظام ومفاصل',iconClass:'organ-ortho',keys:['عظام','مفاصل']},
   {key:'surgery',label:'جراحة عامة ومناظير',iconClass:'organ-surgery',keys:['جراحة عامة','مناظير']},
   {key:'eye',label:'عيون',iconClass:'organ-eye',keys:['عيون','رمد','ophthalm']},
@@ -3247,27 +3253,46 @@ const HOME_SERVICES=[
   {key:'labs',screen:'labs' as Screen,label:'التحاليل',iconClass:'organ-labs'},
   {key:'radiology',screen:'radiology' as Screen,label:'الأشعة',iconClass:'organ-radiology'},
   {key:'physio',screen:'physio' as Screen,label:'العلاج الطبيعي',iconClass:'organ-physio'},
-  {key:'nursing',screen:'nursing' as Screen,label:'خدمات التمريض',iconClass:'organ-nursing'}
+  {key:'nursing',screen:'nursing' as Screen,label:'خدمات التمريض',iconClass:'organ-nursing'},
+  {key:'emergency',screen:'patients' as Screen,label:'الطوارئ',iconClass:'organ-emergency'},
+  {key:'others',screen:'patients' as Screen,label:'خدمات أخرى',iconClass:'organ-others'}
 ] as const;
 
-const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v7110';
-const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v7110';
+const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v7121';
+const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v7121';
 
 const HOME_SPECIALTY_ICON_SRC:Record<string,string>={
-  urology:'/holograms/urology.webp',
-  internal:'/holograms/internal.webp',
-  ortho:'/holograms/ortho.webp',
-  surgery:'/holograms/surgery.webp',
-  eye:'/holograms/eye.webp',
-  neuro:'/holograms/neuro.webp',
-  obgyn:'/holograms/obgyn.webp',
-  ent:'/holograms/ent.webp',
-  nutrition:'/holograms/nutrition.webp',
-  vascular:'/holograms/vascular.webp',
-  audiology:'/holograms/ent.webp'
+  urology:'/holograms/urology.svg',
+  internal:'/holograms/internal.svg',
+  cardio:'/holograms/cardio.svg',
+  endocrine:'/holograms/endocrine.svg',
+  pediatrics:'/holograms/pediatrics.svg',
+  dermatology:'/holograms/dermatology.svg',
+  behavior:'/holograms/behavior.svg',
+  dental:'/holograms/dental.svg',
+  ortho:'/holograms/ortho.svg',
+  surgery:'/holograms/surgery.svg',
+  eye:'/holograms/eye.svg',
+  neuro:'/holograms/neuro.svg',
+  obgyn:'/holograms/obgyn.svg',
+  ent:'/holograms/ent.svg',
+  nutrition:'/holograms/nutrition.svg',
+  vascular:'/holograms/vascular.svg',
+  audiology:'/holograms/audiology.svg'
 };
 
-function homeSpecialtyIconSrc(key:string){return HOME_SPECIALTY_ICON_SRC[key]||'/holograms/internal.webp'}
+function homeSpecialtyIconSrc(key:string){return HOME_SPECIALTY_ICON_SRC[key]||'/holograms/internal.svg'}
+
+const HOME_SERVICE_ICON_SRC:Record<string,string>={
+  labs:'/holograms/labs.svg',
+  radiology:'/holograms/radiology.svg',
+  physio:'/holograms/physio.svg',
+  nursing:'/holograms/nursing.svg',
+  emergency:'/holograms/emergency.svg',
+  others:'/holograms/others.svg'
+};
+
+function homeServiceIconSrc(key:string){return HOME_SERVICE_ICON_SRC[key]||'/holograms/others.svg'}
 
 function specialtyMeta(key:string){return HOME_SPECIALTIES.find(x=>x.key===key)}
 function specialtyMatches(key:string,text:string){const x=specialtyMeta(key);if(!x)return true;const v=String(text||'').toLowerCase();return x.keys.some(k=>v.includes(k.toLowerCase()))}
@@ -3368,7 +3393,7 @@ async function renderDashboard(){
         const todayCount=x.key==='labs'?labs.length:x.key==='radiology'?rad.length:x.key==='physio'?physio.length:nursing.length;
         return `<button class="clinic-service-card home-sortable-card" data-home-service="${x.screen}" data-order-id="${x.key}" type="button" draggable="true">
           <span class="specialty-card-drag" title="اسحب لتغيير الترتيب">⋮⋮</span>
-          <span class="clinic-service-icon photo-sprite-tile ${x.iconClass}"></span>
+          <span class="clinic-service-icon service-hologram-icon"><img src="${homeServiceIconSrc(x.key)}" alt="${esc(x.label)}"></span>
           <span class="clinic-service-copy"><strong>${x.label}</strong><small>${todayCount} حالة اليوم</small></span>
         </button>`;
       }).join('')}
@@ -4920,7 +4945,7 @@ async function renderSpecialtyBookings(): Promise<void> {
 function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
   const specialty=specialtyMeta(specialtyKey);
   if(!specialty)return;
-  const specialtyDoctors=doctors.filter(d=>d.active&&specialtyMatches(specialtyKey,d.specialty));
+  const specialtyDoctors=doctors.filter(d=>d.active);
   const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
   const doctorOptionsHtml=specialtyDoctors.length
     ? `<option value="">— اختر الطبيب —</option>${specialtyDoctors.map(d=>`<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}`
