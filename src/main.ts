@@ -1905,6 +1905,20 @@ function navButton(id: Screen, icon: string, label: string, count?: number) {
 
 async function loadDoctors() {
   doctors = await invoke<Doctor[]>('list_doctors', { query: { activeOnly: false } });
+  const additionalDoctorNames = ['محمد عاطف', 'رامي قاسم', 'حسام المغربي'];
+  let added = false;
+  for (const name of additionalDoctorNames) {
+    if (doctors.some(d => d.name.trim() === name)) continue;
+    try {
+      await invoke('save_doctor', { input: { id: '', name, specialty: '', active: true } });
+      added = true;
+    } catch (err) {
+      // A second instance may have created the record first. Do not overwrite it.
+      if (!String(err).includes('يوجد طبيب بنفس الاسم')) throw err;
+      added = true;
+    }
+  }
+  if (added) doctors = await invoke<Doctor[]>('list_doctors', { query: { activeOnly: false } });
 }
 
 async function loadSettings() {
