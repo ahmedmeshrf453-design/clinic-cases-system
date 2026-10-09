@@ -1,0 +1,63 @@
+name: Remove Counts from Specialty Holograms
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Remove specialty card counts only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('src/main.ts')
+          s=p.read_text(encoding='utf-8')
+          old='<span class="specialty-card-copy"><strong>${x.label}</strong><small>${doctors.filter(d=>d.active&&specialtyMatches(x.key,d.specialty)).length} طبيب • ${count(x.key)} حالة اليوم</small></span>'
+          new='<span class="specialty-card-copy"><strong>${x.label}</strong></span>'
+          if old in s:
+              assert s.count(old)==1
+              s=s.replace(old,new,1)
+              p.write_text(s,encoding='utf-8')
+          elif new not in s:
+              raise SystemExit('Specialty card markup changed: refusing unsafe patch')
+          assert new in p.read_text(encoding='utf-8')
+          print('Specialty hologram cards now show only the icon and name')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: npm ci
+      - name: Frontend build
+        run: npm run build
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build Windows installer
+        run: npx tauri build --bundles nsis
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Specialty-Holograms-Names-Only
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+      - name: Commit after successful build
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts
+          if ! git diff --cached --quiet; then
+            git commit -m 'Show specialty hologram and name without doctor or case counts'
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
+          fi
