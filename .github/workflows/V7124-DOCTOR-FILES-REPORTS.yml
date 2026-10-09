@@ -1,0 +1,190 @@
+name: Clinic Cases V7.1.24 Doctor Files and Flexible Reports
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Apply doctor directory and flexible reports
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re,json
+          p=Path('src/main.ts');s=p.read_text(encoding='utf-8')
+          cssp=Path('src/style.css');c=cssp.read_text(encoding='utf-8')
+
+          # Separate doctor-directory landing screen; reuse intact bookings engine for new booking.
+          anchor='async function renderSpecialtyBookings(): Promise<void> {'
+          assert s.count(anchor)==1,'specialty entrypoint drift'
+          s=s.replace(anchor,'async function renderSpecialtyBookings(): Promise<void> {\n  return renderSpecialtyDoctorDirectory();\n}\n\nasync function renderSpecialtyBookingLegacy(): Promise<void> {',1)
+
+          new_func=r'''async function renderSpecialtyDoctorDirectory(): Promise<void> {
+            const specialty=specialtyMeta(doctorSpecialtyFilter);
+            if(!specialty){doctorSpecialtyFilter='';return renderDoctors()}
+            const day=specialtyBookingDay||businessDay();
+            specialtyBookingDay=day;
+            const report=await invoke<ReportResult>('run_report',{query:{from:day,to:day,doctor:''}});
+            const activeDoctors=doctors.filter(d=>d.active).sort((a,b)=>a.name.localeCompare(b.name,'ar'));
+            const countFor=(name:string)=>report.rows.filter(v=>v.doctor===name).length;
+            shell(`<section class="specialty-doctors-page">
+              <div class="specialty-bookings-head">
+                <div><span class="specialty-bookings-kicker">ملفات الأطباء</span><h2>${esc(specialty.label)}</h2>
+                <p>اختار الطبيب لعرض حجوزاته وتقريراته حسب الساعة أو اليوم أو أي فترة.</p></div>
+                <div class="specialty-bookings-head-actions">
+                <label>اليوم<input id="doctorDirectoryDay" type="date" value="${esc(day)}"></label>
+                <button class="btn ghost" id="doctorsBackHome">← التخصصات</button>
+                <button class="btn primary" id="doctorsNewBooking">＋ حجز جديد</button></div>
+              </div>
+              <div class="specialty-doctor-tools"><input id="specialtyDoctorSearch" class="search-input" placeholder="ابحث باسم الطبيب..." autocomplete="off"><span>${activeDoctors.length} طبيب متاح للاختيار</span></div>
+              <div class="specialty-doctor-grid">${activeDoctors.length?activeDoctors.map(d=>`<article class="specialty-doctor-card" data-specialty-doctor-search="${esc(d.name.toLowerCase())}">
+                <div class="specialty-doctor-avatar">${esc(doctorInitials(d.name))}</div>
+                <div class="specialty-doctor-name"><strong>${esc(d.name)}</strong><small>${esc(d.specialty||'طبيب مسجل')}</small></div>
+                <div class="specialty-doctor-count">${countFor(d.name)} حجز في اليوم المحدد</div>
+                <button class="btn primary specialty-doctor-open" data-doctor-file="${esc(d.id)}" type="button">فتح ملف الطبيب والتقارير</button>
+              </article>`).join(''):'<div class="empty-block">لا يوجد أطباء مسجلون. أضف طبيبًا من إدارة الأطباء أولًا.</div>'}</div>
+            </section>`,specialty.label,`أطباء ${specialty.label}`);
+            document.querySelector<HTMLButtonElement>('#doctorsNewBooking')!.onclick=()=>openSpecialtyBookingModal(doctorSpecialtyFilter,day);
+            document.querySelector<HTMLButtonElement>('#doctorsBackHome')!.onclick=async()=>{doctorSpecialtyFilter='';specialtyBookingDay='';await navigate('dashboard')};
+            document.querySelector<HTMLInputElement>('#doctorDirectoryDay')!.onchange=async e=>{specialtyBookingDay=(e.currentTarget as HTMLInputElement).value||businessDay();await renderSpecialtyDoctorDirectory()};
+            const search=document.querySelector<HTMLInputElement>('#specialtyDoctorSearch')!;
+            search.oninput=()=>{const q=search.value.trim().toLowerCase();document.querySelectorAll<HTMLElement>('[data-specialty-doctor-search]').forEach(el=>{el.style.display=el.dataset.specialtyDoctorSearch?.includes(q)?'':'none'})};
+            document.querySelectorAll<HTMLButtonElement>('[data-doctor-file]').forEach(btn=>{btn.onclick=()=>{const doctor=activeDoctors.find(d=>d.id===btn.dataset.doctorFile);if(doctor)void openDoctorProfile(doctor)}});
+          }
+
+          '''
+          assert s.count('function openSpecialtyBookingModal(')==1
+          s=s.replace('function openSpecialtyBookingModal(',new_func+'function openSpecialtyBookingModal(',1)
+
+          # Existing doctor profile becomes a full customizable period and time range report.
+          old='''          <button class="btn primary small" id="doctorRunRange">عرض الفترة</button>'''
+          new='''          <label>من الساعة<input id="doctorFromTime" type="time" value="00:00"></label>
+                    <label>إلى الساعة<input id="doctorToTime" type="time" value="23:59"></label>
+                    <button class="btn ghost small" id="doctorLastHour">ساعة واحدة</button>
+                    <button class="btn primary small" id="doctorRunRange">عرض التقرير</button>'''
+          assert s.count(old)==1,'doctor period bar drift';s=s.replace(old,new,1)
+          old='''  const body = document.querySelector<HTMLDivElement>('#doctorProfileBody')!;
+
+            let currentResult:'''
+          new='''  const body = document.querySelector<HTMLDivElement>('#doctorProfileBody')!;
+            const fromTimeInput=document.querySelector<HTMLInputElement>('#doctorFromTime')!;
+            const toTimeInput=document.querySelector<HTMLInputElement>('#doctorToTime')!;
+
+            let currentResult:'''
+          assert s.count(old)==1;s=s.replace(old,new,1)
+          old='''  let selectedDoctorSource = '';
+
+            const renderSourceDetails'''
+          new='''  let selectedDoctorSource = '';
+            let filteredResult:ReportResult={totalVisits:0,uniquePatients:0,rows:[]};
+
+            const renderSourceDetails'''
+          assert s.count(old)==1;s=s.replace(old,new,1)
+          old='''      const metrics = reportMetrics(currentResult.rows);
+                const sources = doctorSourceSummary(currentResult.rows);'''
+          new='''      const t1=fromTimeInput.value||'00:00';
+                const t2=toTimeInput.value||'23:59';
+                if(from>to || (from===to && t1>t2))throw new Error('الفترة الزمنية غير صالحة');
+                const rows=currentResult.rows.filter(v=>{
+                  const point=`${v.visitDate} ${v.visitTime||'00:00'}`;
+                  return point>=`${from} ${t1}` && point<=`${to} ${t2}`;
+                });
+                filteredResult={...currentResult,rows,totalVisits:rows.length,uniquePatients:new Set(rows.map(v=>v.patientId)).size};
+                currentResult=filteredResult;
+                const metrics = reportMetrics(filteredResult.rows);
+                const sources = doctorSourceSummary(filteredResult.rows);'''
+          assert s.count(old)==1;s=s.replace(old,new,1)
+          # Make export honor filtered rows and times.
+          s=s.replace("await exportDoctorProfileReport(doctor, currentResult, fromInput.value, toInput.value, 'png');","await exportDoctorProfileReport(doctor, filteredResult, fromInput.value, toInput.value, 'png');",1)
+          s=s.replace("await exportDoctorProfileReport(doctor, currentResult, fromInput.value, toInput.value, 'pdf');","await exportDoctorProfileReport(doctor, filteredResult, fromInput.value, toInput.value, 'pdf');",1)
+          old="  document.querySelector<HTMLButtonElement>('#doctorRunRange')!.onclick = render;"
+          new="""  document.querySelector<HTMLButtonElement>('#doctorRunRange')!.onclick = render;
+            document.querySelector<HTMLButtonElement>('#doctorLastHour')!.onclick=async()=>{
+              const today=businessDay();fromInput.value=today;toInput.value=today;
+              const now=new Date();const end=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+              const start=new Date(now.getTime()-3600000);
+              if(start.getDate()!==now.getDate())fromInput.value=localDateKey(start);
+              fromTimeInput.value=`${String(start.getHours()).padStart(2,'0')}:${String(start.getMinutes()).padStart(2,'0')}`;
+              toTimeInput.value=end;await render();
+            };"""
+          # use localDateKey? check existing; alternative avoid localDateKey
+          new=new.replace('localDateKey(start)','`${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,\'0\')}-${String(start.getDate()).padStart(2,\'0\')}`')
+          assert s.count(old)==1;s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+
+          marker='/* V7.1.24 DOCTOR FIRST SPECIALTY FILES */'
+          if marker not in c:
+           c+='''\n/* V7.1.24 DOCTOR FIRST SPECIALTY FILES */
+          .specialty-doctor-tools{display:flex;align-items:center;justify-content:space-between;gap:15px;margin:14px 0 18px}.specialty-doctor-tools .search-input{max-width:440px}.specialty-doctor-tools span{font-size:13px;color:#6b869c}
+          .specialty-doctor-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:14px}
+          .specialty-doctor-card{min-height:224px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:12px;padding:22px 16px;border:1px solid #d9e6ef;border-radius:18px;background:#fff;box-shadow:0 5px 16px rgba(15,56,86,.045)}
+          .specialty-doctor-avatar{display:grid;place-items:center;width:60px;height:60px;border-radius:18px;background:linear-gradient(145deg,#e7f9ff,#f3f6ff);color:#176b99;font-size:22px;font-weight:900;border:1px solid #d0e8f5}
+          .specialty-doctor-name strong{display:block;font-size:17px;color:#123858}.specialty-doctor-name small{display:block;font-size:12px;color:#7d93a5;margin-top:5px}.specialty-doctor-count{font-size:12px;color:#426d88}.specialty-doctor-open{width:100%}
+          .doctor-period-bar input[type=time]{min-width:100px}
+          @media(max-width:750px){.specialty-doctor-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.specialty-doctor-tools{flex-wrap:wrap}}
+          '''
+          cssp.write_text(c,encoding='utf-8')
+          for file in ['package.json','src-tauri/tauri.conf.json']:
+           q=Path(file);v=json.loads(q.read_text(encoding='utf-8'));assert v['version']=='7.1.23',(file,v['version']);v['version']='7.1.24';q.write_text(json.dumps(v,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          q=Path('package-lock.json');v=q.read_text(encoding='utf-8');v,n=re.subn(r'("version"\s*:\s*")7\.1\.23(")',r'\g<1>7.1.24\2',v,count=2);assert n==2;n and q.write_text(v,encoding='utf-8')
+          for file,pat,replace in [('src-tauri/Cargo.toml',r'(?m)^version\s*=\s*"7\.1\.23"\s*$', 'version = "7.1.24"'),('src-tauri/Cargo.lock',r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.23(")',r'\g<1>7.1.24\2')]:
+           q=Path(file);v=q.read_text(encoding='utf-8');v,n=re.subn(pat,replace,v,count=1);assert n==1,file;q.write_text(v,encoding='utf-8')
+          print('V7.1.24 doctor file UI and period reporting patch applied')
+          PY
+      - name: Verify doctor reports
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('src/main.ts').read_text(encoding='utf-8')
+          a={
+           'doctor landing': 'return renderSpecialtyDoctorDirectory();' in s,
+           'all active doctors': 'const activeDoctors=doctors.filter(d=>d.active)' in s,
+           'reusable doctor file': 'openDoctorProfile(doctor)' in s,
+           'hour start': 'doctorFromTime' in s,
+           'hour end': 'doctorToTime' in s,
+           'duration filter': 'const rows=currentResult.rows.filter(v=>' in s,
+           'filtered pdf': "exportDoctorProfileReport(doctor, filteredResult, fromInput.value, toInput.value, 'pdf')" in s,
+           'preserved registration': "openSpecialtyBookingModal(doctorSpecialtyFilter,day)" in s,
+          }
+          for k,v in a.items():print(k, 'OK' if v else 'FAIL')
+          assert all(a.values())
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        shell: bash
+        run: npm ci
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build Windows installer
+        shell: bash
+        run: npx tauri build --bundles nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-V7.1.24-Doctor-Files-Reports
+          path: src-tauri/target/release/bundle/nsis/*7.1.24*-setup.exe
+          if-no-files-found: error
+      - name: Commit validated changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src/style.css src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json package-lock.json
+          git commit -m 'V7.1.24: doctor files and flexible booking reports'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
