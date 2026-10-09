@@ -1,0 +1,77 @@
+name: Clinic Cases V7.1.26 Unified Doctor Animation
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch doctor icons only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+          p=Path('src/main.ts');s=p.read_text(encoding='utf-8')
+          old='<div class="doctor-icon-visual">\n                <span class="doctor-icon-symbol">⚕</span>\n                <span class="doctor-icon-initials">${esc(doctorInitials(d.name))}</span>\n              </div>'
+          new='<div class="doctor-icon-visual shared-doctor-animation"><img src="/doctor-icons/unified-doctor.svg" alt="أيقونة طبيب" draggable="false"></div>'
+          assert s.count(old)==1,'doctor icon markup not found or duplicated'
+          s=s.replace(old,new,1);p.write_text(s,encoding='utf-8')
+          p=Path('public/doctor-icons/unified-doctor.svg');p.parent.mkdir(parents=True,exist_ok=True);p.write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="coat" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#5cf0ff"/><stop offset="1" stop-color="#1882c6"/></linearGradient></defs><circle cx="64" cy="64" r="59" fill="#eaf9fd" stroke="#b9e7f6" stroke-width="2"/><circle cx="64" cy="40" r="20" fill="#d8a98d"/><path d="M44 39c1-27 40-26 41-2-10-6-16-18-26-12-6 9-10 9-15 14" fill="#18445d"/><path d="M24 112V90c0-18 13-28 29-30l11 11 11-11c16 2 29 12 29 30v22" fill="url(#coat)" stroke="#17618b" stroke-width="3"/><path d="M53 61l11 10 11-10-6 49H59z" fill="#f7fcff"/><path d="M46 77v16c0 11 8 20 18 20s18-9 18-20V77" fill="none" stroke="#164d6a" stroke-width="5" stroke-linecap="round"/><circle cx="82" cy="78" r="7" fill="#f7fcff" stroke="#164d6a" stroke-width="4"/><path d="M36 94h14M43 87v14" stroke="#f7fcff" stroke-width="4" stroke-linecap="round"/></svg>',encoding='utf-8')
+          p=Path('src/style.css');c=p.read_text(encoding='utf-8')
+          css='\n/* V7.1.26: one universal animated doctor icon, doctor cards ONLY */\n.doctor-icon-grid .shared-doctor-animation{width:76px!important;height:76px!important;min-width:76px!important;flex:0 0 76px!important;aspect-ratio:1/1!important;background:transparent!important;border:0!important;overflow:visible!important;animation:unified-doctor-float 3.6s ease-in-out infinite!important}\n.doctor-icon-grid .shared-doctor-animation img{display:block!important;width:100%!important;height:100%!important;object-fit:contain!important;filter:drop-shadow(0 6px 9px rgba(19,143,197,.16))}\n@keyframes unified-doctor-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}\n@media(prefers-reduced-motion:reduce){.doctor-icon-grid .shared-doctor-animation{animation:none!important}}\n'
+          assert 'V7.1.26: one universal animated doctor icon' not in c
+          p.write_text(c+css,encoding='utf-8')
+          for path in ['package.json','src-tauri/tauri.conf.json']:
+           p=Path(path);j=json.loads(p.read_text(encoding='utf-8'));assert j['version']=='7.1.25';j['version']='7.1.26';p.write_text(json.dumps(j,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          p=Path('package-lock.json');s=p.read_text(encoding='utf-8');s,n=re.subn(r'("version"\s*:\s*")7\.1\.25(")',r'\g<1>7.1.26\2',s,count=2);assert n==2;p.write_text(s,encoding='utf-8')
+          p=Path('src-tauri/Cargo.toml');s=p.read_text(encoding='utf-8');s,n=re.subn(r'(?m)^version\s*=\s*"7\.1\.25"\s*$', 'version = "7.1.26"',s,count=1);assert n==1;p.write_text(s,encoding='utf-8')
+          p=Path('src-tauri/Cargo.lock');s=p.read_text(encoding='utf-8');s,n=re.subn(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.25(")',r'\g<1>7.1.26\2',s,count=1);assert n==1;p.write_text(s,encoding='utf-8')
+          print('Unified doctor icon patch applied')
+          PY
+      - name: Verify icon changes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          m=Path('src/main.ts').read_text(encoding='utf-8')
+          c=Path('src/style.css').read_text(encoding='utf-8')
+          assert m.count('class="doctor-icon-visual shared-doctor-animation"')==1
+          assert 'unified-doctor-float' in c
+          assert Path('public/doctor-icons/unified-doctor.svg').is_file()
+          assert 'data-doctor-open' in m and 'openDoctorProfile(doctor)' in m
+          print('Icon scope and doctor profile navigation OK')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: npm ci
+      - name: Frontend build
+        run: npm run build
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Windows installer
+        run: npx tauri build --bundles nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.26-Unified-Doctor-Icon
+          path: src-tauri/target/release/bundle/nsis/*7.1.26*-setup.exe
+          if-no-files-found: error
+      - name: Commit validated update
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src/style.css public/doctor-icons/unified-doctor.svg package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m 'V7.1.26: unified animated doctor icon only'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
