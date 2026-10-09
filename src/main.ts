@@ -3381,7 +3381,7 @@ async function renderDashboard(){
       ${orderedSpecialties.map(x=>`<button class="specialty-card home-sortable-card hologram-specialty-card" data-specialty-home="${x.key}" data-order-id="${x.key}" type="button" draggable="true">
         <span class="specialty-card-drag" title="اسحب لتغيير الترتيب">⋮⋮</span>
         <span class="specialty-card-icon specialty-hologram-icon"><img src="${homeSpecialtyIconSrc(x.key)}" alt="${esc(x.label)}"></span>
-        <span class="specialty-card-copy"><strong>${x.label}</strong><small>${doctors.filter(d=>d.active&&specialtyMatches(x.key,d.specialty)).length} طبيب • ${count(x.key)} حالة اليوم</small></span>
+        <span class="specialty-card-copy"><strong>${x.label}</strong></span>
         <span class="specialty-card-arrow">←</span>
       </button>`).join('')}
     </div>
