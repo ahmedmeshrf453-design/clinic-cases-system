@@ -4864,7 +4864,7 @@ function specialtyBookingRowsHtml(rows: Visit[], patientMap: Map<string, Patient
 }
 
 async function renderSpecialtyBookings(): Promise<void> {
-  return renderSpecialtyDoctorDirectory();
+  return renderSpecialtyBookingLegacy();
 }
 
 async function renderSpecialtyBookingLegacy(): Promise<void> {
@@ -4882,7 +4882,7 @@ async function renderSpecialtyBookingLegacy(): Promise<void> {
   ]);
   const patientMap=new Map(patients.map(p=>[p.id,p]));
   const rows=report.rows
-    .filter(v=>specialtyMatches(doctorSpecialtyFilter,`${v.specialty||''} ${doctors.find(d=>d.name===v.doctor)?.specialty||''}`))
+    .filter(v=>specialtyMatches(doctorSpecialtyFilter,String(v.specialty||'').trim() || String(doctors.find(d=>d.name===v.doctor)?.specialty||'')))
     .sort((a,b)=>(a.visitTime||'99:99').localeCompare(b.visitTime||'99:99'));
 
   const waiting=rows.filter(v=>specialtyBookingStatusLabel(v.status)==='منتظر').length;
