@@ -1,0 +1,125 @@
+name: Clinic Cases V7.1.23 Add Three Doctors
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Add the three doctors without changing existing records
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+          p=Path('src/main.ts')
+          s=p.read_text(encoding='utf-8')
+          old="""async function loadDoctors() {
+            doctors = await invoke<Doctor[]>('list_doctors', { query: { activeOnly: false } });
+          }"""
+          new="""async function loadDoctors() {
+            doctors = await invoke<Doctor[]>('list_doctors', { query: { activeOnly: false } });
+            const additionalDoctorNames = ['محمد عاطف', 'رامي قاسم', 'حسام المغربي'];
+            let added = false;
+            for (const name of additionalDoctorNames) {
+              if (doctors.some(d => d.name.trim() === name)) continue;
+              try {
+                await invoke('save_doctor', { input: { id: '', name, specialty: '', active: true } });
+                added = true;
+              } catch (err) {
+                // A second instance may have created the record first. Do not overwrite it.
+                if (!String(err).includes('يوجد طبيب بنفس الاسم')) throw err;
+                added = true;
+              }
+            }
+            if (added) doctors = await invoke<Doctor[]>('list_doctors', { query: { activeOnly: false } });
+          }"""
+          if s.count(old)!=1:
+              raise SystemExit('loadDoctors anchor changed; stopping safely')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          for f in ['package.json','src-tauri/tauri.conf.json']:
+              fp=Path(f)
+              d=json.loads(fp.read_text(encoding='utf-8'))
+              if d['version']!='7.1.22':
+                  raise SystemExit(f+' has unexpected version '+d['version'])
+              d['version']='7.1.23'
+              fp.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          p=Path('package-lock.json');s=p.read_text(encoding='utf-8')
+          s,n=re.subn(r'("version"\s*:\s*")7\.1\.22(")',r'\g<1>7.1.23\2',s,count=2)
+          if n!=2: raise SystemExit('package-lock version count not 2')
+          p.write_text(s,encoding='utf-8')
+          for f,pattern,replacement in [
+            ('src-tauri/Cargo.toml',r'(?m)^version\s*=\s*"7\.1\.22"\s*$', 'version = "7.1.23"'),
+            ('src-tauri/Cargo.lock',r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.22(")',r'\g<1>7.1.23\2')]:
+              fp=Path(f);txt=fp.read_text(encoding='utf-8')
+              txt,n=re.subn(pattern,replacement,txt,count=1)
+              if n!=1: raise SystemExit(f+' version failed')
+              fp.write_text(txt,encoding='utf-8')
+          PY
+      - name: Verify doctor seed and existing booking compatibility
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          s=Path('src/main.ts').read_text(encoding='utf-8')
+          expected=['محمد عاطف','رامي قاسم','حسام المغربي']
+          assert all(s.count("'"+name+"'")==1 for name in expected)
+          assert 'doctors.some(d => d.name.trim() === name)' in s
+          assert 'specialtyDoctors=doctors.filter(d=>d.active)' in s
+          assert "function homeSpecialtyIconSrc" in s
+          assert 'specialty:specialty.label' in s
+          assert json.loads(Path('package.json').read_text())['version']=='7.1.23'
+          print('PASS: doctors added only when missing; booking and holograms retained')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        shell: bash
+        run: npm ci
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build Windows installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if npx tauri build --bundles nsis; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep 20; fi
+          done
+          exit 1
+      - name: Verify Windows installer
+        shell: pwsh
+        run: |
+          $i=Get-ChildItem 'src-tauri/target/release/bundle/nsis/*-setup.exe' | Where-Object { $_.Name -match '7\.1\.23' } | Select-Object -First 1
+          if(-not $i){throw 'V7.1.23 installer missing'}
+          if($i.Length -lt 80000000){throw 'Installer too small'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.23-Add-Three-Doctors
+          path: src-tauri/target/release/bundle/nsis/*7.1.23*-setup.exe
+          if-no-files-found: error
+      - name: Commit validated changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json package-lock.json
+          git commit -m 'V7.1.23: include three new doctors in global selector'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
