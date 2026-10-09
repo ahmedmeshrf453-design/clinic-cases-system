@@ -1,0 +1,89 @@
+name: Clinic Cases V7.1.29 Specialty Bookings Without Doctor Cards
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Restore specialty booking screen only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+          p=Path('src/main.ts')
+          s=p.read_text(encoding='utf-8')
+          old='async function renderSpecialtyBookings(): Promise<void> {\n  return renderSpecialtyDoctorDirectory();\n}'
+          new='async function renderSpecialtyBookings(): Promise<void> {\n  return renderSpecialtyBookingLegacy();\n}'
+          assert s.count(old)==1,'Original specialty routing not found'
+          s=s.replace(old,new,1)
+          oldfilter=".filter(v=>specialtyMatches(doctorSpecialtyFilter,`${v.specialty||''} ${doctors.find(d=>d.name===v.doctor)?.specialty||''}`))"
+          newfilter=".filter(v=>specialtyMatches(doctorSpecialtyFilter,String(v.specialty||'').trim() || String(doctors.find(d=>d.name===v.doctor)?.specialty||'')))"
+          assert s.count(oldfilter)==1,'Specialty report filter not found'
+          s=s.replace(oldfilter,newfilter,1)
+          # Doctor management and doctor profile functions are left untouched.
+          p.write_text(s,encoding='utf-8')
+          for f in ['package.json','src-tauri/tauri.conf.json']:
+              p=Path(f);d=json.loads(p.read_text(encoding='utf-8'))
+              assert d['version']=='7.1.28',f'{f} expected V7.1.28, found {d["version"]}'
+              d['version']='7.1.29';p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          p=Path('package-lock.json');s=p.read_text(encoding='utf-8')
+          s,n=re.subn(r'("version"\s*:\s*")7\.1\.28(")',r'\g<1>7.1.29\2',s,count=2)
+          assert n==2,('lock version count',n)
+          p.write_text(s,encoding='utf-8')
+          p=Path('src-tauri/Cargo.toml');s=p.read_text(encoding='utf-8')
+          s,n=re.subn(r'(?m)^version\s*=\s*"7\.1\.28"\s*$', 'version = "7.1.29"',s,count=1)
+          assert n==1,'Cargo.toml version not found';p.write_text(s,encoding='utf-8')
+          p=Path('src-tauri/Cargo.lock');s=p.read_text(encoding='utf-8')
+          s,n=re.subn(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.28(")',r'\g<1>7.1.29\2',s,count=1)
+          assert n==1,'Cargo.lock version not found';p.write_text(s,encoding='utf-8')
+          print('Specialties now open bookings directly; doctors remain in Doctors section.')
+          PY
+      - name: Check restored specialty screen
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('src/main.ts').read_text(encoding='utf-8')
+          assert 'async function renderSpecialtyBookings(): Promise<void> {\n  return renderSpecialtyBookingLegacy();\n}' in s
+          assert "const specialtyDoctors=doctors.filter(d=>d.active);" in s
+          assert "document.querySelector<HTMLButtonElement>('#newSpecialtyBooking')" in s
+          assert 'async function openDoctorProfile' in s
+          print('Checks passed')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: npm ci
+      - name: Frontend build
+        run: npm run build
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build Windows installer
+        run: npx tauri build --bundles nsis
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.29-Specialty-Bookings
+          path: src-tauri/target/release/bundle/nsis/*7.1.29*-setup.exe
+          if-no-files-found: error
+      - name: Commit validated patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m 'V7.1.29 restore specialty bookings without doctor cards'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
