@@ -1,0 +1,282 @@
+name: Clinic Cases V7.1.21 Global Doctors + New Holograms
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply V7.1.21 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          main_p=Path('src/main.ts')
+          css_p=Path('src/style.css')
+          tauri_p=Path('src-tauri/tauri.conf.json')
+          cargo_p=Path('src-tauri/Cargo.toml')
+          lock_p=Path('src-tauri/Cargo.lock')
+          pkg_p=Path('package.json')
+          pkglock_p=Path('package-lock.json')
+          assets_dir=Path('public/holograms')
+          assets_dir.mkdir(parents=True, exist_ok=True)
+
+          svg_template='''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+            <defs>
+              <radialGradient id="g1" cx="50%" cy="42%" r="62%">
+                <stop offset="0%" stop-color="#8af6ff" stop-opacity="0.95"/>
+                <stop offset="38%" stop-color="#39d3ff" stop-opacity="0.92"/>
+                <stop offset="100%" stop-color="#0d6fff" stop-opacity="0.20"/>
+              </radialGradient>
+              <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="7" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <g filter="url(#glow)" fill="url(#g1)" stroke="#cfffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">{shape}</g>
+          </svg>'''
+
+          shapes={
+            'urology':'<path d="M92 46c-12 0-22 10-22 22 0 16 13 28 29 28 18 0 29-15 29-32V46H92z"/><path d="M164 46c12 0 22 10 22 22 0 16-13 28-29 28-18 0-29-15-29-32V46h36z"/><path d="M128 72v86"/><path d="M110 158c0 18 8 30 18 30s18-12 18-30"/>',
+            'internal':'<path d="M89 36c-12 0-21 9-21 21v23c0 16 13 28 28 28 17 0 32-15 32-36V36H89z"/><path d="M167 36c12 0 21 9 21 21v23c0 16-13 28-28 28-17 0-32-15-32-36V36h39z"/><path d="M128 111c-26 10-43 28-43 52 0 28 21 47 43 47 21 0 43-19 43-47 0-24-17-42-43-52z" fill="none"/><path d="M128 120c-8 7-13 16-13 26 0 13 9 24 13 34 4-10 13-21 13-34 0-10-5-19-13-26z"/>',
+            'cardio':'<path d="M128 208s-73-44-73-97c0-24 18-43 41-43 14 0 26 7 32 18 6-11 18-18 32-18 23 0 41 19 41 43 0 53-73 97-73 97z"/><path d="M76 130h28l14-26 18 48 13-22h31" fill="none"/>',
+            'endocrine':'<path d="M128 30c14 0 25 11 25 25 0 11-6 18-16 27-6 6-9 12-9 18s3 12 9 18c10 9 16 16 16 27 0 14-11 25-25 25s-25-11-25-25c0-11 6-18 16-27 6-6 9-12 9-18s-3-12-9-18c-10-9-16-16-16-27 0-14 11-25 25-25z" fill="none"/><circle cx="128" cy="100" r="8"/>',
+            'pediatrics':'<circle cx="128" cy="90" r="26"/><path d="M90 132c10-8 24-12 38-12s28 4 38 12" fill="none"/><path d="M88 148c-16 8-28 25-28 43h136c0-18-12-35-28-43" fill="none"/><path d="M112 79h0M144 79h0" stroke-width="8"/>',
+            'dermatology':'<path d="M128 28c15 18 41 32 41 61 0 21-16 38-41 38s-41-17-41-38c0-29 26-43 41-61z"/><path d="M95 155c0-18 15-33 33-33s33 15 33 33" fill="none"/><circle cx="111" cy="88" r="5"/><circle cx="143" cy="72" r="4"/><circle cx="134" cy="103" r="5"/>',
+            'behavior':'<path d="M98 49c-29 0-52 23-52 52 0 18 9 34 23 43 8 5 13 14 13 23v13h92v-13c0-9 5-18 13-23 14-9 23-25 23-43 0-29-23-52-52-52-11 0-22 3-30 10-8-7-19-10-30-10z" fill="none"/><path d="M97 125c10-11 25-17 41-17 8 0 16 2 24 5" fill="none"/><path d="M95 155c11-4 22-6 33-6 12 0 23 2 33 6" fill="none"/><path d="M113 95l8 10-14 8" fill="none"/>',
+            'dental':'<path d="M128 34c-23 0-42 13-42 32 0 18 9 25 9 40 0 13 5 39 17 39 8 0 10-9 13-22 3-12 6-20 3-36 0 0 4 6 7 20 3 13 5 38 18 38 12 0 17-26 17-39 0-15 9-22 9-40 0-19-19-32-42-32z"/><path d="M111 75c6 7 11 11 17 11 5 0 10-4 17-11" fill="none"/>',
+            'ortho':'<path d="M88 76l24 24-18 18-24-24c-9-9-9-24 0-33 9-9 24-9 33 0l-15 15"/><path d="M168 180l-24-24 18-18 24 24c9 9 9 24 0 33-9 9-24 9-33 0l15-15"/><rect x="108" y="94" width="40" height="68" rx="10" transform="rotate(45 128 128)"/>',
+            'surgery':'<path d="M88 42l30 30-20 20-30-30c-6-6-6-15 0-21 6-6 15-6 20 0z"/><path d="M168 214l-30-30 20-20 30 30c6 6 6 15 0 21-6 6-15 6-20 0z"/><path d="M144 76l36 36"/><path d="M154 44l58 58"/><circle cx="126" cy="126" r="18" fill="none"/>',
+            'eye':'<path d="M32 128c20-32 56-52 96-52s76 20 96 52c-20 32-56 52-96 52S52 160 32 128z" fill="none"/><circle cx="128" cy="128" r="26"/><circle cx="128" cy="128" r="10" fill="#e8ffff" stroke="none"/>',
+            'neuro':'<path d="M98 49c-29 0-52 23-52 52 0 18 9 34 23 43 8 5 13 14 13 23v16h92v-16c0-9 5-18 13-23 14-9 23-25 23-43 0-29-23-52-52-52-11 0-22 3-30 10-8-7-19-10-30-10z"/><path d="M95 108c7-7 16-11 25-11 9 0 18 4 25 11" fill="none"/><path d="M86 136c11 0 18 9 18 20" fill="none"/><path d="M170 136c-11 0-18 9-18 20" fill="none"/><path d="M128 97v78" fill="none"/>',
+            'obgyn':'<path d="M88 58c-15 0-28 13-28 28 0 28 20 49 48 54v20c0 11 9 20 20 20s20-9 20-20v-20c28-5 48-26 48-54 0-15-13-28-28-28-13 0-24 9-27 21h-26c-3-12-14-21-27-21z" fill="none"/><circle cx="128" cy="156" r="15"/>',
+            'ent':'<path d="M120 58c29 0 52 19 52 48 0 21-10 35-25 44-12 7-19 16-19 27v13" fill="none"/><path d="M95 91c0-16 13-29 29-29" fill="none"/><path d="M158 117c14 3 26 16 26 31 0 20-18 34-38 34" fill="none"/><path d="M66 122c0-20 16-36 36-36 14 0 26 7 33 18" fill="none"/><path d="M78 152c9 14 25 24 43 24" fill="none"/>',
+            'nutrition':'<path d="M89 36c-12 0-21 9-21 21v23c0 16 13 28 28 28 17 0 32-15 32-36V36H89z"/><path d="M167 36c12 0 21 9 21 21v23c0 16-13 28-28 28-17 0-32-15-32-36V36h39z"/><path d="M106 124l18 18-31 31c-12 12-31 12-43 0-12-12-12-31 0-43 8-8 19-10 29-6" fill="none"/><path d="M152 112l20-20c9-9 24-9 33 0 9 9 9 24 0 33l-20 20" fill="none"/><path d="M138 126l54 54" fill="none"/>',
+            'vascular':'<path d="M118 32c-10 19-16 40-16 61 0 14 3 28 10 41l-15 58c-2 9 4 18 14 18h34c10 0 16-9 14-18l-15-58c7-13 10-27 10-41 0-21-6-42-16-61" fill="none"/><path d="M128 45v123" fill="none"/><path d="M109 86h38" fill="none"/><path d="M102 117h52" fill="none"/>',
+            'audiology':'<path d="M120 58c29 0 52 19 52 48 0 21-10 35-25 44-12 7-19 16-19 27v13" fill="none"/><path d="M95 91c0-16 13-29 29-29" fill="none"/><path d="M158 117c14 3 26 16 26 31 0 20-18 34-38 34" fill="none"/><path d="M66 122c0-20 16-36 36-36 14 0 26 7 33 18" fill="none"/><path d="M78 152c9 14 25 24 43 24" fill="none"/>',
+            'labs':'<path d="M103 36h50" fill="none"/><path d="M116 36v49l-34 58c-12 21 3 47 27 47h38c24 0 39-26 27-47l-34-58V36" fill="none"/><path d="M96 122h64" fill="none"/>',
+            'radiology':'<circle cx="128" cy="128" r="72" fill="none"/><circle cx="128" cy="128" r="18"/><path d="M128 56v54" fill="none"/><path d="M128 146v54" fill="none"/><path d="M56 128h54" fill="none"/><path d="M146 128h54" fill="none"/>',
+            'physio':'<circle cx="112" cy="74" r="16"/><path d="M112 90l-18 34 19 17 17-24 17 20 25-5" fill="none"/><path d="M114 142l-16 38" fill="none"/><path d="M132 138l19 38" fill="none"/>',
+            'nursing':'<path d="M128 40l15 30 33 5-24 23 6 33-30-16-30 16 6-33-24-23 33-5 15-30z"/><path d="M128 128v58" fill="none"/><path d="M100 156h56" fill="none"/>',
+            'emergency':'<path d="M128 26l77 38v64c0 44-33 78-77 102-44-24-77-58-77-102V64l77-38z" fill="none"/><path d="M128 66v74" fill="none"/><path d="M98 106h60" fill="none"/><path d="M128 140l-18 30h16l-6 26 24-36h-16l8-20z"/>',
+            'others':'<circle cx="74" cy="128" r="14"/><circle cx="128" cy="128" r="14"/><circle cx="182" cy="128" r="14"/><path d="M74 128h108" fill="none"/>'
+          }
+          for name, shape in shapes.items():
+              (assets_dir/f'{name}.svg').write_text(svg_template.format(shape=shape), encoding='utf-8')
+
+          m=main_p.read_text(encoding='utf-8')
+          c=css_p.read_text(encoding='utf-8')
+
+          specialties_block = """const HOME_SPECIALTIES=[
+            {key:'urology',label:'مسالك بولية وذكورة',iconClass:'organ-urology',keys:['مسالك','ذكورة']},
+            {key:'internal',label:'باطنة وجهاز هضمي',iconClass:'organ-internal',keys:['باطنة','جهاز هضمي']},
+            {key:'cardio',label:'قلب وأوعية',iconClass:'organ-cardio',keys:['قلب','اوعية','أوعية','cardio']},
+            {key:'endocrine',label:'غدد صماء',iconClass:'organ-endocrine',keys:['غدد','سكر','صماء','endocrine']},
+            {key:'pediatrics',label:'أطفال وحديثي الولادة',iconClass:'organ-pediatrics',keys:['اطفال','أطفال','حديثي الولادة','neonat']},
+            {key:'dermatology',label:'جلدية',iconClass:'organ-dermatology',keys:['جلدية','جلد']},
+            {key:'behavior',label:'تعديل سلوك',iconClass:'organ-behavior',keys:['تعديل سلوك','سلوك','behavior']},
+            {key:'dental',label:'أسنان',iconClass:'organ-dental',keys:['أسنان','اسنان','فم']},
+            {key:'ortho',label:'عظام ومفاصل',iconClass:'organ-ortho',keys:['عظام','مفاصل']},
+            {key:'surgery',label:'جراحة عامة ومناظير',iconClass:'organ-surgery',keys:['جراحة عامة','مناظير']},
+            {key:'eye',label:'عيون',iconClass:'organ-eye',keys:['عيون','رمد','ophthalm']},
+            {key:'neuro',label:'مخ وأعصاب وعمود فقري',iconClass:'organ-neuro',keys:['مخ','أعصاب','اعصاب','عمود فقري']},
+            {key:'obgyn',label:'نساء وتوليد',iconClass:'organ-obgyn',keys:['نساء','توليد','حقن مجهري','تأخر الإنجاب']},
+            {key:'ent',label:'أنف وأذن وحنجرة',iconClass:'organ-ent',keys:['أنف','انف','أذن','اذن','حنجرة']},
+            {key:'nutrition',label:'تغذية علاجية',iconClass:'organ-nutrition',keys:['تغذية']},
+            {key:'vascular',label:'أوعية دموية وقدم سكري',iconClass:'organ-vascular',keys:['أوعية','اوعية','قدم سكري']},
+            {key:'audiology',label:'سمع واتزان',iconClass:'organ-audiology',keys:['سمع','اتزان']}
+          ] as const;"""
+
+          services_block = """const HOME_SERVICES=[
+            {key:'labs',screen:'labs' as Screen,label:'التحاليل',iconClass:'organ-labs'},
+            {key:'radiology',screen:'radiology' as Screen,label:'الأشعة',iconClass:'organ-radiology'},
+            {key:'physio',screen:'physio' as Screen,label:'العلاج الطبيعي',iconClass:'organ-physio'},
+            {key:'nursing',screen:'nursing' as Screen,label:'خدمات التمريض',iconClass:'organ-nursing'},
+            {key:'emergency',screen:'patients' as Screen,label:'الطوارئ',iconClass:'organ-emergency'},
+            {key:'others',screen:'patients' as Screen,label:'خدمات أخرى',iconClass:'organ-others'}
+          ] as const;"""
+
+          m,n = re.subn(r"const HOME_SPECIALTIES=\[[\s\S]*?\] as const;", specialties_block, m, count=1)
+          if n != 1:
+              raise SystemExit('HOME_SPECIALTIES block not found')
+          m,n = re.subn(r"const HOME_SERVICES=\[[\s\S]*?\] as const;", services_block, m, count=1)
+          if n != 1:
+              raise SystemExit('HOME_SERVICES block not found')
+          m = re.sub(r"const HOME_SPECIALTY_ORDER_KEY='[^']+'", "const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v7121'", m, count=1)
+          m = re.sub(r"const HOME_SERVICE_ORDER_KEY='[^']+'", "const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v7121'", m, count=1)
+
+          old = "const specialtyDoctors=doctors.filter(d=>d.active&&specialtyMatches(specialtyKey,d.specialty));"
+          new = "const specialtyDoctors=doctors.filter(d=>d.active);"
+          if old not in m:
+              raise SystemExit('specialtyDoctors filter line not found')
+          m = m.replace(old,new,1)
+
+          new_icon_block = """const HOME_SPECIALTY_ICON_SRC:Record<string,string>={
+            urology:'/holograms/urology.svg',
+            internal:'/holograms/internal.svg',
+            cardio:'/holograms/cardio.svg',
+            endocrine:'/holograms/endocrine.svg',
+            pediatrics:'/holograms/pediatrics.svg',
+            dermatology:'/holograms/dermatology.svg',
+            behavior:'/holograms/behavior.svg',
+            dental:'/holograms/dental.svg',
+            ortho:'/holograms/ortho.svg',
+            surgery:'/holograms/surgery.svg',
+            eye:'/holograms/eye.svg',
+            neuro:'/holograms/neuro.svg',
+            obgyn:'/holograms/obgyn.svg',
+            ent:'/holograms/ent.svg',
+            nutrition:'/holograms/nutrition.svg',
+            vascular:'/holograms/vascular.svg',
+            audiology:'/holograms/audiology.svg'
+          };
+
+          function homeSpecialtyIconSrc(key:string){return HOME_SPECIALTY_ICON_SRC[key]||'/holograms/internal.svg'}
+
+          const HOME_SERVICE_ICON_SRC:Record<string,string>={
+            labs:'/holograms/labs.svg',
+            radiology:'/holograms/radiology.svg',
+            physio:'/holograms/physio.svg',
+            nursing:'/holograms/nursing.svg',
+            emergency:'/holograms/emergency.svg',
+            others:'/holograms/others.svg'
+          };
+
+          function homeServiceIconSrc(key:string){return HOME_SERVICE_ICON_SRC[key]||'/holograms/others.svg'}
+          """
+
+          if 'const HOME_SPECIALTY_ICON_SRC:Record<string,string>={' in m:
+              m,n = re.subn(r"const HOME_SPECIALTY_ICON_SRC:Record<string,string>=\{[\s\S]*?function homeSpecialtyIconSrc\(key:string\)\{[^\n]*\}\n", new_icon_block, m, count=1)
+              if n != 1:
+                  raise SystemExit('specialty icon block replace failed')
+          else:
+              anchor = "const HOME_SERVICE_ORDER_KEY='clinicCases.home.services.v7121';\n"
+              if anchor not in m:
+                  raise SystemExit('icon block anchor not found')
+              m = m.replace(anchor, anchor+'\n'+new_icon_block, 1)
+
+          old_service = '<span class="clinic-service-icon photo-sprite-tile ${x.iconClass}"></span>'
+          new_service = '<span class="clinic-service-icon service-hologram-icon"><img src="${homeServiceIconSrc(x.key)}" alt="${esc(x.label)}"></span>'
+          if old_service in m:
+              m = m.replace(old_service,new_service,1)
+
+          m = re.sub(r'V7\.1\.20[^<\n]*', 'V7.1.21 • GLOBAL DOCTORS + NEW HOLOGRAMS', m, count=1)
+          main_p.write_text(m, encoding='utf-8')
+
+          css_marker='/* ===== V7.1.21 GLOBAL DOCTORS + NEW HOLOGRAMS ===== */'
+          css_append = '''
+
+          /* ===== V7.1.21 GLOBAL DOCTORS + NEW HOLOGRAMS ===== */
+          .hologram-specialty-card .specialty-card-copy strong{display:block!important;max-width:100%!important;white-space:normal!important;overflow:visible!important;text-overflow:unset!important}
+          .hologram-specialty-card .specialty-card-copy small{display:block!important}
+          .service-hologram-icon{width:58px!important;height:58px!important;min-width:58px!important;min-height:58px!important;display:grid!important;place-items:center!important;background:transparent!important;border:none!important;box-shadow:none!important;border-radius:0!important;margin:0 auto!important}
+          .service-hologram-icon img{width:100%!important;height:100%!important;display:block!important;object-fit:contain!important;filter:drop-shadow(0 10px 22px rgba(0,163,255,.18))}
+          '''
+          if css_marker not in c:
+              c += css_append
+          css_p.write_text(c, encoding='utf-8')
+
+          for fp in [pkg_p, tauri_p]:
+              data=json.loads(fp.read_text(encoding='utf-8'))
+              data['version']='7.1.21'
+              fp.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n', encoding='utf-8')
+          pl=pkglock_p.read_text(encoding='utf-8')
+          pl,n=re.subn(r'("version"\s*:\s*")7\.1\.20(")',r'\g<1>7.1.21\2',pl,count=2)
+          if n!=2:
+              raise SystemExit(f'package-lock version replacements failed: {n}')
+          pkglock_p.write_text(pl,encoding='utf-8')
+          cg=cargo_p.read_text(encoding='utf-8')
+          cg,n=re.subn(r'(?m)^version\s*=\s*"7\.1\.20"\s*$', 'version = "7.1.21"', cg, count=1)
+          if n!=1:
+              raise SystemExit('Cargo.toml version not updated')
+          cargo_p.write_text(cg,encoding='utf-8')
+          cl=lock_p.read_text(encoding='utf-8')
+          cl,n=re.subn(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.20(")',r'\g<1>7.1.21\2',cl,count=1)
+          if n!=1:
+              raise SystemExit('Cargo.lock version not updated')
+          lock_p.write_text(cl,encoding='utf-8')
+          print('V7.1.21 patch applied')
+          PY
+
+      - name: Verify V7.1.21 patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          m=Path('src/main.ts').read_text(encoding='utf-8')
+          c=Path('src/style.css').read_text(encoding='utf-8')
+          t=json.loads(Path('src-tauri/tauri.conf.json').read_text(encoding='utf-8'))
+          checks={
+            'version': t.get('version')=='7.1.21',
+            'all doctors': "const specialtyDoctors=doctors.filter(d=>d.active);" in m,
+            'behavior specialty': "label:'تعديل سلوك'" in m,
+            'dental specialty': "label:'أسنان'" in m,
+            'cardio specialty': "label:'قلب وأوعية'" in m,
+            'endocrine specialty': "label:'غدد صماء'" in m,
+            'pediatrics specialty': "label:'أطفال وحديثي الولادة'" in m,
+            'dermatology specialty': "label:'جلدية'" in m,
+            'emergency service': "label:'الطوارئ'" in m,
+            'other services': "label:'خدمات أخرى'" in m,
+            'service icon function': 'function homeServiceIconSrc' in m,
+            'assets written': Path('public/holograms/cardio.svg').exists() and Path('public/holograms/emergency.svg').exists(),
+            'css appended': 'V7.1.21 GLOBAL DOCTORS + NEW HOLOGRAMS' in c,
+          }
+          for k,v in checks.items():
+              print(k, 'OK' if v else 'FAIL')
+          assert all(checks.values()), checks
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        shell: bash
+        run: npm ci
+      - name: Frontend build
+        shell: bash
+        run: npm run build
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build Windows installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if npx tauri build --bundles nsis; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep 20; fi
+          done
+          exit 1
+      - name: Verify Windows installer
+        shell: pwsh
+        run: |
+          $i=Get-ChildItem 'src-tauri/target/release/bundle/nsis/*-setup.exe' | Where-Object { $_.Name -match '7\.1\.21' } | Select-Object -First 1
+          if(-not $i){throw 'V7.1.21 installer missing'}
+          if($i.Length -lt 80000000){throw 'Installer too small'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.21-Global-Doctors-New-Holograms
+          path: src-tauri/target/release/bundle/nsis/*7.1.21*-setup.exe
+          if-no-files-found: error
+      - name: Commit validated V7.1.21
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src/style.css public/holograms src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json package-lock.json
+          if git diff --cached --quiet; then echo 'No changes'; else git commit -m 'V7.1.21: global doctors and new hologram specialties/services'; fi
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
