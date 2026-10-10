@@ -4353,33 +4353,6 @@ async function renderLabPrices() {
   const dayKey = businessDay();
   const todayLabOrders = await invoke<LabOrder[]>('list_lab_orders', { query: { from: dayKey, to: dayKey } });
 
-  const priceRowsHtml = (rows: LabTestItem[]) => {
-    if (!rows.length) {
-      return `<div class="lab-prices-empty">لا يوجد تحليل مطابق للبحث</div>`;
-    }
-
-    return rows.map(item => `
-      <div class="lab-price-row">
-        <div class="lab-price-name">
-          <strong class="ltr">${esc(item.name)}</strong>
-          ${item.arabic ? `<small>${esc(item.arabic)}</small>` : ''}
-        </div>
-        <div class="lab-price-actions">
-          <div class="lab-price-value ${item.price ? '' : 'missing'}">
-            ${item.price ? `${esc(item.price)} ج.م` : 'غير محدد'}
-          </div>
-          <button
-            class="lab-main-edit-price-btn"
-            type="button"
-            data-edit-main-lab-price="${item.id}"
-            title="تعديل سعر التحليل"
-            aria-label="تعديل سعر التحليل"
-          >✎</button>
-        </div>
-      </div>
-    `).join('');
-  };
-
   const selectedInquiryIds=new Set<number>();
   const organGroups=[
     {words:['كبد','liver','hepatic'],tests:['ALT','AST','Bilirubin','Albumin','GGT','Alkaline Phosphatase']},
@@ -4430,27 +4403,6 @@ async function renderLabPrices() {
         <div id="labInquiryResults" class="lab-inquiry-results"></div>
       </section>
 
-      <div class="lab-prices-search">
-        <span class="lab-prices-search-icon">⌕</span>
-        <input
-          id="mainLabPriceSearch"
-          type="search"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder="ابحث باسم التحليل بالعربي أو الإنجليزي..."
-        >
-        <button class="btn ghost small" id="clearMainLabPriceSearch">مسح</button>
-      </div>
-
-      <div class="lab-price-table-head">
-        <span>اسم التحليل</span>
-        <span>السعر / تعديل</span>
-      </div>
-
-      <div class="lab-price-list" id="mainLabPriceList">
-        ${priceRowsHtml(LAB_TESTS)}
-      </div>
-
       <section class="lab-today-orders-section">
         <div class="today-case-section-head labs">
           <h3>حالات التحاليل اليوم</h3>
@@ -4473,7 +4425,10 @@ async function renderLabPrices() {
     inquiryResults.innerHTML=labInquirySearch(inquiryInput.value).map(t=>`
       <label class="lab-inquiry-row"><input type="checkbox" data-inquiry-id="${t.id}" ${selectedInquiryIds.has(t.id)?'checked':''}>
       <span><strong>${esc(t.name)}</strong><small>${esc(t.arabic||t.market)}</small></span>
-      <b>${t.price?esc(t.price)+' ج.م':'غير محدد'}</b></label>`).join('')||'<div class="empty-block">لا توجد نتائج مطابقة</div>';
+      <b>${t.price?esc(t.price)+' ج.م':'غير محدد'}</b><button class="lab-inquiry-edit-price" type="button" data-edit-main-lab-price="${t.id}" title="تعديل السعر">✎</button></label>`).join('')||'<div class="empty-block">لا توجد نتائج مطابقة</div>';
+    inquiryResults.querySelectorAll<HTMLButtonElement>('[data-edit-main-lab-price]').forEach(btn=>{
+      btn.onclick=(event)=>{event.preventDefault();event.stopPropagation();openPriceEditor(Number(btn.dataset.editMainLabPrice||0))};
+    });
     inquiryResults.querySelectorAll<HTMLInputElement>('[data-inquiry-id]').forEach(el=>{
       el.onchange=()=>{const id=Number(el.dataset.inquiryId);if(el.checked)selectedInquiryIds.add(id);else selectedInquiryIds.delete(id);renderInquiry()};
     });
@@ -4489,8 +4444,6 @@ async function renderLabPrices() {
   };
   renderInquiry();
 
-  const input = document.querySelector<HTMLInputElement>('#mainLabPriceSearch')!;
-  const list = document.querySelector<HTMLDivElement>('#mainLabPriceList')!;
 
   const openPriceEditor = (catalogId: number) => {
     const item = LAB_TESTS.find(row => row.id === catalogId);
@@ -4551,7 +4504,7 @@ async function renderLabPrices() {
         item.price = updated.price;
         labPriceOverridesLoaded = true;
         close();
-        renderRows();
+        renderInquiry();
         toast('تم تعديل سعر التحليل');
       } catch (err) {
         toast(`تعذر تعديل السعر: ${String(err)}`, 'error');
@@ -4559,30 +4512,11 @@ async function renderLabPrices() {
     };
   };
 
-  const bindPriceEditors = () => {
-    list.querySelectorAll<HTMLButtonElement>('[data-edit-main-lab-price]').forEach(button => {
-      button.onclick = () => openPriceEditor(Number(button.dataset.editMainLabPrice || 0));
-    });
-  };
-
-  const renderRows = () => {
-    list.innerHTML = priceRowsHtml(searchLabTests(input.value));
-    bindPriceEditors();
-  bindLabOrderActions();
-  };
-
-  input.oninput = renderRows;
-  bindPriceEditors();
-
   document.querySelector<HTMLButtonElement>('#registerLabPatient')!.onclick = () => {
     openLabPatientRegistrationModal();
   };
 
-  document.querySelector<HTMLButtonElement>('#clearMainLabPriceSearch')!.onclick = () => {
-    input.value = '';
-    renderRows();
-    input.focus();
-  };
+
 }
 
 
