@@ -1,0 +1,111 @@
+name: Clinic Cases V7.1.32 Full Lab Dropdown Restore
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Restore all lab tests and fix rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re,json
+          p=Path('src/main.ts');s=p.read_text(encoding='utf-8')
+          old="labInquirySearch(inquiryInput.value).slice(0,180).map(t=>"
+          new="labInquirySearch(inquiryInput.value).map(t=>"
+          assert old in s,'Expected list rendering not found'
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          p=Path('src/style.css');css=p.read_text(encoding='utf-8')
+          css+='''
+          /* V7.1.32 complete selectable lab catalog with readable rows */
+          .lab-prices-card .lab-inquiry-results{
+           display:flex!important;flex-direction:column!important;grid-template-columns:none!important;
+           gap:7px!important;max-height:370px!important;overflow-y:auto!important;overflow-x:hidden!important;
+           width:100%!important;min-width:0!important;padding:5px!important;box-sizing:border-box!important;
+          }
+          .lab-prices-card .lab-inquiry-results .lab-inquiry-row{
+           display:grid!important;grid-template-columns:24px minmax(0,1fr) auto!important;
+           align-items:center!important;gap:12px!important;box-sizing:border-box!important;
+           width:100%!important;min-width:0!important;min-height:64px!important;height:auto!important;
+           padding:10px 14px!important;flex:none!important;overflow:hidden!important;
+          }
+          .lab-prices-card .lab-inquiry-results .lab-inquiry-row input{
+           width:17px!important;height:17px!important;min-width:17px!important;max-width:17px!important;
+           margin:0!important;grid-column:1!important;
+          }
+          .lab-prices-card .lab-inquiry-results .lab-inquiry-row span{
+           display:block!important;min-width:0!important;width:100%!important;max-width:none!important;
+           flex:none!important;grid-column:2!important;white-space:normal!important;
+          }
+          .lab-prices-card .lab-inquiry-results .lab-inquiry-row strong,
+          .lab-prices-card .lab-inquiry-results .lab-inquiry-row small{
+           display:block!important;min-width:0!important;max-width:none!important;
+           width:auto!important;white-space:normal!important;overflow-wrap:normal!important;
+           word-break:normal!important;line-height:1.5!important;
+           text-align:start!important;font-size:13px!important;
+          }
+          .lab-prices-card .lab-inquiry-results .lab-inquiry-row b{
+           display:block!important;grid-column:3!important;min-width:90px!important;width:auto!important;
+           max-width:none!important;white-space:nowrap!important;text-align:end!important;
+           font-size:12px!important;
+          }
+          '''
+          p.write_text(css,encoding='utf-8')
+          for fn in ('package.json','src-tauri/tauri.conf.json'):
+           p=Path(fn);o=json.loads(p.read_text(encoding='utf-8'));assert o['version']=='7.1.31';o['version']='7.1.32';p.write_text(json.dumps(o,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          p=Path('package-lock.json');s=p.read_text(encoding='utf-8');s,n=re.subn(r'("version"\s*:\s*")7\.1\.31(")',r'\g<1>7.1.32\2',s,count=2);assert n==2;p.write_text(s,encoding='utf-8')
+          p=Path('src-tauri/Cargo.toml');s=p.read_text(encoding='utf-8');s,n=re.subn(r'(?m)^version\s*=\s*"7\.1\.31"\s*$', 'version = "7.1.32"',s,count=1);assert n==1;p.write_text(s,encoding='utf-8')
+          p=Path('src-tauri/Cargo.lock');s=p.read_text(encoding='utf-8');s,n=re.subn(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.31(")',r'\g<1>7.1.32\2',s,count=1);assert n==1;p.write_text(s,encoding='utf-8')
+          print('full catalog remains visible, row layout restored')
+          
+          PY
+      - name: Verify catalog visible
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('src/main.ts').read_text(encoding='utf-8')
+          c=Path('src/style.css').read_text(encoding='utf-8')
+          assert 'labInquirySearch(inquiryInput.value).map(t=>' in s
+          assert 'labInquirySearch(inquiryInput.value).slice(0,180)' not in s
+          assert 'V7.1.32 complete selectable lab catalog' in c
+          print('all matching results render even when search empty')
+          
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: npm ci
+      - name: Frontend build
+        run: npm run build
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build Windows installer
+        run: npx tauri build --bundles nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-V7.1.32-Full-Lab-List
+          path: src-tauri/target/release/bundle/nsis/*7.1.32*-setup.exe
+          if-no-files-found: error
+      - name: Commit after green
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src/style.css package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m 'V7.1.32 restore full lab catalog selection and rows'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
