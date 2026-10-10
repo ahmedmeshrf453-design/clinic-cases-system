@@ -1,0 +1,110 @@
+name: Clinic Cases V7.1.33 Single Lab Search
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Remove duplicate search without losing prices
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re,json
+          p=Path('src/main.ts');s=p.read_text(encoding='utf-8')
+          a=s.index('async function renderLabPrices()');b=s.index('\nfunction openForgotLab2LabPinModal()',a)
+          r=s[a:b]
+          # Remove only redundant second search & price list. Price editing is moved to the first list.
+          u=r.index('      <div class="lab-prices-search">');v=r.index('      <section class="lab-today-orders-section">',u)
+          assert 'id="mainLabPriceSearch"' in r[u:v] and 'id="mainLabPriceList"' in r[u:v]
+          r=r[:u]+r[v:]
+          needle='''      <b>${t.price?esc(t.price)+' ج.م':'غير محدد'}</b></label>`'''
+          assert needle in r
+          r=r.replace(needle,'''      <b>${t.price?esc(t.price)+' ج.م':'غير محدد'}</b><button class="lab-inquiry-edit-price" type="button" data-edit-main-lab-price="${t.id}" title="تعديل السعر">✎</button></label>`''',1)
+          needle="    inquiryResults.querySelectorAll<HTMLInputElement>('[data-inquiry-id]').forEach(el=>{"
+          assert needle in r
+          r=r.replace(needle,'''    inquiryResults.querySelectorAll<HTMLButtonElement>('[data-edit-main-lab-price]').forEach(btn=>{
+                btn.onclick=(event)=>{event.preventDefault();event.stopPropagation();openPriceEditor(Number(btn.dataset.editMainLabPrice||0))};
+              });
+          '''+needle,1)
+          # No second input/list objects.
+          old="  const input = document.querySelector<HTMLInputElement>('#mainLabPriceSearch')!;\n  const list = document.querySelector<HTMLDivElement>('#mainLabPriceList')!;\n"
+          assert old in r
+          r=r.replace(old,'',1)
+          assert '        renderRows();\n        toast(' in r
+          r=r.replace('        renderRows();\n        toast(', '        renderInquiry();\n        toast(',1)
+          u=r.index('  const bindPriceEditors = () => {');v=r.index("  document.querySelector<HTMLButtonElement>('#registerLabPatient')!",u)
+          r=r[:u]+r[v:]
+          u=r.index("  document.querySelector<HTMLButtonElement>('#clearMainLabPriceSearch')!")
+          v=r.index('\n  };',u)+len('\n  };')
+          r=r[:u]+r[v:]
+          u=r.index('  const priceRowsHtml = (rows: LabTestItem[]) => {');v=r.index('  const selectedInquiryIds=',u)
+          r=r[:u]+r[v:]
+          assert 'renderRows' not in r and 'mainLabPriceSearch' not in r
+          s=s[:a]+r+s[b:]
+          p.write_text(s,encoding='utf-8')
+          p=Path('src/style.css');p.write_text(p.read_text(encoding='utf-8')+'''
+          /* V7.1.33 unified lab search, maintain editing */
+          .lab-prices-card .lab-inquiry-results .lab-inquiry-row{grid-template-columns:24px minmax(0,1fr) auto 36px!important}
+          .lab-prices-card .lab-inquiry-results .lab-inquiry-row .lab-inquiry-edit-price{grid-column:4!important;min-width:34px!important;width:34px!important;height:34px!important;border:1px solid #dbe6ef!important;border-radius:8px!important;background:#fff!important;color:#164a69!important;font-size:17px!important;cursor:pointer!important}
+          ''',encoding='utf-8')
+          for fn in ('package.json','src-tauri/tauri.conf.json'):
+           p=Path(fn);d=json.loads(p.read_text(encoding='utf-8'));assert d['version']=='7.1.32';d['version']='7.1.33';p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          for fn in ('package-lock.json','src-tauri/Cargo.toml','src-tauri/Cargo.lock'):
+           p=Path(fn);t=p.read_text(encoding='utf-8')
+           if fn.endswith('.json'):
+            t,n=re.subn(r'("version"\s*:\s*")7\.1\.32(")',r'\g<1>7.1.33\2',t,count=2);assert n==2
+           elif fn.endswith('Cargo.toml'):
+            t,n=re.subn(r'(?m)^version\s*=\s*"7\.1\.32"\s*$', 'version = "7.1.33"',t,count=1);assert n==1
+           else:
+            t,n=re.subn(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.32(")',r'\g<1>7.1.33\2',t,count=1);assert n==1
+           p.write_text(t,encoding='utf-8')
+          print('Single search, editable catalog and all tests preserved')
+          PY
+      - name: Verify one search
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('src/main.ts').read_text(encoding='utf-8'); a=s[s.index('async function renderLabPrices()'):s.index('function openForgotLab2LabPinModal()')]
+          assert a.count('id="labInquiryInput"')==1
+          assert 'mainLabPriceSearch' not in a and 'mainLabPriceList' not in a
+          assert 'data-edit-main-lab-price' in a
+          assert 'labInquirySearch(inquiryInput.value).map(t=>' in a
+          print('Only one search, all 334 tests available, price editing retained')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: npm ci
+      - name: Frontend build
+        run: npm run build
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Windows installer
+        run: npx tauri build --bundles nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-V7.1.33-One-Lab-Search
+          path: src-tauri/target/release/bundle/nsis/*7.1.33*-setup.exe
+          if-no-files-found: error
+      - name: Commit after green
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src/style.css package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m 'V7.1.33 unify lab search, preserve catalog and price editing'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
