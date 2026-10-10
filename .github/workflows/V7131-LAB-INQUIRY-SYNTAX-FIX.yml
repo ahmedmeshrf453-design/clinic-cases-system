@@ -1,0 +1,161 @@
+name: Clinic Cases V7.1.31 Lab Inquiry Syntax Fix
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Apply independent lab inquiry
+        shell: bash
+        run: |
+          python - <<'PY'
+
+          from pathlib import Path
+          import re,json
+          p=Path('src/main.ts'); s=p.read_text(encoding='utf-8')
+          anchor="  shell(`\n    <section class=\"card lab-prices-card\">"
+          assert anchor in s
+          s=s.replace(anchor,"""  const selectedInquiryIds=new Set<number>();
+            const organGroups=[
+              {words:['كبد','liver','hepatic'],tests:['ALT','AST','Bilirubin','Albumin','GGT','Alkaline Phosphatase']},
+              {words:['كلى','الكلى','kidney','renal'],tests:['Creatinine','Blood Urea','Uric Acid','eGFR','Urine Analysis']},
+              {words:['قلب','heart','cardiac'],tests:['Troponin','CK-MB','Cholesterol','HDL','LDL','Triglyceride']},
+              {words:['غده','غدة','الدرقية','thyroid'],tests:['TSH','T3','T4','Thyroid Ab']},
+              {words:['بنكرياس','pancreas'],tests:['Amylase','Lipase','Blood Glucose']},
+              {words:['دم','blood','انيميا','أنيميا'],tests:['CBC','Iron','Ferritin','Haemoglobin','VIT B12']},
+              {words:['عظام','bone'],tests:['Calcium','Vitamin D','Phosphorous']},
+              {words:['بروستاتا','prostate'],tests:['PSA']},
+              {words:['مبيض','ovary'],tests:['AMH','CA 125','LH','FSH']}
+            ];
+            const labInquirySearch=(raw:string):LabTestItem[]=>{
+              const terms=raw.split(/[,،;؛+\\n]+/).map(t=>t.trim()).filter(Boolean);
+              if(!terms.length)return LAB_TESTS;
+              const ids=new Set<number>();const out:LabTestItem[]=[];
+              for(const term of terms){
+                const norm=normalizeLabSearch(term);
+                const organ=organGroups.find(g=>g.words.some(w=>normalizeLabSearch(w)===norm));
+                const matches=organ?LAB_TESTS.filter(t=>organ.tests.some(key=>normalizeLabSearch(t.name).includes(normalizeLabSearch(key)))):searchLabTests(term);
+                for(const t of matches)if(!ids.has(t.id)){ids.add(t.id);out.push(t)}
+              }
+              return out;
+            };
+          """+anchor,1)
+          needle='      <div class="lab-prices-search">'
+          assert needle in s
+          ui="""      <section class="lab-inquiry-panel">
+                  <h3>استعلام متعدد عن التحاليل — بدون بيانات مريض</h3>
+                  <p>اكتب اسم تحليل أو أكثر بالعربي أو الإنجليزي أو باسم عضو الجسم. افصل بفاصلة أو سطر جديد.</p>
+                  <textarea id="labInquiryInput" rows="2" placeholder="مثال: CBC، TSH، كبد أو Kidney, Liver"></textarea>
+                  <div class="lab-inquiry-toolbar"><button type="button" class="btn ghost small" id="labInquiryClear">مسح</button><button type="button" class="btn ghost small" id="labInquiryDeselect">إلغاء التحديد</button><button type="button" class="btn primary small" id="labInquiryCopy">نسخ القائمة والأسعار</button></div>
+                  <div id="labInquirySummary" class="lab-inquiry-summary">اختر التحاليل المطلوبة</div>
+                  <div id="labInquiryResults" class="lab-inquiry-results"></div>
+                </section>
+
+          """
+          s=s.replace(needle,ui+needle,1)
+          needle="  const input = document.querySelector<HTMLInputElement>('#mainLabPriceSearch')!;"
+          assert needle in s
+          bindings="""  const inquiryInput=document.querySelector<HTMLTextAreaElement>('#labInquiryInput')!;
+            const inquiryResults=document.querySelector<HTMLDivElement>('#labInquiryResults')!;
+            const inquirySummary=document.querySelector<HTMLDivElement>('#labInquirySummary')!;
+            const renderInquiry=()=>{
+              const selected=LAB_TESTS.filter(t=>selectedInquiryIds.has(t.id));
+              const numeric=selected.map(t=>/^\d+(?:[.,]\d+)?$/.test(t.price.trim())?Number(t.price.replace(',','.')):NaN);
+              const total=numeric.reduce((a:number,b:number)=>a+(Number.isFinite(b)?b:0),0);
+              const unknown=numeric.some(n=>!Number.isFinite(n));
+              inquirySummary.textContent=selected.length?`${selected.length} تحليل • الإجمالي ${total.toFixed(2)} ج.م${unknown?' (بعض الأسعار غير محددة أو متغيرة)':''}`:'اختر التحاليل المطلوبة';
+              inquiryResults.innerHTML=labInquirySearch(inquiryInput.value).slice(0,180).map(t=>`
+                <label class="lab-inquiry-row"><input type="checkbox" data-inquiry-id="${t.id}" ${selectedInquiryIds.has(t.id)?'checked':''}>
+                <span><strong>${esc(t.name)}</strong><small>${esc(t.arabic||t.market)}</small></span>
+                <b>${t.price?esc(t.price)+' ج.م':'غير محدد'}</b></label>`).join('')||'<div class="empty-block">لا توجد نتائج مطابقة</div>';
+              inquiryResults.querySelectorAll<HTMLInputElement>('[data-inquiry-id]').forEach(el=>{
+                el.onchange=()=>{const id=Number(el.dataset.inquiryId);if(el.checked)selectedInquiryIds.add(id);else selectedInquiryIds.delete(id);renderInquiry()};
+              });
+            };
+            inquiryInput.oninput=renderInquiry;
+            document.querySelector<HTMLButtonElement>('#labInquiryClear')!.onclick=()=>{inquiryInput.value='';renderInquiry()};
+            document.querySelector<HTMLButtonElement>('#labInquiryDeselect')!.onclick=()=>{selectedInquiryIds.clear();renderInquiry()};
+            document.querySelector<HTMLButtonElement>('#labInquiryCopy')!.onclick=async()=>{
+              const selected=LAB_TESTS.filter(t=>selectedInquiryIds.has(t.id));
+              if(!selected.length){toast('اختر تحليلًا واحدًا على الأقل','error');return}
+              const details=selected.map(t=>`${t.name} — ${t.arabic} — ${t.price||'غير محدد'} ج.م`).join('\\n');
+              try{await navigator.clipboard.writeText(details);toast('تم نسخ الاستعلام')}catch(e){toast('تعذر نسخ الاستعلام','error')}
+            };
+            renderInquiry();
+
+          """
+          s=s.replace(needle,bindings+needle,1)
+          p.write_text(s,encoding='utf-8')
+          css=Path('src/style.css');css.write_text(css.read_text(encoding='utf-8')+"""
+          /* V7.1.31 independent multi-test inquiry */
+          .lab-inquiry-panel{border:1px solid #d7e6f0;border-radius:16px;background:#fff;padding:17px;margin:10px 0 20px}
+          .lab-inquiry-panel h3{margin:0 0 5px;font-size:17px;color:#103452}.lab-inquiry-panel p{font-size:12px;color:#668198;margin:0 0 12px}
+          .lab-inquiry-panel textarea{width:100%;box-sizing:border-box;min-height:64px;border:1px solid #ccdfeb;border-radius:10px;padding:11px;font:inherit;resize:vertical}
+          .lab-inquiry-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+          .lab-inquiry-summary{background:#eef8fc;padding:10px;border-radius:9px;color:#07577b;font-size:13px;font-weight:700}
+          .lab-inquiry-results{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px;max-height:345px;overflow:auto}
+          .lab-inquiry-row{display:flex;align-items:center;gap:9px;padding:9px;border:1px solid #e0ebf2;border-radius:10px;min-width:0}
+          .lab-inquiry-row span{flex:1;min-width:0}.lab-inquiry-row strong,.lab-inquiry-row small{display:block;overflow-wrap:anywhere}
+          .lab-inquiry-row small{font-size:11px;color:#7b90a2}.lab-inquiry-row b{font-size:12px;color:#07577b;white-space:nowrap}
+          @media(max-width:700px){.lab-inquiry-results{grid-template-columns:1fr}}
+          """,encoding='utf-8')
+          for f in ['package.json','src-tauri/tauri.conf.json']:
+           p=Path(f);d=json.loads(p.read_text(encoding='utf-8'));assert d['version']=='7.1.30';d['version']='7.1.31';p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          p=Path('package-lock.json');v=p.read_text(encoding='utf-8');v,n=re.subn(r'("version"\s*:\s*")7\.1\.30(")',r'\g<1>7.1.31\2',v,count=2);assert n==2;p.write_text(v,encoding='utf-8')
+          p=Path('src-tauri/Cargo.toml');v=p.read_text(encoding='utf-8');v,n=re.subn(r'(?m)^version\s*=\s*"7\.1\.30"\s*$', 'version = "7.1.31"',v,count=1);assert n==1;p.write_text(v,encoding='utf-8')
+          p=Path('src-tauri/Cargo.lock');v=p.read_text(encoding='utf-8');v,n=re.subn(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.30(" )',r'\g<1>7.1.31\2',v,count=1) if False else re.subn(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.30(")',r'\g<1>7.1.31\2',v,count=1);assert n==1;p.write_text(v,encoding='utf-8')
+          print('V7.1.31 applied')
+
+          PY
+      - name: Check lab inquiry newline escaping
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('src/main.ts').read_text(encoding='utf-8')
+          assert "raw.split(/[,،;؛+\\n]+/)" in s, 'Multi-test regex escape broken'
+          assert ".join('\\n')" in s, 'Copy newline escape broken'
+          assert 'const selectedInquiryIds=new Set<number>();' in s
+          print('Lab inquiry TypeScript escape checks OK')
+          PY
+      - name: Verify patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('src/main.ts').read_text(encoding='utf-8')
+          assert 'labInquirySearch' in s and 'selectedInquiryIds' in s and 'labInquiryResults' in s
+          assert 'registerLabPatient' in s
+          print('Standalone inquiry wired to original catalog; registration untouched')
+
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run build
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: npx tauri build --bundles nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-V7.1.31-Multi-Lab-Inquiry
+          path: src-tauri/target/release/bundle/nsis/*7.1.31*-setup.exe
+          if-no-files-found: error
+      - name: Commit after green
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src/style.css package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m 'V7.1.31 multi-test inquiry without patient registration'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
