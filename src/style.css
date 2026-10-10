@@ -5005,3 +5005,15 @@ table td{font-size:13px !important}
 .independent-service-modal form label:first-child,.independent-service-modal form label:has(textarea),.independent-service-modal .independent-service-hint{grid-column:1/-1}
 .independent-service-hint{font-size:12px;color:#73899e;margin:0}
 @media(max-width:720px){.independent-service-modal form{grid-template-columns:1fr}}
+
+/* V7.1.31 independent multi-test inquiry */
+.lab-inquiry-panel{border:1px solid #d7e6f0;border-radius:16px;background:#fff;padding:17px;margin:10px 0 20px}
+.lab-inquiry-panel h3{margin:0 0 5px;font-size:17px;color:#103452}.lab-inquiry-panel p{font-size:12px;color:#668198;margin:0 0 12px}
+.lab-inquiry-panel textarea{width:100%;box-sizing:border-box;min-height:64px;border:1px solid #ccdfeb;border-radius:10px;padding:11px;font:inherit;resize:vertical}
+.lab-inquiry-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.lab-inquiry-summary{background:#eef8fc;padding:10px;border-radius:9px;color:#07577b;font-size:13px;font-weight:700}
+.lab-inquiry-results{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px;max-height:345px;overflow:auto}
+.lab-inquiry-row{display:flex;align-items:center;gap:9px;padding:9px;border:1px solid #e0ebf2;border-radius:10px;min-width:0}
+.lab-inquiry-row span{flex:1;min-width:0}.lab-inquiry-row strong,.lab-inquiry-row small{display:block;overflow-wrap:anywhere}
+.lab-inquiry-row small{font-size:11px;color:#7b90a2}.lab-inquiry-row b{font-size:12px;color:#07577b;white-space:nowrap}
+@media(max-width:700px){.lab-inquiry-results{grid-template-columns:1fr}}

@@ -4380,6 +4380,30 @@ async function renderLabPrices() {
     `).join('');
   };
 
+  const selectedInquiryIds=new Set<number>();
+  const organGroups=[
+    {words:['كبد','liver','hepatic'],tests:['ALT','AST','Bilirubin','Albumin','GGT','Alkaline Phosphatase']},
+    {words:['كلى','الكلى','kidney','renal'],tests:['Creatinine','Blood Urea','Uric Acid','eGFR','Urine Analysis']},
+    {words:['قلب','heart','cardiac'],tests:['Troponin','CK-MB','Cholesterol','HDL','LDL','Triglyceride']},
+    {words:['غده','غدة','الدرقية','thyroid'],tests:['TSH','T3','T4','Thyroid Ab']},
+    {words:['بنكرياس','pancreas'],tests:['Amylase','Lipase','Blood Glucose']},
+    {words:['دم','blood','انيميا','أنيميا'],tests:['CBC','Iron','Ferritin','Haemoglobin','VIT B12']},
+    {words:['عظام','bone'],tests:['Calcium','Vitamin D','Phosphorous']},
+    {words:['بروستاتا','prostate'],tests:['PSA']},
+    {words:['مبيض','ovary'],tests:['AMH','CA 125','LH','FSH']}
+  ];
+  const labInquirySearch=(raw:string):LabTestItem[]=>{
+    const terms=raw.split(/[,،;؛+\n]+/).map(t=>t.trim()).filter(Boolean);
+    if(!terms.length)return LAB_TESTS;
+    const ids=new Set<number>();const out:LabTestItem[]=[];
+    for(const term of terms){
+      const norm=normalizeLabSearch(term);
+      const organ=organGroups.find(g=>g.words.some(w=>normalizeLabSearch(w)===norm));
+      const matches=organ?LAB_TESTS.filter(t=>organ.tests.some(key=>normalizeLabSearch(t.name).includes(normalizeLabSearch(key)))):searchLabTests(term);
+      for(const t of matches)if(!ids.has(t.id)){ids.add(t.id);out.push(t)}
+    }
+    return out;
+  };
   shell(`
     <section class="card lab-prices-card">
       <div class="card-head lab-prices-head">
@@ -4396,6 +4420,15 @@ async function renderLabPrices() {
           <div class="lab-prices-count">${LAB_TESTS.length} تحليل</div>
         </div>
       </div>
+
+      <section class="lab-inquiry-panel">
+        <h3>استعلام متعدد عن التحاليل — بدون بيانات مريض</h3>
+        <p>اكتب اسم تحليل أو أكثر بالعربي أو الإنجليزي أو باسم عضو الجسم. افصل بفاصلة أو سطر جديد.</p>
+        <textarea id="labInquiryInput" rows="2" placeholder="مثال: CBC، TSH، كبد أو Kidney, Liver"></textarea>
+        <div class="lab-inquiry-toolbar"><button type="button" class="btn ghost small" id="labInquiryClear">مسح</button><button type="button" class="btn ghost small" id="labInquiryDeselect">إلغاء التحديد</button><button type="button" class="btn primary small" id="labInquiryCopy">نسخ القائمة والأسعار</button></div>
+        <div id="labInquirySummary" class="lab-inquiry-summary">اختر التحاليل المطلوبة</div>
+        <div id="labInquiryResults" class="lab-inquiry-results"></div>
+      </section>
 
       <div class="lab-prices-search">
         <span class="lab-prices-search-icon">⌕</span>
@@ -4427,6 +4460,34 @@ async function renderLabPrices() {
       </section>
     </section>
   `, 'التحاليل', 'أسعار التحاليل وتعديلها');
+
+  const inquiryInput=document.querySelector<HTMLTextAreaElement>('#labInquiryInput')!;
+  const inquiryResults=document.querySelector<HTMLDivElement>('#labInquiryResults')!;
+  const inquirySummary=document.querySelector<HTMLDivElement>('#labInquirySummary')!;
+  const renderInquiry=()=>{
+    const selected=LAB_TESTS.filter(t=>selectedInquiryIds.has(t.id));
+    const numeric=selected.map(t=>/^\d+(?:[.,]\d+)?$/.test(t.price.trim())?Number(t.price.replace(',','.')):NaN);
+    const total=numeric.reduce((a:number,b:number)=>a+(Number.isFinite(b)?b:0),0);
+    const unknown=numeric.some(n=>!Number.isFinite(n));
+    inquirySummary.textContent=selected.length?`${selected.length} تحليل • الإجمالي ${total.toFixed(2)} ج.م${unknown?' (بعض الأسعار غير محددة أو متغيرة)':''}`:'اختر التحاليل المطلوبة';
+    inquiryResults.innerHTML=labInquirySearch(inquiryInput.value).slice(0,180).map(t=>`
+      <label class="lab-inquiry-row"><input type="checkbox" data-inquiry-id="${t.id}" ${selectedInquiryIds.has(t.id)?'checked':''}>
+      <span><strong>${esc(t.name)}</strong><small>${esc(t.arabic||t.market)}</small></span>
+      <b>${t.price?esc(t.price)+' ج.م':'غير محدد'}</b></label>`).join('')||'<div class="empty-block">لا توجد نتائج مطابقة</div>';
+    inquiryResults.querySelectorAll<HTMLInputElement>('[data-inquiry-id]').forEach(el=>{
+      el.onchange=()=>{const id=Number(el.dataset.inquiryId);if(el.checked)selectedInquiryIds.add(id);else selectedInquiryIds.delete(id);renderInquiry()};
+    });
+  };
+  inquiryInput.oninput=renderInquiry;
+  document.querySelector<HTMLButtonElement>('#labInquiryClear')!.onclick=()=>{inquiryInput.value='';renderInquiry()};
+  document.querySelector<HTMLButtonElement>('#labInquiryDeselect')!.onclick=()=>{selectedInquiryIds.clear();renderInquiry()};
+  document.querySelector<HTMLButtonElement>('#labInquiryCopy')!.onclick=async()=>{
+    const selected=LAB_TESTS.filter(t=>selectedInquiryIds.has(t.id));
+    if(!selected.length){toast('اختر تحليلًا واحدًا على الأقل','error');return}
+    const details=selected.map(t=>`${t.name} — ${t.arabic} — ${t.price||'غير محدد'} ج.م`).join('\n');
+    try{await navigator.clipboard.writeText(details);toast('تم نسخ الاستعلام')}catch(e){toast('تعذر نسخ الاستعلام','error')}
+  };
+  renderInquiry();
 
   const input = document.querySelector<HTMLInputElement>('#mainLabPriceSearch')!;
   const list = document.querySelector<HTMLDivElement>('#mainLabPriceList')!;
