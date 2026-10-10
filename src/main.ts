@@ -4470,7 +4470,7 @@ async function renderLabPrices() {
     const total=numeric.reduce((a:number,b:number)=>a+(Number.isFinite(b)?b:0),0);
     const unknown=numeric.some(n=>!Number.isFinite(n));
     inquirySummary.textContent=selected.length?`${selected.length} تحليل • الإجمالي ${total.toFixed(2)} ج.م${unknown?' (بعض الأسعار غير محددة أو متغيرة)':''}`:'اختر التحاليل المطلوبة';
-    inquiryResults.innerHTML=labInquirySearch(inquiryInput.value).slice(0,180).map(t=>`
+    inquiryResults.innerHTML=labInquirySearch(inquiryInput.value).map(t=>`
       <label class="lab-inquiry-row"><input type="checkbox" data-inquiry-id="${t.id}" ${selectedInquiryIds.has(t.id)?'checked':''}>
       <span><strong>${esc(t.name)}</strong><small>${esc(t.arabic||t.market)}</small></span>
       <b>${t.price?esc(t.price)+' ج.م':'غير محدد'}</b></label>`).join('')||'<div class="empty-block">لا توجد نتائج مطابقة</div>';

@@ -5017,3 +5017,36 @@ table td{font-size:13px !important}
 .lab-inquiry-row span{flex:1;min-width:0}.lab-inquiry-row strong,.lab-inquiry-row small{display:block;overflow-wrap:anywhere}
 .lab-inquiry-row small{font-size:11px;color:#7b90a2}.lab-inquiry-row b{font-size:12px;color:#07577b;white-space:nowrap}
 @media(max-width:700px){.lab-inquiry-results{grid-template-columns:1fr}}
+
+/* V7.1.32 complete selectable lab catalog with readable rows */
+.lab-prices-card .lab-inquiry-results{
+ display:flex!important;flex-direction:column!important;grid-template-columns:none!important;
+ gap:7px!important;max-height:370px!important;overflow-y:auto!important;overflow-x:hidden!important;
+ width:100%!important;min-width:0!important;padding:5px!important;box-sizing:border-box!important;
+}
+.lab-prices-card .lab-inquiry-results .lab-inquiry-row{
+ display:grid!important;grid-template-columns:24px minmax(0,1fr) auto!important;
+ align-items:center!important;gap:12px!important;box-sizing:border-box!important;
+ width:100%!important;min-width:0!important;min-height:64px!important;height:auto!important;
+ padding:10px 14px!important;flex:none!important;overflow:hidden!important;
+}
+.lab-prices-card .lab-inquiry-results .lab-inquiry-row input{
+ width:17px!important;height:17px!important;min-width:17px!important;max-width:17px!important;
+ margin:0!important;grid-column:1!important;
+}
+.lab-prices-card .lab-inquiry-results .lab-inquiry-row span{
+ display:block!important;min-width:0!important;width:100%!important;max-width:none!important;
+ flex:none!important;grid-column:2!important;white-space:normal!important;
+}
+.lab-prices-card .lab-inquiry-results .lab-inquiry-row strong,
+.lab-prices-card .lab-inquiry-results .lab-inquiry-row small{
+ display:block!important;min-width:0!important;max-width:none!important;
+ width:auto!important;white-space:normal!important;overflow-wrap:normal!important;
+ word-break:normal!important;line-height:1.5!important;
+ text-align:start!important;font-size:13px!important;
+}
+.lab-prices-card .lab-inquiry-results .lab-inquiry-row b{
+ display:block!important;grid-column:3!important;min-width:90px!important;width:auto!important;
+ max-width:none!important;white-space:nowrap!important;text-align:end!important;
+ font-size:12px!important;
+}
