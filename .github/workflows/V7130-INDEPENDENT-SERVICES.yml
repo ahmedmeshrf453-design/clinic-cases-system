@@ -1,0 +1,176 @@
+name: Clinic Cases V7.1.30 Independent Service Records
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch service records
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+          m=Path('src/main.ts');r=Path('src-tauri/src/lib.rs');c=Path('src/style.css')
+          s=m.read_text(encoding='utf-8');rs=r.read_text(encoding='utf-8')
+          assert '7.1.29'==json.loads(Path('package.json').read_text())['version']
+          assert "{key:'emergency',screen:'patients' as Screen" in s
+          assert 'fn list_service_cases(' not in rs
+          s=s.replace("| 'radiology' | 'cashier'", "| 'radiology' | 'emergency' | 'others' | 'cashier'",1)
+          s=s.replace("{key:'emergency',screen:'patients' as Screen", "{key:'emergency',screen:'emergency' as Screen",1)
+          s=s.replace("{key:'others',screen:'patients' as Screen", "{key:'others',screen:'others' as Screen",1)
+          s=s.replace("  if (screen === 'radiology') return renderRadiologyServices();", "  if (screen === 'radiology') return renderRadiologyServices();\n  if (screen === 'emergency' || screen === 'others') return renderIndependentService(screen);",1)
+          s=s.replace("const todayCount=x.key==='labs'?labs.length:x.key==='radiology'?rad.length:x.key==='physio'?physio.length:nursing.length;", "const todayCount=x.key==='labs'?labs.length:x.key==='radiology'?rad.length:x.key==='physio'?physio.length:x.key==='nursing'?nursing.length:null;",1)
+          s=s.replace('<span class="clinic-service-copy"><strong>${x.label}</strong><small>${todayCount} حالة اليوم</small></span>', '<span class="clinic-service-copy"><strong>${x.label}</strong>${todayCount===null?\'\':`<small>${todayCount} حالة اليوم</small>`}</span>',1)
+          frontend='''
+          type IndependentService = 'emergency' | 'others';
+          type IndependentServiceCase = {id:string;serviceKey:string;patientId:string;patientName:string;patientPhone:string;serviceName:string;caseDate:string;caseTime:string;status:string;fee:string;notes:string};
+          function independentServiceTitle(key:IndependentService){return key==='emergency'?'الطوارئ':'خدمات أخرى'}
+          async function renderIndependentService(key:IndependentService){
+            const date=businessDay();
+            const rows=await invoke<IndependentServiceCase[]>('list_service_cases',{query:{serviceKey:key,from:date,to:date}});
+            shell(`<section class="card independent-service-page">
+              <div class="card-head toolbar"><div><h2>${independentServiceTitle(key)}</h2><p>سجل مستقل للحالات الخاصة بالخدمة • ${displayDate(date)}</p></div><button class="btn primary small" id="newIndependentServiceCase">＋ تسجيل حالة</button></div>
+              <div class="independent-service-filters"><label>من <input id="independentServiceFrom" type="date" value="${date}"></label><label>إلى <input id="independentServiceTo" type="date" value="${date}"></label><button class="btn ghost small" id="independentServiceRefresh">عرض الفترة</button><button class="btn ghost small" id="independentServiceCsv">تصدير CSV</button></div>
+              <div class="independent-service-total"><span>عدد حالات الفترة</span><strong id="independentServiceTotal">${rows.length}</strong></div>
+              <div id="independentServiceRows"></div>
+            </section>`,independentServiceTitle(key),`متابعة حالات ${independentServiceTitle(key)} وتقاريرها`);
+            let current=rows;
+            const host=document.querySelector<HTMLElement>('#independentServiceRows')!;
+            const draw=()=>{host.innerHTML=`<div class="independent-service-scroll"><table class="table"><thead><tr><th>التاريخ</th><th>الوقت</th><th>المريض</th><th>الموبايل</th><th>الخدمة</th><th>الحالة</th><th>السعر</th><th>ملاحظات</th><th>الملف</th></tr></thead><tbody>${current.map(x=>`<tr><td>${esc(x.caseDate)}</td><td>${esc(x.caseTime)}</td><td>${esc(x.patientName)}</td><td>${esc(x.patientPhone)}</td><td>${esc(x.serviceName)}</td><td>${esc(x.status)}</td><td>${esc(x.fee)}</td><td>${esc(x.notes)}</td><td><button class="btn ghost small" data-service-patient="${esc(x.patientId)}">فتح المريض</button></td></tr>`).join('')||'<tr><td colspan="9">لا توجد حالات مسجلة في الفترة المحددة</td></tr>'}</tbody></table></div>`;host.querySelectorAll<HTMLButtonElement>('[data-service-patient]').forEach(b=>b.onclick=()=>openPatient(b.dataset.servicePatient||''));document.querySelector<HTMLElement>('#independentServiceTotal')!.textContent=String(current.length)};
+            draw();
+            document.querySelector<HTMLButtonElement>('#newIndependentServiceCase')!.onclick=()=>openIndependentServiceCaseModal(key);
+            document.querySelector<HTMLButtonElement>('#independentServiceRefresh')!.onclick=async()=>{const from=(document.querySelector<HTMLInputElement>('#independentServiceFrom')!).value;const to=(document.querySelector<HTMLInputElement>('#independentServiceTo')!).value;if(!from||!to||from>to){toast('راجع فترة التقرير','error');return}current=await invoke<IndependentServiceCase[]>('list_service_cases',{query:{serviceKey:key,from,to}});draw()};
+            document.querySelector<HTMLButtonElement>('#independentServiceCsv')!.onclick=()=>{
+              const data=[['التاريخ','الوقت','المريض','الهاتف','نوع الخدمة','الحالة','السعر','ملاحظات'],...current.map(x=>[x.caseDate,x.caseTime,x.patientName,x.patientPhone,x.serviceName,x.status,x.fee,x.notes])];
+              const csv='\\uFEFF'+data.map(row=>row.map(x=>'"'+String(x||'').replace(/"/g,'""')+'"').join(',')).join('\\r\\n');
+              const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));link.download=`${key}-${businessDay()}.csv`;link.click();URL.revokeObjectURL(link.href);
+            };
+          }
+          async function openIndependentServiceCaseModal(key:IndependentService){
+            const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
+            const patients=await invoke<Patient[]>('list_patients',{query:{search:'',archivedOnly:false,limit:5000}});
+            root.innerHTML=`<div class="modal-backdrop"><section class="modal form-modal independent-service-modal"><div class="modal-head"><h2>تسجيل حالة — ${independentServiceTitle(key)}</h2><button id="independentServiceClose" class="modal-close">×</button></div><form id="independentServiceForm">
+            <label>المريض المسجل <select name="patientId" required><option value="">— اختر المريض —</option>${patients.map(p=>`<option value="${esc(p.id)}">${esc(p.fullName)} — ${esc(p.phone)}</option>`).join('')}</select></label>
+            <p class="independent-service-hint">لإضافة مريض جديد، استخدم قسم المرضى أولًا؛ ملف المريض يظل موحّدًا.</p>
+            <label>نوع الخدمة <input name="serviceName" required value="${key==='emergency'?'استقبال طوارئ':''}" maxlength="120"></label>
+            <label>التاريخ <input name="caseDate" type="date" required value="${businessDay()}"></label>
+            <label>الوقت <input name="caseTime" type="time" required value="${timeNow()}"></label>
+            <label>الحالة <select name="status"><option>منتظر</option><option>حضر</option><option>تمت الخدمة</option><option>لم يحضر</option></select></label>
+            <label>السعر <input name="fee" type="number" min="0" step="0.01" value="0"></label>
+            <label>ملاحظات <textarea name="notes" rows="3"></textarea></label>
+            <button class="btn primary" type="submit">حفظ الحالة</button></form></section></div>`;
+            document.querySelector<HTMLButtonElement>('#independentServiceClose')!.onclick=()=>root.innerHTML='';
+            const form=document.querySelector<HTMLFormElement>('#independentServiceForm')!;
+            form.onsubmit=async(e)=>{e.preventDefault();const data=new FormData(form);const save=form.querySelector<HTMLButtonElement>('[type=submit]')!;save.disabled=true;try{await invoke('save_service_case',{input:{serviceKey:key,patientId:String(data.get('patientId')||''),serviceName:String(data.get('serviceName')||''),caseDate:String(data.get('caseDate')||''),caseTime:String(data.get('caseTime')||''),status:String(data.get('status')||''),fee:String(data.get('fee')||'0'),notes:String(data.get('notes')||'')}});root.innerHTML='';toast('تم تسجيل الحالة');await renderIndependentService(key)}catch(err){toast(`تعذر الحفظ: ${String(err)}`,'error');save.disabled=false}};
+          }
+          '''
+          s=s.replace('async function renderScreen() {',frontend+'\nasync function renderScreen() {',1)
+          m.write_text(s,encoding='utf-8')
+          model='''
+          #[derive(Debug, Deserialize)]
+          #[serde(rename_all="camelCase")]
+          struct ServiceCasesQuery { service_key:String, from:String, to:String }
+          #[derive(Debug, Deserialize)]
+          #[serde(rename_all="camelCase")]
+          struct ServiceCaseInput { service_key:String, patient_id:String, service_name:String, case_date:String, case_time:String, status:String, fee:String, notes:String }
+          #[derive(Debug, Serialize)]
+          #[serde(rename_all="camelCase")]
+          struct ServiceCaseRow { id:String, service_key:String, patient_id:String, patient_name:String, patient_phone:String, service_name:String, case_date:String, case_time:String, status:String, fee:String, notes:String }
+          #[tauri::command]
+          fn save_service_case(state:State<AppState>,input:ServiceCaseInput)->Result<String,String>{
+              if !["emergency","others"].contains(&input.service_key.as_str()){return Err("نوع خدمة غير صالح".into())}
+              if input.patient_id.trim().is_empty()||input.service_name.trim().is_empty(){return Err("المريض ونوع الخدمة مطلوبان".into())}
+              if NaiveDate::parse_from_str(&input.case_date,"%Y-%m-%d").is_err() {return Err("التاريخ غير صالح".into())}
+              if chrono::NaiveTime::parse_from_str(&input.case_time,"%H:%M").is_err(){return Err("الوقت غير صالح".into())}
+              let conn=open_db(&state)?;
+              let id=Uuid::new_v4().to_string();
+              let now=Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+              conn.execute("INSERT INTO service_cases(id,service_key,patient_id,service_name,case_date,case_time,status,fee,notes,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",params![id,input.service_key,input.patient_id,input.service_name,input.case_date,input.case_time,input.status,input.fee,input.notes,now]).map_err(|e|e.to_string())?;
+              Ok(id)
+          }
+          #[tauri::command]
+          fn list_service_cases(state:State<AppState>,query:ServiceCasesQuery)->Result<Vec<ServiceCaseRow>,String>{
+              if !["emergency","others"].contains(&query.service_key.as_str()){return Err("نوع خدمة غير صالح".into())}
+              if NaiveDate::parse_from_str(&query.from,"%Y-%m-%d").is_err()||NaiveDate::parse_from_str(&query.to,"%Y-%m-%d").is_err()||query.from>query.to{return Err("فترة غير صالحة".into())}
+              let conn=open_db(&state)?;
+              let mut stmt=conn.prepare("SELECT s.id,s.service_key,s.patient_id,p.full_name,p.phone,s.service_name,s.case_date,s.case_time,s.status,s.fee,s.notes FROM service_cases s JOIN patients p ON p.id=s.patient_id WHERE s.service_key=?1 AND s.case_date>=?2 AND s.case_date<=?3 ORDER BY s.case_date DESC,s.case_time DESC").map_err(|e|e.to_string())?;
+              let rows=stmt.query_map(params![query.service_key,query.from,query.to],|r|Ok(ServiceCaseRow{id:r.get(0)?,service_key:r.get(1)?,patient_id:r.get(2)?,patient_name:r.get(3)?,patient_phone:r.get(4)?,service_name:r.get(5)?,case_date:r.get(6)?,case_time:r.get(7)?,status:r.get(8)?,fee:r.get(9)?,notes:r.get(10)?})).map_err(|e|e.to_string())?;
+              rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+          }
+          '''
+          assert 'CREATE TABLE IF NOT EXISTS doctors(' in rs
+          rs=rs.replace('      CREATE TABLE IF NOT EXISTS doctors(','''      CREATE TABLE IF NOT EXISTS service_cases(
+                  id TEXT PRIMARY KEY, service_key TEXT NOT NULL,
+                  patient_id TEXT NOT NULL REFERENCES patients(id),
+                  service_name TEXT NOT NULL DEFAULT '', case_date TEXT NOT NULL,
+                  case_time TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'منتظر',
+                  fee TEXT NOT NULL DEFAULT '0', notes TEXT NOT NULL DEFAULT '',
+                  created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_service_cases_key_date ON service_cases(service_key,case_date);
+                CREATE TABLE IF NOT EXISTS doctors(''',1)
+          rs=rs.replace('fn list_doctors(state: State<AppState>',model+'\nfn list_doctors(state: State<AppState>',1)
+          # model insertion was between #[tauri::command] and fn list_doctors, restore attribute
+          rs=rs.replace('#[tauri::command]\n\n#[derive(Debug, Deserialize)]','#[derive(Debug, Deserialize)]',1)
+          rs=rs.replace('fn list_doctors(state: State<AppState>', '#[tauri::command]\nfn list_doctors(state: State<AppState>',1)
+          rs=rs.replace('tauri::generate_handler![','tauri::generate_handler![\n            save_service_case,\n            list_service_cases,',1)
+          r.write_text(rs,encoding='utf-8')
+          css='''
+          /* V7.1.30 independent service register: scoped, no redesign */
+          .independent-service-page .independent-service-filters{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:15px 0}
+          .independent-service-page .independent-service-filters label{display:grid;gap:5px;font-size:12px}
+          .independent-service-page .independent-service-total{display:flex;align-items:center;gap:10px;margin:16px 0}
+          .independent-service-page .independent-service-total strong{font-size:21px;color:#0d456e}
+          .independent-service-scroll{overflow-x:auto}
+          .independent-service-scroll table{width:100%;min-width:800px}
+          .independent-service-modal form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:15px}
+          .independent-service-modal form label{display:grid;gap:6px;min-width:0}
+          .independent-service-modal form label:first-child,.independent-service-modal form label:has(textarea),.independent-service-modal .independent-service-hint{grid-column:1/-1}
+          .independent-service-hint{font-size:12px;color:#73899e;margin:0}
+          @media(max-width:720px){.independent-service-modal form{grid-template-columns:1fr}}
+          '''
+          c.write_text(c.read_text(encoding='utf-8')+css,encoding='utf-8')
+          for fp in ['package.json','src-tauri/tauri.conf.json']:
+           p=Path(fp);obj=json.loads(p.read_text(encoding='utf-8'));assert obj['version']=='7.1.29';obj['version']='7.1.30';p.write_text(json.dumps(obj,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          p=Path('package-lock.json');z=p.read_text(encoding='utf-8');z,n=re.subn(r'("version"\s*:\s*")7\.1\.29(")',r'\g<1>7.1.30\2',z,count=2);assert n==2;p.write_text(z,encoding='utf-8')
+          p=Path('src-tauri/Cargo.toml');z=p.read_text(encoding='utf-8');z,n=re.subn(r'(?m)^version\s*=\s*"7\.1\.29"\s*$', 'version = "7.1.30"',z,count=1);assert n==1;p.write_text(z,encoding='utf-8')
+          p=Path('src-tauri/Cargo.lock');z=p.read_text(encoding='utf-8');z,n=re.subn(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.29(")',r'\g<1>7.1.30\2',z,count=1);assert n==1;p.write_text(z,encoding='utf-8')
+          print('V7.1.30 patch complete')
+          
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: npm ci
+      - name: Frontend build
+        run: npm run build
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build Windows installer
+        run: npx tauri build --bundles nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-Windows-V7.1.30-Independent-Services
+          path: src-tauri/target/release/bundle/nsis/*7.1.30*-setup.exe
+          if-no-files-found: error
+      - name: Commit verified patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src/style.css src-tauri/src/lib.rs package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m 'V7.1.30 independent emergency and other service records'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
