@@ -877,6 +877,15 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
         FOREIGN KEY(patient_id) REFERENCES patients(id)
       );
+      CREATE TABLE IF NOT EXISTS service_cases(
+        id TEXT PRIMARY KEY, service_key TEXT NOT NULL,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        service_name TEXT NOT NULL DEFAULT '', case_date TEXT NOT NULL,
+        case_time TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'منتظر',
+        fee TEXT NOT NULL DEFAULT '0', notes TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_service_cases_key_date ON service_cases(service_key,case_date);
       CREATE TABLE IF NOT EXISTS doctors(
         id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, specialty TEXT NOT NULL DEFAULT '',
         active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -2862,6 +2871,37 @@ fn get_stats(state: State<AppState>) -> Result<Stats, String> {
     })
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all="camelCase")]
+struct ServiceCasesQuery { service_key:String, from:String, to:String }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all="camelCase")]
+struct ServiceCaseInput { service_key:String, patient_id:String, service_name:String, case_date:String, case_time:String, status:String, fee:String, notes:String }
+#[derive(Debug, Serialize)]
+#[serde(rename_all="camelCase")]
+struct ServiceCaseRow { id:String, service_key:String, patient_id:String, patient_name:String, patient_phone:String, service_name:String, case_date:String, case_time:String, status:String, fee:String, notes:String }
+#[tauri::command]
+fn save_service_case(state:State<AppState>,input:ServiceCaseInput)->Result<String,String>{
+    if !["emergency","others"].contains(&input.service_key.as_str()){return Err("نوع خدمة غير صالح".into())}
+    if input.patient_id.trim().is_empty()||input.service_name.trim().is_empty(){return Err("المريض ونوع الخدمة مطلوبان".into())}
+    if NaiveDate::parse_from_str(&input.case_date,"%Y-%m-%d").is_err() {return Err("التاريخ غير صالح".into())}
+    if chrono::NaiveTime::parse_from_str(&input.case_time,"%H:%M").is_err(){return Err("الوقت غير صالح".into())}
+    let conn=open_db(&state)?;
+    let id=Uuid::new_v4().to_string();
+    let now=Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    conn.execute("INSERT INTO service_cases(id,service_key,patient_id,service_name,case_date,case_time,status,fee,notes,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",params![id,input.service_key,input.patient_id,input.service_name,input.case_date,input.case_time,input.status,input.fee,input.notes,now]).map_err(|e|e.to_string())?;
+    Ok(id)
+}
+#[tauri::command]
+fn list_service_cases(state:State<AppState>,query:ServiceCasesQuery)->Result<Vec<ServiceCaseRow>,String>{
+    if !["emergency","others"].contains(&query.service_key.as_str()){return Err("نوع خدمة غير صالح".into())}
+    if NaiveDate::parse_from_str(&query.from,"%Y-%m-%d").is_err()||NaiveDate::parse_from_str(&query.to,"%Y-%m-%d").is_err()||query.from>query.to{return Err("فترة غير صالحة".into())}
+    let conn=open_db(&state)?;
+    let mut stmt=conn.prepare("SELECT s.id,s.service_key,s.patient_id,p.full_name,p.phone,s.service_name,s.case_date,s.case_time,s.status,s.fee,s.notes FROM service_cases s JOIN patients p ON p.id=s.patient_id WHERE s.service_key=?1 AND s.case_date>=?2 AND s.case_date<=?3 ORDER BY s.case_date DESC,s.case_time DESC").map_err(|e|e.to_string())?;
+    let rows=stmt.query_map(params![query.service_key,query.from,query.to],|r|Ok(ServiceCaseRow{id:r.get(0)?,service_key:r.get(1)?,patient_id:r.get(2)?,patient_name:r.get(3)?,patient_phone:r.get(4)?,service_name:r.get(5)?,case_date:r.get(6)?,case_time:r.get(7)?,status:r.get(8)?,fee:r.get(9)?,notes:r.get(10)?})).map_err(|e|e.to_string())?;
+    rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+}
+
 #[tauri::command]
 fn list_doctors(state: State<AppState>, query: DoctorQuery) -> Result<Vec<Doctor>, String> {
     let conn = open_db(&state)?;
@@ -4053,6 +4093,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            save_service_case,
+            list_service_cases,
             register_patient,
             add_visit,
             get_visit,

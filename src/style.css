@@ -4992,3 +4992,16 @@ table td{font-size:13px !important}
 @media(max-width:1050px){.doctor-icon-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
 @media(max-width:740px){.doctor-icon-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(max-width:420px){.doctor-icon-grid{grid-template-columns:1fr!important}}
+
+/* V7.1.30 independent service register: scoped, no redesign */
+.independent-service-page .independent-service-filters{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:15px 0}
+.independent-service-page .independent-service-filters label{display:grid;gap:5px;font-size:12px}
+.independent-service-page .independent-service-total{display:flex;align-items:center;gap:10px;margin:16px 0}
+.independent-service-page .independent-service-total strong{font-size:21px;color:#0d456e}
+.independent-service-scroll{overflow-x:auto}
+.independent-service-scroll table{width:100%;min-width:800px}
+.independent-service-modal form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:15px}
+.independent-service-modal form label{display:grid;gap:6px;min-width:0}
+.independent-service-modal form label:first-child,.independent-service-modal form label:has(textarea),.independent-service-modal .independent-service-hint{grid-column:1/-1}
+.independent-service-hint{font-size:12px;color:#73899e;margin:0}
+@media(max-width:720px){.independent-service-modal form{grid-template-columns:1fr}}

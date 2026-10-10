@@ -458,7 +458,7 @@ type UnifiedSearchResult={kind:string;patientId:string;title:string;subtitle:str
 type SystemAlert={kind:string;title:string;detail:string;patientId:string;serviceType:string;serviceId:string};
 type PaymentMethodSummary={paymentMethod:string;count:number;amount:number};
 
-type Screen = 'dashboard' | 'patients' | 'today' | 'todaystats' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'physio' | 'radiology' | 'cashier' | 'finance' | 'alerts' | 'audit' | 'security' | 'reports' | 'archive' | 'trash' | 'backups' | 'settings';
+type Screen = 'dashboard' | 'patients' | 'today' | 'todaystats' | 'doctors' | 'labs' | 'lab2lab' | 'nursing' | 'physio' | 'radiology' | 'emergency' | 'others' | 'cashier' | 'finance' | 'alerts' | 'audit' | 'security' | 'reports' | 'archive' | 'trash' | 'backups' | 'settings';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 let screen: Screen = 'dashboard';
@@ -3101,6 +3101,49 @@ function showV7LockScreen(){
 }
 async function startV7App(){await loadLabPriceOverrides();v7SecurityStatus=await invoke<SecurityStatus>('security_status');const activity=()=>{v7LastActivityAt=Date.now()};['pointerdown','keydown','touchstart'].forEach(name=>window.addEventListener(name,activity,{passive:true}));window.clearInterval(v7SecurityTimer);v7SecurityTimer=window.setInterval(()=>{if(!v7SecurityStatus.pinSet)return;const idle=Date.now()-v7LastActivityAt;if(idle>=v7SecurityStatus.autoLockMinutes*60000&&!document.querySelector('.v7-lock-screen'))showV7LockScreen()},15000);if(v7SecurityStatus.pinSet)showV7LockScreen();else await renderScreen()}
 
+
+type IndependentService = 'emergency' | 'others';
+type IndependentServiceCase = {id:string;serviceKey:string;patientId:string;patientName:string;patientPhone:string;serviceName:string;caseDate:string;caseTime:string;status:string;fee:string;notes:string};
+function independentServiceTitle(key:IndependentService){return key==='emergency'?'الطوارئ':'خدمات أخرى'}
+async function renderIndependentService(key:IndependentService){
+  const date=businessDay();
+  const rows=await invoke<IndependentServiceCase[]>('list_service_cases',{query:{serviceKey:key,from:date,to:date}});
+  shell(`<section class="card independent-service-page">
+    <div class="card-head toolbar"><div><h2>${independentServiceTitle(key)}</h2><p>سجل مستقل للحالات الخاصة بالخدمة • ${displayDate(date)}</p></div><button class="btn primary small" id="newIndependentServiceCase">＋ تسجيل حالة</button></div>
+    <div class="independent-service-filters"><label>من <input id="independentServiceFrom" type="date" value="${date}"></label><label>إلى <input id="independentServiceTo" type="date" value="${date}"></label><button class="btn ghost small" id="independentServiceRefresh">عرض الفترة</button><button class="btn ghost small" id="independentServiceCsv">تصدير CSV</button></div>
+    <div class="independent-service-total"><span>عدد حالات الفترة</span><strong id="independentServiceTotal">${rows.length}</strong></div>
+    <div id="independentServiceRows"></div>
+  </section>`,independentServiceTitle(key),`متابعة حالات ${independentServiceTitle(key)} وتقاريرها`);
+  let current=rows;
+  const host=document.querySelector<HTMLElement>('#independentServiceRows')!;
+  const draw=()=>{host.innerHTML=`<div class="independent-service-scroll"><table class="table"><thead><tr><th>التاريخ</th><th>الوقت</th><th>المريض</th><th>الموبايل</th><th>الخدمة</th><th>الحالة</th><th>السعر</th><th>ملاحظات</th><th>الملف</th></tr></thead><tbody>${current.map(x=>`<tr><td>${esc(x.caseDate)}</td><td>${esc(x.caseTime)}</td><td>${esc(x.patientName)}</td><td>${esc(x.patientPhone)}</td><td>${esc(x.serviceName)}</td><td>${esc(x.status)}</td><td>${esc(x.fee)}</td><td>${esc(x.notes)}</td><td><button class="btn ghost small" data-service-patient="${esc(x.patientId)}">فتح المريض</button></td></tr>`).join('')||'<tr><td colspan="9">لا توجد حالات مسجلة في الفترة المحددة</td></tr>'}</tbody></table></div>`;host.querySelectorAll<HTMLButtonElement>('[data-service-patient]').forEach(b=>b.onclick=()=>openPatient(b.dataset.servicePatient||''));document.querySelector<HTMLElement>('#independentServiceTotal')!.textContent=String(current.length)};
+  draw();
+  document.querySelector<HTMLButtonElement>('#newIndependentServiceCase')!.onclick=()=>openIndependentServiceCaseModal(key);
+  document.querySelector<HTMLButtonElement>('#independentServiceRefresh')!.onclick=async()=>{const from=(document.querySelector<HTMLInputElement>('#independentServiceFrom')!).value;const to=(document.querySelector<HTMLInputElement>('#independentServiceTo')!).value;if(!from||!to||from>to){toast('راجع فترة التقرير','error');return}current=await invoke<IndependentServiceCase[]>('list_service_cases',{query:{serviceKey:key,from,to}});draw()};
+  document.querySelector<HTMLButtonElement>('#independentServiceCsv')!.onclick=()=>{
+    const data=[['التاريخ','الوقت','المريض','الهاتف','نوع الخدمة','الحالة','السعر','ملاحظات'],...current.map(x=>[x.caseDate,x.caseTime,x.patientName,x.patientPhone,x.serviceName,x.status,x.fee,x.notes])];
+    const csv='\uFEFF'+data.map(row=>row.map(x=>'"'+String(x||'').replace(/"/g,'""')+'"').join(',')).join('\r\n');
+    const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));link.download=`${key}-${businessDay()}.csv`;link.click();URL.revokeObjectURL(link.href);
+  };
+}
+async function openIndependentServiceCaseModal(key:IndependentService){
+  const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
+  const patients=await invoke<Patient[]>('list_patients',{query:{search:'',archivedOnly:false,limit:5000}});
+  root.innerHTML=`<div class="modal-backdrop"><section class="modal form-modal independent-service-modal"><div class="modal-head"><h2>تسجيل حالة — ${independentServiceTitle(key)}</h2><button id="independentServiceClose" class="modal-close">×</button></div><form id="independentServiceForm">
+  <label>المريض المسجل <select name="patientId" required><option value="">— اختر المريض —</option>${patients.map(p=>`<option value="${esc(p.id)}">${esc(p.fullName)} — ${esc(p.phone)}</option>`).join('')}</select></label>
+  <p class="independent-service-hint">لإضافة مريض جديد، استخدم قسم المرضى أولًا؛ ملف المريض يظل موحّدًا.</p>
+  <label>نوع الخدمة <input name="serviceName" required value="${key==='emergency'?'استقبال طوارئ':''}" maxlength="120"></label>
+  <label>التاريخ <input name="caseDate" type="date" required value="${businessDay()}"></label>
+  <label>الوقت <input name="caseTime" type="time" required value="${timeNow()}"></label>
+  <label>الحالة <select name="status"><option>منتظر</option><option>حضر</option><option>تمت الخدمة</option><option>لم يحضر</option></select></label>
+  <label>السعر <input name="fee" type="number" min="0" step="0.01" value="0"></label>
+  <label>ملاحظات <textarea name="notes" rows="3"></textarea></label>
+  <button class="btn primary" type="submit">حفظ الحالة</button></form></section></div>`;
+  document.querySelector<HTMLButtonElement>('#independentServiceClose')!.onclick=()=>root.innerHTML='';
+  const form=document.querySelector<HTMLFormElement>('#independentServiceForm')!;
+  form.onsubmit=async(e)=>{e.preventDefault();const data=new FormData(form);const save=form.querySelector<HTMLButtonElement>('[type=submit]')!;save.disabled=true;try{await invoke('save_service_case',{input:{serviceKey:key,patientId:String(data.get('patientId')||''),serviceName:String(data.get('serviceName')||''),caseDate:String(data.get('caseDate')||''),caseTime:String(data.get('caseTime')||''),status:String(data.get('status')||''),fee:String(data.get('fee')||'0'),notes:String(data.get('notes')||'')}});root.innerHTML='';toast('تم تسجيل الحالة');await renderIndependentService(key)}catch(err){toast(`تعذر الحفظ: ${String(err)}`,'error');save.disabled=false}};
+}
+
 async function renderScreen() {
   await Promise.all([loadDoctors(), loadSettings(), loadSidebarPatientsTotal()]);
   if (screen === 'dashboard') return renderDashboard();
@@ -3115,6 +3158,7 @@ async function renderScreen() {
   if (screen === 'nursing') return renderNursingServices();
   if (screen === 'physio') return renderPhysioServices();
   if (screen === 'radiology') return renderRadiologyServices();
+  if (screen === 'emergency' || screen === 'others') return renderIndependentService(screen);
   if (screen === 'cashier') return renderCashier();
   if (screen === 'finance') return renderFinance();
   if (screen === 'alerts') return renderAlerts();
@@ -3268,8 +3312,8 @@ const HOME_SERVICES=[
   {key:'radiology',screen:'radiology' as Screen,label:'الأشعة',iconClass:'organ-radiology'},
   {key:'physio',screen:'physio' as Screen,label:'العلاج الطبيعي',iconClass:'organ-physio'},
   {key:'nursing',screen:'nursing' as Screen,label:'خدمات التمريض',iconClass:'organ-nursing'},
-  {key:'emergency',screen:'patients' as Screen,label:'الطوارئ',iconClass:'organ-emergency'},
-  {key:'others',screen:'patients' as Screen,label:'خدمات أخرى',iconClass:'organ-others'}
+  {key:'emergency',screen:'emergency' as Screen,label:'الطوارئ',iconClass:'organ-emergency'},
+  {key:'others',screen:'others' as Screen,label:'خدمات أخرى',iconClass:'organ-others'}
 ] as const;
 
 const HOME_SPECIALTY_ORDER_KEY='clinicCases.home.specialties.v7121';
@@ -3389,11 +3433,11 @@ async function renderDashboard(){
     <div class="home-section-title"><strong>الخدمات</strong><small>يمكن تغيير ترتيبها بالسحب أيضًا</small></div>
     <div class="clinic-services-grid home-sortable-grid" id="serviceGridHome">
       ${orderedServices.map(x=>{
-        const todayCount=x.key==='labs'?labs.length:x.key==='radiology'?rad.length:x.key==='physio'?physio.length:nursing.length;
+        const todayCount=x.key==='labs'?labs.length:x.key==='radiology'?rad.length:x.key==='physio'?physio.length:x.key==='nursing'?nursing.length:null;
         return `<button class="clinic-service-card home-sortable-card" data-home-service="${x.screen}" data-order-id="${x.key}" type="button" draggable="true">
           <span class="specialty-card-drag" title="اسحب لتغيير الترتيب">⋮⋮</span>
           <span class="clinic-service-icon ${x.key==='emergency'||x.key==='others'?'service-hologram-icon':`photo-sprite-tile ${x.iconClass}`}">${x.key==='emergency'||x.key==='others'?`<img src="${homeServiceIconSrc(x.key)}" alt="${esc(x.label)}">`:''}</span>
-          <span class="clinic-service-copy"><strong>${x.label}</strong><small>${todayCount} حالة اليوم</small></span>
+          <span class="clinic-service-copy"><strong>${x.label}</strong>${todayCount===null?'':`<small>${todayCount} حالة اليوم</small>`}</span>
         </button>`;
       }).join('')}
     </div>
