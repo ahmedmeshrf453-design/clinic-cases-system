@@ -4397,7 +4397,9 @@ async function renderLabPrices() {
       <section class="lab-inquiry-panel">
         <h3>استعلام متعدد عن التحاليل — بدون بيانات مريض</h3>
         <p>اكتب اسم تحليل أو أكثر بالعربي أو الإنجليزي أو باسم عضو الجسم. افصل بفاصلة أو سطر جديد.</p>
-        <textarea id="labInquiryInput" rows="2" placeholder="مثال: CBC، TSH، كبد أو Kidney, Liver"></textarea>
+        <div class="lab-inquiry-composer"><div id="labInquiryChips" class="lab-inquiry-chips" aria-label="التحاليل المختارة"></div>
+        <textarea id="labInquiryInput" rows="2" placeholder="اكتب اسم تحليل بالعربي أو الإنجليزي، أو اختر من القائمة بالأسهم و Enter..."></textarea></div>
+        <small class="lab-inquiry-key-hint">↑ ↓ للتنقل • Enter للاختيار • Shift+Enter لسطر جديد • الفاصلة أو النقطة للفصل</small>
         <div class="lab-inquiry-toolbar"><button type="button" class="btn ghost small" id="labInquiryClear">مسح</button><button type="button" class="btn ghost small" id="labInquiryDeselect">إلغاء التحديد</button><button type="button" class="btn primary small" id="labInquiryCopy">نسخ القائمة والأسعار</button></div>
         <div id="labInquirySummary" class="lab-inquiry-summary">اختر التحاليل المطلوبة</div>
         <div id="labInquiryResults" class="lab-inquiry-results"></div>
@@ -4415,17 +4417,48 @@ async function renderLabPrices() {
 
   const inquiryInput=document.querySelector<HTMLTextAreaElement>('#labInquiryInput')!;
   const inquiryResults=document.querySelector<HTMLDivElement>('#labInquiryResults')!;
+  const inquiryChips=document.querySelector<HTMLDivElement>('#labInquiryChips')!;
+  let inquiryActiveIndex=-1;
+  const inquiryMatches=()=>labInquirySearch(inquiryInput.value);
+  const inquiryAdd=(id:number)=>{
+    if(!LAB_TESTS.some(t=>t.id===id))return;
+    selectedInquiryIds.add(id);
+    inquiryInput.value='';
+    inquiryActiveIndex=-1;
+    renderInquiry();
+    inquiryInput.focus();
+  };
+  const inquiryConsumeTokens=()=>{
+    const value=inquiryInput.value;
+    const segments=value.split(/[,،;؛.\n]+/);
+    if(segments.length<2)return;
+    const completed=segments.slice(0,-1);
+    for(const term of completed){
+      const word=term.trim();if(!word)continue;
+      const exact=LAB_TESTS.find(t=>[t.name,t.arabic,t.market].some(n=>normalizeLabSearch(n)===normalizeLabSearch(word)));
+      if(exact)selectedInquiryIds.add(exact.id);
+    }
+    inquiryInput.value=segments[segments.length-1].trimStart();
+    inquiryActiveIndex=-1;
+  };
+
   const inquirySummary=document.querySelector<HTMLDivElement>('#labInquirySummary')!;
   const renderInquiry=()=>{
     const selected=LAB_TESTS.filter(t=>selectedInquiryIds.has(t.id));
     const numeric=selected.map(t=>/^\d+(?:[.,]\d+)?$/.test(t.price.trim())?Number(t.price.replace(',','.')):NaN);
     const total=numeric.reduce((a:number,b:number)=>a+(Number.isFinite(b)?b:0),0);
     const unknown=numeric.some(n=>!Number.isFinite(n));
+    inquiryChips.innerHTML=selected.map(t=>`<span class="lab-inquiry-chip"><span>${esc(t.name)}</span><button type="button" data-remove-inquiry="${t.id}" aria-label="حذف ${esc(t.name)}">×</button></span>`).join('');
+    inquiryChips.querySelectorAll<HTMLButtonElement>('[data-remove-inquiry]').forEach(btn=>{
+      btn.onclick=()=>{selectedInquiryIds.delete(Number(btn.dataset.removeInquiry));renderInquiry()};
+    });
     inquirySummary.textContent=selected.length?`${selected.length} تحليل • الإجمالي ${total.toFixed(2)} ج.م${unknown?' (بعض الأسعار غير محددة أو متغيرة)':''}`:'اختر التحاليل المطلوبة';
     inquiryResults.innerHTML=labInquirySearch(inquiryInput.value).map(t=>`
       <label class="lab-inquiry-row"><input type="checkbox" data-inquiry-id="${t.id}" ${selectedInquiryIds.has(t.id)?'checked':''}>
       <span><strong>${esc(t.name)}</strong><small>${esc(t.arabic||t.market)}</small></span>
       <b>${t.price?esc(t.price)+' ج.م':'غير محدد'}</b><button class="lab-inquiry-edit-price" type="button" data-edit-main-lab-price="${t.id}" title="تعديل السعر">✎</button></label>`).join('')||'<div class="empty-block">لا توجد نتائج مطابقة</div>';
+    const optionRows=Array.from(inquiryResults.querySelectorAll<HTMLElement>('.lab-inquiry-row'));
+    optionRows.forEach((row,i)=>row.classList.toggle('lab-inquiry-key-active',i===inquiryActiveIndex));
     inquiryResults.querySelectorAll<HTMLButtonElement>('[data-edit-main-lab-price]').forEach(btn=>{
       btn.onclick=(event)=>{event.preventDefault();event.stopPropagation();openPriceEditor(Number(btn.dataset.editMainLabPrice||0))};
     });
@@ -4433,7 +4466,19 @@ async function renderLabPrices() {
       el.onchange=()=>{const id=Number(el.dataset.inquiryId);if(el.checked)selectedInquiryIds.add(id);else selectedInquiryIds.delete(id);renderInquiry()};
     });
   };
-  inquiryInput.oninput=renderInquiry;
+  inquiryInput.oninput=()=>{inquiryConsumeTokens();inquiryActiveIndex=-1;renderInquiry()};
+  inquiryInput.onkeydown=(event)=>{
+    if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+      event.preventDefault();
+      const matches=inquiryMatches();if(!matches.length)return;
+      inquiryActiveIndex=event.key==='ArrowDown'?(inquiryActiveIndex+1)%matches.length:(inquiryActiveIndex-1+matches.length)%matches.length;
+      renderInquiry();
+      inquiryResults.querySelectorAll<HTMLElement>('.lab-inquiry-row')[inquiryActiveIndex]?.scrollIntoView({block:'nearest'});
+    }else if(event.key==='Enter'&&!event.shiftKey){
+      const matches=inquiryMatches();
+      if(matches.length){event.preventDefault();inquiryAdd(matches[inquiryActiveIndex>=0?inquiryActiveIndex:0].id)}
+    }
+  };
   document.querySelector<HTMLButtonElement>('#labInquiryClear')!.onclick=()=>{inquiryInput.value='';renderInquiry()};
   document.querySelector<HTMLButtonElement>('#labInquiryDeselect')!.onclick=()=>{selectedInquiryIds.clear();renderInquiry()};
   document.querySelector<HTMLButtonElement>('#labInquiryCopy')!.onclick=async()=>{
