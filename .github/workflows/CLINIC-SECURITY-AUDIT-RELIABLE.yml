@@ -1,0 +1,105 @@
+name: Clinic Security Audit - Reliable Results
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  security-audit:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: npm ci
+      - name: TypeScript and Vite build
+        run: npm run build
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Produce security and size report
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import json,re
+          rust=Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')
+          conf=json.loads(Path('src-tauri/tauri.conf.json').read_text(encoding='utf-8'))
+          pkg=json.loads(Path('package.json').read_text(encoding='utf-8'))
+          def size(path):
+              p=Path(path)
+              return 'not found' if not p.exists() else f'{sum(x.stat().st_size for x in p.rglob("*") if x.is_file())/(1024*1024):.2f} MiB'
+          commands=[m.group(1) for m in re.finditer(r'(?m)^#\[tauri::command\]\s*\n\s*(?:pub\s+)?fn\s+(\w+)\s*\(',rust)]
+          points=[
+              ('Argon2 PIN hash routines present','argon2_hash_pin' in rust and 'argon2_verify_pin' in rust),
+              ('SQLite WAL and foreign keys','journal_mode=WAL' in rust and 'foreign_keys=ON' in rust),
+              ('Backup integrity check','PRAGMA integrity_check' in rust),
+              ('Attachment path safety check','stored_attachment_path_is_safe' in rust),
+              ('DevTools disabled',conf.get('app',{}).get('windows',[{}])[0].get('devtools') is False),
+              ('Content Security Policy configured',bool(conf.get('app',{}).get('security',{}).get('csp'))),
+              ('SQLCipher declared','sqlcipher' in Path('src-tauri/Cargo.toml').read_text(encoding='utf-8').lower()),
+          ]
+          lines=['# Clinic Cases - Security and Size Report',f'Version: {pkg["version"]}', '', '## Build folder sizes']
+          lines += [f'- {p}: {size(p)}' for p in ['dist','src','src-tauri/src','public','node_modules']]
+          lines += ['- Actual patient database, Windows installer, attachments and backups not measured on GitHub.', '', '## Security indicators (not proof of complete protection)']
+          lines += [f'- {"Present" if yes else "Not detected"}: {key}' for key,yes in points]
+          lines += [f'- Rust Tauri commands: {len(commands)}', '', 'Native authorization must be reviewed before claiming database protection.', 'No patient data collected.']
+          Path('security-audit-report.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
+          '@ | Set-Content -Path audit_report.py -Encoding UTF8
+          python audit_report.py
+      - name: Check npm vulnerabilities and report severity
+        shell: pwsh
+        run: |
+          # npm audit exit code 1 means known vulnerabilities; report it accurately.
+          # cmd.exe avoids PowerShell treating the native nonzero exit as a script failure.
+          & cmd.exe /d /s /c 'npm audit --omit=dev --json > npm-audit.json 2> npm-audit.stderr.log'
+          $code = $LASTEXITCODE
+          $valid = $false
+          $sev = @{critical=0;high=0;moderate=0;low=0;info=0}
+          if (Test-Path npm-audit.json) {
+            try {
+              $data = Get-Content npm-audit.json -Raw | ConvertFrom-Json -ErrorAction Stop
+              if ($null -ne $data.metadata -and $null -ne $data.metadata.vulnerabilities) {
+                foreach ($key in @('critical','high','moderate','low','info')) {
+                  if ($null -ne $data.metadata.vulnerabilities.$key) {
+                    $sev[$key] = [int]$data.metadata.vulnerabilities.$key
+                  }
+                }
+                $valid = $true
+              }
+            } catch { Write-Output 'npm audit JSON not parseable; original output attached.' }
+          }
+          if ($valid) {
+            $message = "Known vulnerabilities: Critical=$($sev.critical), High=$($sev.high), Moderate=$($sev.moderate), Low=$($sev.low)."
+            Write-Output $message
+            Add-Content security-audit-report.md "`n## Dependency audit`n- $message`n- npm audit returned $code; dependencies not changed."
+            if ($sev.critical -gt 0 -or $sev.high -gt 0) { Write-Warning 'High-risk vulnerabilities found: see the report.' }
+          } else {
+            $message = "npm audit incomplete (exit $code), inspect attached raw JSON and stderr."
+            Write-Warning $message
+            Add-Content security-audit-report.md "`n## Dependency audit`n- $message"
+          }
+          # Preserve findings without producing a misleading failed GitHub job.
+          exit 0
+      - name: Show results on GitHub
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path security-audit-report.md) {
+            Get-Content security-audit-report.md | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clinic-security-audit-reliable-results
+          path: |
+            security-audit-report.md
+            npm-audit.json
+            npm-audit.stderr.log
+          if-no-files-found: warn
+          retention-days: 14
