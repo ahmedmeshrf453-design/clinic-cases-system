@@ -5085,3 +5085,6 @@ table td{font-size:13px !important}
 .lab-guide-body form label{display:flex;flex-direction:column;gap:4px;font-size:12px}
 .lab-guide-body form textarea{min-height:65px;padding:9px;border-radius:8px;border:1px solid #d9e5ed;font:inherit}
 @media(max-width:750px){.lab-guide-layout,.lab-guide-grid,.lab-guide-body form{grid-template-columns:1fr}.lab-guide-list{max-height:180px}}
+
+/* V7.1.37 lab guide tube cues */
+.lab-guide-body .lab-guide-field{line-height:1.65!important}
