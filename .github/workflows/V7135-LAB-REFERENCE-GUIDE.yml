@@ -1,0 +1,72 @@
+name: Clinic Cases V7.1.35 Lab Reference Guide
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Install lab reference guide
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re,json
+          main=Path('src/main.ts');s=main.read_text(encoding='utf-8')
+          anchor="import { LAB2LAB_SOURCE } from './lab2labCatalog';"
+          assert anchor in s
+          s=s.replace(anchor,"import { openLabReferenceGuide } from './labReferenceGuide';\n"+anchor,1)
+          anchor='          <div class="lab-prices-count">${LAB_TESTS.length} تحليل</div>'
+          assert anchor in s
+          s=s.replace(anchor,'          <button type="button" class="btn ghost small" id="openLabReferenceGuide">دليل التحاليل</button>\n'+anchor,1)
+          anchor="  const inquiryInput=document.querySelector<HTMLTextAreaElement>('#labInquiryInput')!;"
+          assert anchor in s
+          s=s.replace(anchor,"  document.querySelector<HTMLButtonElement>('#openLabReferenceGuide')!.onclick=openLabReferenceGuide;\n"+anchor,1)
+          main.write_text(s,encoding='utf-8')
+          Path('src/labReferenceGuide.ts').write_text('import { LAB_TESTS } from \'./labCatalog\';\n\ntype Guide = { purpose: string; organ: string; specimen: string; tube: string; timing: string; turnaround: string; caution: string };\nconst defaults: Guide = {\n  purpose: \'راجع المرجع الطبي المعتمد لتحديد الغرض الدقيق من هذا الفحص.\',\n  organ: \'يتحدد حسب نوع الفحص والحالة الطبية.\',\n  specimen: \'غير مؤكد: راجع دليل جمع العينات بالمختبر.\',\n  tube: \'غير مؤكد: لا تختَر أنبوبة بالاعتماد على التخمين.\',\n  timing: \'تُحدد متطلبات الصيام والموعد وفق بروتوكول المختبر.\',\n  turnaround: \'يُحدد وقت النتيجة حسب جهاز المختبر أو المعمل المرجعي.\',\n  caution: \'لا تُستخدم هذه البيانات بديلًا عن تعليمات المختبر المعتمدة.\'\n};\nconst standard: Record<string, Partial<Guide>> = {\n  \'CBC\': { purpose:\'عدّ خلايا الدم والصفائح والمساعدة في تقييم الأنيميا والعدوى.\', organ:\'الدم ونخاع العظام\',specimen:\'دم كامل\',tube:\'بنفسجي — EDTA\',timing:\'عادةً بدون صيام.\',turnaround:\'غالبًا في نفس اليوم.\',caution:\'يجب تجنب تجلط العينة والالتزام بخلط الأنبوبة بالطريقة الصحيحة.\' },\n  \'TSH\': {purpose:\'تقييم نشاط الغدة الدرقية بواسطة الهرمون المنبه لها.\',organ:\'الغدة الدرقية\',specimen:\'مصل الدم\',tube:\'ذهبي SST أو أحمر حسب منصة المختبر\',timing:\'لا يحتاج صيامًا عادةً؛ أخبر المختبر عن البيوتين وأدوية الغدة.\',turnaround:\'غالبًا خلال يوم عمل.\',caution:\'البيوتين قد يتداخل مع بعض منصات التحليل.\'},\n  \'ALT\': {purpose:\'إنزيم يُستخدم للمساعدة في تقييم إصابة خلايا الكبد.\',organ:\'الكبد\',specimen:\'مصل الدم\',tube:\'ذهبي SST أو أحمر\',timing:\'الصيام غالبًا غير مطلوب للفحص منفردًا.\',turnaround:\'غالبًا في نفس اليوم.\',caution:\'التفسير مع التاريخ المرضي وباقي وظائف الكبد.\'},\n  \'AST\': {purpose:\'إنزيم قد يرتفع مع إصابة الكبد أو العضلات.\',organ:\'الكبد والعضلات\',specimen:\'مصل الدم\',tube:\'ذهبي SST أو أحمر\',timing:\'حسب الفحوص المصاحبة.\',turnaround:\'غالبًا في نفس اليوم.\',caution:\'غير نوعي للكبد وحده.\'},\n  \'Creatinine\': {purpose:\'تقييم وظائف الكلى والمساعدة في حساب eGFR.\',organ:\'الكلى\',specimen:\'مصل الدم\',tube:\'ذهبي SST أو أحمر\',timing:\'حسب الفحوص المصاحبة وتعليمات المختبر.\',turnaround:\'غالبًا في نفس اليوم.\',caution:\'قد تؤثر الكتلة العضلية والأدوية في تفسير النتيجة.\'},\n  \'Blood Glucose Fasting\': {purpose:\'قياس سكر الدم الصائم.\',organ:\'السكر والتمثيل الغذائي\',specimen:\'بلازما أو مصل حسب نظام المعمل\',tube:\'رمادي فلورايد أو أنبوبة مع فصل سريع وفق البروتوكول\',timing:\'صيام 8 ساعات على الأقل حسب الطبيب.\',turnaround:\'غالبًا في نفس اليوم.\',caution:\'تختلف معالجة العينة ووقت فصل البلازما.\'},\n  \'HbA1c\': {purpose:\'تقدير متوسط سكر الدم خلال قرابة شهرين إلى ثلاثة أشهر.\',organ:\'السكر\',specimen:\'دم كامل\',tube:\'بنفسجي — EDTA\',timing:\'لا يحتاج صيامًا عادةً.\',turnaround:\'غالبًا خلال يوم عمل.\',caution:\'بعض اضطرابات الهيموجلوبين وعمر الكريات الحمراء تؤثر في التفسير.\'},\n  \'Ferritin\': {purpose:\'تقييم مخزون الحديد، وقد يرتفع أيضًا مع الالتهاب.\',organ:\'الدم والحديد\',specimen:\'مصل الدم\',tube:\'ذهبي SST أو أحمر\',timing:\'لا يحتاج صيامًا عادةً.\',turnaround:\'غالبًا خلال يوم عمل.\',caution:\'يفسر مع صورة الدم وعلامات الالتهاب.\'},\n  \'Urine Analysis\': {purpose:\'فحص البول لتقييم علامات اضطرابات الكلى والمسالك وغيرها.\',organ:\'الكلى والمسالك البولية\',specimen:\'بول حديث في وعاء نظيف\',tube:\'وعاء بول مناسب — ليست أنبوبة دم\',timing:\'جمع العينة حسب تعليمات المختبر.\',turnaround:\'غالبًا في نفس اليوم.\',caution:\'التأخير في نقل العينة قد يغيّر النتائج.\'},\n  \'Urine C/S\': {purpose:\'زراعة البول لتحديد الجراثيم وحساسيتها.\',organ:\'المسالك البولية\',specimen:\'بول منتصف المجرى معقم\',tube:\'وعاء جمع بول معقم\',timing:\'يُفضل قبل المضاد الحيوي إذا أمكن وبتوجيه طبي.\',turnaround:\'غالبًا 48–72 ساعة وقد تزيد.\',caution:\'طريقة جمع العينة الصحيحة مهمة لتجنب التلوث.\'},\n  \'PTT\': {purpose:\'تقييم أحد مسارات تخثر الدم.\',organ:\'سيولة الدم\',specimen:\'بلازما سترات\',tube:\'أزرق فاتح — Sodium citrate\',timing:\'الصيام غير مطلوب عادةً؛ وضّح أدوية السيولة.\',turnaround:\'غالبًا في نفس اليوم.\',caution:\'يجب ملء أنبوبة السيترات للنسبة الصحيحة.\'},\n  \'Prothrombin Time\': {purpose:\'تقييم التخثر وقد يُستخدم لمتابعة الوارفارين.\',organ:\'سيولة الدم\',specimen:\'بلازما سترات\',tube:\'أزرق فاتح — Sodium citrate\',timing:\'عادةً دون صيام؛ وضّح أدوية السيولة.\',turnaround:\'غالبًا في نفس اليوم.\',caution:\'امتلاء الأنبوبة عامل مهم لسلامة النتيجة.\'},\n  \'Troponin\': {purpose:\'مؤشر لإصابة عضلة القلب.\',organ:\'القلب\',specimen:\'مصل أو بلازما حسب الجهاز\',tube:\'ذهبي SST أو أخضر هيبارين حسب المنصة\',timing:\'يُجرى حسب تقييم الطوارئ؛ وقد يستلزم تكرار العينة.\',turnaround:\'قد تكون خلال نحو ساعة في مختبر الطوارئ.\',caution:\'لا تُفسّر النتيجة دون الأعراض والتخطيط وتغير القيم.\'},\n  \'Vit D3\': {purpose:\'تقييم حالة فيتامين د في الجسم.\',organ:\'العظام والتمثيل الغذائي\',specimen:\'مصل الدم\',tube:\'ذهبي SST أو أحمر\',timing:\'عادةً لا يحتاج صيامًا.\',turnaround:\'يختلف؛ غالبًا 1–3 أيام عمل.\',caution:\'يجب تحديد وقت التقرير الفعلي وفق المعمل.\'},\n};\nconst fields: [keyof Guide,string][] = [[\'purpose\',\'ما وظيفة التحليل؟\'],[\'organ\',\'العضو أو الجهاز\'],[\'specimen\',\'نوع العينة\'],[\'tube\',\'لون الأنبوبة أو الوعاء\'],[\'timing\',\'التحضير ووقت إجرائه\'],[\'turnaround\',\'موعد ظهور النتيجة\'],[\'caution\',\'ملاحظات مهمة\']];\nconst storageKey=\'clinic.lab.reference.guide.v1\';\nconst esc=(v:unknown)=>String(v??\'\').replace(/[&<>"\']/g,c=>({\'&\':\'&amp;\',\'<\':\'&lt;\',\'>\':\'&gt;\',\'"\':\'&quot;\',"\'":\'&#039;\'}[c]!));\nexport function openLabReferenceGuide(){\n  const root=document.querySelector<HTMLDivElement>(\'#modalRoot\');\n  if(!root)return;\n  let edits:Record<string,Partial<Guide>>={};\n  try{edits=JSON.parse(localStorage.getItem(storageKey)||\'{}\')}catch{edits={}}\n  let active=LAB_TESTS[0];\n  let query=\'\';\n  const detail=():Guide=>({...defaults,...Object.entries(standard).find(([key])=>active.name.toLowerCase().includes(key.toLowerCase()))?.[1],...edits[String(active.id)]});\n  function draw(){\n    const matches=LAB_TESTS.filter(t=>(t.name+\' \'+t.arabic+\' \'+t.market).toLowerCase().includes(query.toLowerCase()));\n    const info=detail();\n    root!.innerHTML=`<div class="modal-backdrop" id="labGuideBackdrop"><section class="modal lab-reference-guide"><div class="modal-head"><div><h2>دليل التحاليل</h2><p>معلومات مرجعية عن التحليل والعينة والأنبوبة والتحضير ووقت النتيجة</p></div><button type="button" class="modal-close" id="labGuideClose">×</button></div><div class="lab-guide-layout"><aside><input id="labGuideSearch" type="search" placeholder="بحث عربي أو إنجليزي" value="${esc(query)}"><div class="lab-guide-list">${matches.map(t=>`<button type="button" data-guide-id="${t.id}" class="${active.id===t.id?\'active\':\'\'}"><strong>${esc(t.name)}</strong><small>${esc(t.arabic||t.market)}</small></button>`).join(\'\')}</div></aside><main class="lab-guide-body"><h3>${esc(active.name)}</h3><p>${esc(active.arabic||active.market)}</p><div class="lab-guide-grid">${fields.map(([key,label])=>`<div><small>${label}</small><strong>${esc(info[key])}</strong></div>`).join(\'\')}</div><p class="lab-guide-warning">تنبيه: ألوان الأنابيب وأوقات النتيجة تختلف حسب الأجهزة وبروتوكول المعمل؛ لا تعتمد على معلومات غير مؤكدة عند سحب العينات.</p><button type="button" class="btn ghost small" id="labGuideEdit">تعديل بيانات هذا التحليل</button></main></div></section></div>`;\n    root!.querySelector<HTMLButtonElement>(\'#labGuideClose\')!.onclick=()=>root!.replaceChildren();\n    const input=root!.querySelector<HTMLInputElement>(\'#labGuideSearch\')!;\n    input.oninput=()=>{query=input.value;const caret=input.selectionStart;draw();const next=root!.querySelector<HTMLInputElement>(\'#labGuideSearch\')!;next.focus();next.setSelectionRange(caret,caret)};\n    root!.querySelectorAll<HTMLButtonElement>(\'[data-guide-id]\').forEach(button=>button.onclick=()=>{const t=LAB_TESTS.find(t=>t.id===Number(button.dataset.guideId));if(t){active=t;draw()}});\n    root!.querySelector<HTMLButtonElement>(\'#labGuideEdit\')!.onclick=()=>{\n      const body=root!.querySelector<HTMLElement>(\'.lab-guide-body\')!;\n      body.innerHTML=`<h3>تعديل مرجع ${esc(active.name)}</h3><p>يُراجع المحتوى بواسطة مسؤول المختبر قبل الاعتماد عليه.</p><form id="labGuideForm">${fields.map(([key,label])=>`<label>${label}<textarea data-guide-field="${key}">${esc(info[key])}</textarea></label>`).join(\'\')}<button class="btn primary" type="submit">حفظ بيانات التحليل</button><button type="button" class="btn ghost" id="labGuideCancel">إلغاء</button></form>`;\n      body.querySelector<HTMLButtonElement>(\'#labGuideCancel\')!.onclick=draw;\n      body.querySelector<HTMLFormElement>(\'#labGuideForm\')!.onsubmit=e=>{e.preventDefault();const v:Record<string,string>={};body.querySelectorAll<HTMLTextAreaElement>(\'[data-guide-field]\').forEach(t=>v[t.dataset.guideField||\'\']=t.value.trim());edits[String(active.id)]=v;localStorage.setItem(storageKey,JSON.stringify(edits));draw()};\n    };\n  }\n  draw();\n}\n',encoding='utf-8')
+          css=Path('src/style.css');css.write_text(css.read_text(encoding='utf-8')+'\n/* V7.1.35 independent lab guide */\n.lab-reference-guide{width:min(1100px,96vw)!important;max-height:92vh!important;overflow:auto!important}\n.lab-guide-layout{display:grid;grid-template-columns:minmax(230px,31%) minmax(0,1fr);gap:17px;min-height:450px}\n.lab-guide-layout aside{min-width:0;display:flex;flex-direction:column;gap:10px}\n.lab-guide-layout aside input{width:100%;padding:12px;border:1px solid #d8e6f0;border-radius:9px;box-sizing:border-box}\n.lab-guide-list{display:flex;flex-direction:column;gap:5px;max-height:60vh;overflow:auto}\n.lab-guide-list button{text-align:start;background:#fff;border:1px solid #d9e5ed;border-radius:8px;padding:9px;cursor:pointer}\n.lab-guide-list button.active{background:#eefaff;border-color:#4ab9e3}\n.lab-guide-list strong,.lab-guide-list small{display:block;overflow-wrap:anywhere}\n.lab-guide-list small{font-size:11px;color:#73899a}\n.lab-guide-body{max-height:70vh;overflow:auto;min-width:0}\n.lab-guide-body h3{color:#123e5e;font-size:21px}\n.lab-guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:13px 0}\n.lab-guide-grid>div{padding:12px;border-radius:10px;border:1px solid #d9e5ec;min-width:0}\n.lab-guide-grid small,.lab-guide-grid strong{display:block;overflow-wrap:anywhere;white-space:normal;line-height:1.55}\n.lab-guide-grid small{color:#74899b}.lab-guide-grid strong{font-size:13px;color:#173b55}\n.lab-guide-warning{font-size:12px;line-height:1.5;color:#8b6470}\n.lab-guide-body form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}\n.lab-guide-body form label{display:flex;flex-direction:column;gap:4px;font-size:12px}\n.lab-guide-body form textarea{min-height:65px;padding:9px;border-radius:8px;border:1px solid #d9e5ed;font:inherit}\n@media(max-width:750px){.lab-guide-layout,.lab-guide-grid,.lab-guide-body form{grid-template-columns:1fr}.lab-guide-list{max-height:180px}}\n',encoding='utf-8')
+          for fn in ('package.json','src-tauri/tauri.conf.json'):
+           p=Path(fn);v=json.loads(p.read_text(encoding='utf-8'));assert v['version']=='7.1.34';v['version']='7.1.35';p.write_text(json.dumps(v,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          for fn in ('package-lock.json','src-tauri/Cargo.toml','src-tauri/Cargo.lock'):
+           p=Path(fn);v=p.read_text(encoding='utf-8')
+           if fn.endswith('.json'):v,n=re.subn(r'("version"\s*:\s*")7\.1\.34(")',r'\g<1>7.1.35\2',v,count=2);assert n==2
+           elif fn.endswith('Cargo.toml'):v,n=re.subn(r'(?m)^version\s*=\s*"7\.1\.34"\s*$', 'version = "7.1.35"',v,count=1);assert n==1
+           else:v,n=re.subn(r'(name\s*=\s*"clinic-cases-system"\s*\nversion\s*=\s*")7\.1\.34(")',r'\g<1>7.1.35\2',v,count=1);assert n==1
+           p.write_text(v,encoding='utf-8')
+          print('Lab guide updated')
+          
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: npm ci
+      - name: TypeScript build
+        run: npm run build
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Windows installer
+        run: npx tauri build --bundles nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clinic-Cases-V7.1.35-Lab-Guide
+          path: src-tauri/target/release/bundle/nsis/*7.1.35*-setup.exe
+          if-no-files-found: error
+      - name: Commit after build
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src/labReferenceGuide.ts src/style.css package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m 'V7.1.35 searchable lab reference guide'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
