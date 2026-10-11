@@ -1,0 +1,107 @@
+name: Clinic Cases Security and Size Audit - Fixed
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  security-audit:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install locked dependencies
+        run: npm ci
+      - name: TypeScript and Vite build
+        run: npm run build
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Create static security and storage report
+        shell: pwsh
+        run: |
+          @'
+          import json,re
+          from pathlib import Path
+          root=Path('.')
+          rust=Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')
+          conf=json.loads(Path('src-tauri/tauri.conf.json').read_text(encoding='utf-8'))
+          pkg=json.loads(Path('package.json').read_text(encoding='utf-8'))
+          def size(path):
+              p=Path(path)
+              if not p.exists():return 'Not present'
+              return f'{sum(x.stat().st_size for x in p.rglob("*") if x.is_file())/1024/1024:.2f} MiB'
+          entries=[]
+          for m in re.finditer(r'(?m)^#\[tauri::command\]\s*\n\s*(?:pub\s+)?fn\s+(\w+)\s*\(',rust):entries.append((m.group(1),m.end()))
+          sensitive=('patient','visit','backup','restore','attachment','lab','nursing','radiology','doctor','report','finance')
+          unguarded=[]
+          for name,pos in entries:
+              if not any(x in name for x in sensitive):continue
+              stop=next((end for _,end in entries if end>pos),len(rust))
+              body=rust[pos:min(pos+1600,stop)]
+              if not re.search(r'require_auth|ensure_unlocked|verify_security_pin|check_permission|authorize_request|require_unlocked',body,re.I):unguarded.append(name)
+          checks={
+              'Argon2 PIN hash routines present':'argon2_hash_pin' in rust and 'argon2_verify_pin' in rust,
+              'SQLite WAL and foreign keys configured':'journal_mode=WAL' in rust and 'foreign_keys=ON' in rust,
+              'Backup integrity verification present':'PRAGMA integrity_check' in rust,
+              'Attachment path containment check present':'stored_attachment_path_is_safe' in rust,
+              'Production DevTools disabled':conf.get('app',{}).get('windows',[{}])[0].get('devtools') is False,
+              'CSP configured':bool(conf.get('app',{}).get('security',{}).get('csp')),
+              'SQLCipher declared':'sqlcipher' in Path('src-tauri/Cargo.toml').read_text(encoding='utf-8').lower(),
+          }
+          lines=['# Clinic Cases — Read-only security audit',f'Application version: {pkg.get("version")}', '', '## Repository build size']
+          lines += [f'- {p}: {size(p)}' for p in ('dist','src','src-tauri/src','public','node_modules')]
+          lines += ['- Windows installer / real patient database size: NOT measured','', '## Static indicators (not proof of security)']
+          lines += [f'- {"PRESENT" if ok else "NOT DETECTED"}: {name}' for name,ok in checks.items()]
+          lines += ['',f'## Native IPC access-control review',f'- Native commands found: {len(entries)}',f'- Sensitive commands without recognized entry guard: {len(unguarded)}','- Commands for manual review: '+(', '.join(unguarded) if unguarded else 'none flagged'),'','## Important','- Missing checks are findings requiring manual review, not confirmed exploits.','- No personal patient data or local database are accessed by this workflow.']
+          Path('security-audit-report.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
+          print('\n'.join(lines))
+          '@ | Set-Content audit_clinic_fixed.py -Encoding UTF8
+          python audit_clinic_fixed.py
+      - name: Dependency audit (findings reported without erroneous step failure)
+        shell: pwsh
+        run: |
+          # npm audit returns 1 when vulnerabilities are found; that is a finding, not a script failure.
+          $ErrorActionPreference = 'Continue'
+          $output = & npm audit --omit=dev --json 2>&1 | Out-String
+          $auditExit = $LASTEXITCODE
+          Set-Content -Path npm-audit.json -Value $output -Encoding UTF8
+          if ($auditExit -eq 0) {
+            Add-Content -Path security-audit-report.md -Value "`n## Dependency audit`n- PASS: no known production dependency findings reported by npm audit."
+            Write-Output 'npm audit passed.'
+          } elseif ($auditExit -eq 1) {
+            Add-Content -Path security-audit-report.md -Value "`n## Dependency audit`n- FINDINGS: npm audit reported vulnerabilities. Inspect npm-audit.json before updating dependencies."
+            Write-Warning 'npm audit found vulnerabilities: see artifact. No dependencies modified.'
+          } else {
+            Add-Content -Path security-audit-report.md -Value "`n## Dependency audit`n- INCOMPLETE: npm audit exited with code $auditExit; inspect output."
+            Write-Warning "npm audit could not complete (exit $auditExit); see artifact."
+          }
+          # GitHub Actions PowerShell runners propagate $LASTEXITCODE from native tools.
+          # npm audit exit 1 means vulnerabilities were found; keep the audit report as a finding.
+          # Unexpected npm audit errors (exit > 1) must still fail the job.
+          if ($auditExit -eq 0 -or $auditExit -eq 1) {
+            exit 0
+          }
+          exit $auditExit
+      - name: Summarize report
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path security-audit-report.md) {
+            Get-Content security-audit-report.md | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          }
+      - name: Upload audit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clinic-security-audit-fixed-reports
+          path: |
+            security-audit-report.md
+            npm-audit.json
+          if-no-files-found: warn
+          retention-days: 14
