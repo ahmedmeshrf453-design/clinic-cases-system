@@ -5,6 +5,7 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import './style.css';
 import { LAB_TESTS, type LabTestItem } from './labCatalog';
+import { openLabReferenceGuide } from './labReferenceGuide';
 import { LAB2LAB_SOURCE } from './lab2labCatalog';
 import { LAB2LAB_ARABIC } from './lab2labArabic';
 
@@ -4390,6 +4391,7 @@ async function renderLabPrices() {
             <span class="lab-patient-register-icon">👤＋</span>
             <span>تسجيل مريض تحاليل</span>
           </button>
+          <button type="button" class="btn ghost small" id="openLabReferenceGuide">دليل التحاليل</button>
           <div class="lab-prices-count">${LAB_TESTS.length} تحليل</div>
         </div>
       </div>
@@ -4415,6 +4417,7 @@ async function renderLabPrices() {
     </section>
   `, 'التحاليل', 'أسعار التحاليل وتعديلها');
 
+  document.querySelector<HTMLButtonElement>('#openLabReferenceGuide')!.onclick=openLabReferenceGuide;
   const inquiryInput=document.querySelector<HTMLTextAreaElement>('#labInquiryInput')!;
   const inquiryResults=document.querySelector<HTMLDivElement>('#labInquiryResults')!;
   const inquiryChips=document.querySelector<HTMLDivElement>('#labInquiryChips')!;

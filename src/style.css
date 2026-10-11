@@ -5063,3 +5063,25 @@ table td{font-size:13px !important}
 .lab-inquiry-panel .lab-inquiry-chip button{border:0;background:transparent;color:#386a83;font-size:19px;line-height:1;cursor:pointer}
 .lab-inquiry-panel .lab-inquiry-key-hint{display:block;color:#748b9d;font-size:11px;margin-top:5px}
 .lab-inquiry-panel .lab-inquiry-results .lab-inquiry-key-active{outline:2px solid #13a4db!important;background:#eefaff!important}
+
+/* V7.1.35 independent lab guide */
+.lab-reference-guide{width:min(1100px,96vw)!important;max-height:92vh!important;overflow:auto!important}
+.lab-guide-layout{display:grid;grid-template-columns:minmax(230px,31%) minmax(0,1fr);gap:17px;min-height:450px}
+.lab-guide-layout aside{min-width:0;display:flex;flex-direction:column;gap:10px}
+.lab-guide-layout aside input{width:100%;padding:12px;border:1px solid #d8e6f0;border-radius:9px;box-sizing:border-box}
+.lab-guide-list{display:flex;flex-direction:column;gap:5px;max-height:60vh;overflow:auto}
+.lab-guide-list button{text-align:start;background:#fff;border:1px solid #d9e5ed;border-radius:8px;padding:9px;cursor:pointer}
+.lab-guide-list button.active{background:#eefaff;border-color:#4ab9e3}
+.lab-guide-list strong,.lab-guide-list small{display:block;overflow-wrap:anywhere}
+.lab-guide-list small{font-size:11px;color:#73899a}
+.lab-guide-body{max-height:70vh;overflow:auto;min-width:0}
+.lab-guide-body h3{color:#123e5e;font-size:21px}
+.lab-guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:13px 0}
+.lab-guide-grid>div{padding:12px;border-radius:10px;border:1px solid #d9e5ec;min-width:0}
+.lab-guide-grid small,.lab-guide-grid strong{display:block;overflow-wrap:anywhere;white-space:normal;line-height:1.55}
+.lab-guide-grid small{color:#74899b}.lab-guide-grid strong{font-size:13px;color:#173b55}
+.lab-guide-warning{font-size:12px;line-height:1.5;color:#8b6470}
+.lab-guide-body form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.lab-guide-body form label{display:flex;flex-direction:column;gap:4px;font-size:12px}
+.lab-guide-body form textarea{min-height:65px;padding:9px;border-radius:8px;border:1px solid #d9e5ed;font:inherit}
+@media(max-width:750px){.lab-guide-layout,.lab-guide-grid,.lab-guide-body form{grid-template-columns:1fr}.lab-guide-list{max-height:180px}}
