@@ -1,0 +1,109 @@
+name: Clinic Cases Security and Size Audit - Read Only
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  security-audit:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install locked JS dependencies
+        run: npm ci
+      - name: TypeScript and frontend compile
+        run: npm run build
+      - name: Rust unit tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Generate security and size report (no personal data)
+        shell: pwsh
+        run: |
+          @'
+          import json, re, os
+          from pathlib import Path
+          from datetime import datetime, timezone
+          root=Path('.')
+          rust=Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')
+          main=Path('src/main.ts').read_text(encoding='utf-8')
+          config=json.loads(Path('src-tauri/tauri.conf.json').read_text(encoding='utf-8'))
+          cap=json.loads(Path('src-tauri/capabilities/default.json').read_text(encoding='utf-8'))
+          pkg=json.loads(Path('package.json').read_text(encoding='utf-8'))
+          def mib(n): return round(n/(1024*1024),2)
+          def folder_bytes(path):
+              p=Path(path)
+              return sum(x.stat().st_size for x in p.rglob('*') if x.is_file()) if p.exists() else None
+          def size_record(path):
+              n=folder_bytes(path)
+              return 'not present' if n is None else f'{mib(n)} MiB'
+          commands=[]
+          for mat in re.finditer(r'(?m)^#\[tauri::command\]\s*\n\s*(?:pub\s+)?fn\s+(\w+)\s*\(',rust):
+              commands.append((mat.group(1), mat.end()))
+          sensitive_words=('patient','visit','backup','restore','attachment','lab','nursing','radiology','doctor','report','finance')
+          sensitive=[(name,pos) for name,pos in commands if any(w in name for w in sensitive_words)]
+          no_guard=[]
+          for name,pos in sensitive:
+              end=min([cpos for _,cpos in commands if cpos>pos],default=len(rust))
+              block=rust[pos:min(pos+1300,end)]
+              if not re.search(r'(?:require_auth|ensure_unlocked|verify_security_pin|check_permission|authorize_request|require_unlocked)',block,re.I):
+                  no_guard.append(name)
+          checks={
+              'PIN hashes use Argon2': 'argon2_hash_pin' in rust and 'argon2_verify_pin' in rust,
+              'SQLite WAL and foreign keys configured': 'journal_mode=WAL' in rust and 'foreign_keys=ON' in rust,
+              'backup integrity check implemented': 'PRAGMA integrity_check' in rust,
+              'attachment path containment check present': 'stored_attachment_path_is_safe' in rust,
+              'production devtools disabled': config.get('app',{}).get('windows',[{}])[0].get('devtools') is False,
+              'Tauri CSP configured': bool(config.get('app',{}).get('security',{}).get('csp')),
+              'local database encryption library declared': 'sqlcipher' in Path('src-tauri/Cargo.toml').read_text(encoding='utf-8').lower(),
+              'GitHub repository has no bundled patient data': not any(x.is_file() and x.suffix.lower() in ('.db','.sqlite','.sqlite3') for x in root.rglob('*') if not any(y in x.parts for y in ('node_modules','target','.git'))),
+          }
+          report=[]
+          report.append('# Clinic Cases — Read-Only Security and Storage Audit')
+          report.append('Generated (UTC): '+datetime.now(timezone.utc).isoformat())
+          report.append('Application version: '+str(pkg.get('version','unknown')))
+          report.append('\n## Repository build sizes (not end-user disk consumption)')
+          for f in ('dist','src','src-tauri/src','public','node_modules'):
+              report.append('- '+f+': '+size_record(f))
+          report.append('- GitHub Windows installer: not measured (this workflow does not create an installer)')
+          report.append('- Production database, attachments and backups on real devices: NOT measured and NOT accessed')
+          report.append('\n## Static checks (a PASS is not proof of complete security)')
+          for title,ok in checks.items():report.append('- '+('PRESENT' if ok else 'NOT DETECTED')+': '+title)
+          report.append('\n## Native IPC authorization review')
+          report.append('- Total declared Tauri command functions: '+str(len(commands)))
+          report.append('- Potentially sensitive declared commands: '+str(len(sensitive)))
+          report.append('- Sensitive commands lacking a recognized authorization check near function entry: '+str(len(no_guard)))
+          report.append('- Names needing manual review: '+(', '.join(no_guard) if no_guard else 'none flagged'))
+          report.append('- IMPORTANT: this is a heuristic scan, not an exploit test; alternate guards may exist elsewhere.')
+          report.append('\n## Review reminders')
+          report.append('- Check backend lock enforcement, not just front-end PIN overlay.')
+          report.append('- Encrypt database and removable/off-device backups using a verified key-management and recovery design before production deployment.')
+          report.append('- Perform offline restore tests on synthetic data before any database migration.')
+          report.append('- Verify Windows installer size and startup RAM on a real Windows device separately.')
+          report.append('- No patient files or secrets are included in this report.')
+          Path('security-audit-report.md').write_text('\n'.join(report)+'\n',encoding='utf-8')
+          print('\n'.join(report))
+          '@ | Set-Content -Path audit_clinic.py -Encoding UTF8
+          python audit_clinic.py
+      - name: Dependency audit - informational only
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          npm audit --omit=dev --audit-level=moderate *> npm-audit.log
+          if (!(Test-Path npm-audit.log)) { 'npm audit output unavailable' | Set-Content npm-audit.log }
+          Write-Output 'Dependency audit completed; inspect report artifact for detailed findings.'
+      - name: Upload audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clinic-security-audit-reports
+          path: |
+            security-audit-report.md
+            npm-audit.log
+          if-no-files-found: warn
+          retention-days: 14
