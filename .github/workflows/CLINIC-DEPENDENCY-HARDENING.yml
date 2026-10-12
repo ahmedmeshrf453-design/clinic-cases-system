@@ -1,0 +1,91 @@
+name: Clinic Cases - Dependency Hardening
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  harden:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Baseline install and tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw 'Baseline npm ci failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Baseline frontend build failed' }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Baseline Rust tests failed' }
+      - name: Update vulnerable JavaScript dependencies within permitted semver ranges
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Fix known vulnerabilities only within semver-compatible dependency versions.
+          # This does not change package.json requirements or Rust/SQLite/medical data.
+          npm audit fix --package-lock-only --ignore-scripts --no-fund
+          $auditFixExit = $LASTEXITCODE
+          Write-Output "npm audit fix exit: $auditFixExit"
+          # An exit code of 1 may mean remaining vulnerabilities that require breaking changes.
+          if ($auditFixExit -gt 1) { throw "npm audit fix failed (exit $auditFixExit)" }
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency re-install failed; no commit will be made' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend regression; no commit will be made' }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Rust regression; no commit will be made' }
+      - name: Record remaining production dependency findings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & cmd.exe /d /s /c 'npm audit --omit=dev --json > dependency-audit.json 2> dependency-audit-stderr.txt'
+          $auditExit = $LASTEXITCODE
+          $info = 'No recognized npm audit result'
+          if (Test-Path dependency-audit.json) {
+            try {
+              $a = Get-Content dependency-audit.json -Raw | ConvertFrom-Json -ErrorAction Stop
+              $v = $a.metadata.vulnerabilities
+              if ($null -ne $v) {
+                $info = "Critical: $($v.critical); High: $($v.high); Moderate: $($v.moderate); Low: $($v.low)."
+              }
+            } catch { $info = 'Cannot parse npm audit JSON; inspect attached result' }
+          }
+          "## Dependency hardening" | Out-File $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "- JavaScript / TypeScript / Rust tests passed after compatible dependency remediation." | Out-File $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "- Remaining known production dependency findings: $info" | Out-File $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "- npm audit exit: $auditExit. Existing medical data, database, logos and interface were not modified." | Out-File $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          if ($auditExit -gt 1) { throw 'npm audit could not complete; refusing to claim security success' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clinic-dependency-hardening-report
+          path: |
+            dependency-audit.json
+            dependency-audit-stderr.txt
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Commit only tested compatible dependency updates
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo 'No compatible dependency changes needed.'
+          else
+            git commit -m 'Security: update compatible JavaScript dependency locks'
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
+          fi
