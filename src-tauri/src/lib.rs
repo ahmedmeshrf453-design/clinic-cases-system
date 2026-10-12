@@ -3031,11 +3031,30 @@ fn backup_item(path: &PathBuf) -> Result<BackupItem, String> {
 
 fn checkpoint_and_copy(state: &AppState, target: &PathBuf) -> Result<(), String> {
     let conn = open_db(state)?;
-    conn.execute_batch("PRAGMA wal_checkpoint(FULL);")
-        .map_err(|e| e.to_string())?;
-    drop(conn);
-    fs::copy(&state.db_path, target).map_err(|e| e.to_string())?;
-    Ok(())
+    let checkpoint: (i64, i64, i64) = conn.query_row(
+        "PRAGMA wal_checkpoint(TRUNCATE)", [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    ).map_err(|e| e.to_string())?;
+    if checkpoint.0 != 0 || checkpoint.1 != checkpoint.2 {
+        return Err("لا يمكن إنشاء نسخة متسقة أثناء انشغال قاعدة البيانات".into());
+    }
+    let dir = target.parent().ok_or("مسار النسخة غير صالح")?;
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let temp = dir.join(format!(".backup-{}.tmp", Uuid::new_v4()));
+    let result = (|| -> Result<(), String> {
+        fs::copy(&state.db_path, &temp).map_err(|e| e.to_string())?;
+        let check = Connection::open_with_flags(&temp, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e| e.to_string())?;
+        let integrity: String = check.query_row("PRAGMA integrity_check", [], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        if integrity != "ok" { return Err("النسخة غير سليمة، لن يتم اعتمادها".into()); }
+        drop(check);
+        if target.exists() { return Err("يوجد ملف بنفس اسم النسخة".into()); }
+        fs::rename(&temp, target).map_err(|e| e.to_string())?;
+        Ok(())
+    })();
+    if result.is_err() { let _ = fs::remove_file(&temp); }
+    result
 }
 
 fn prune_backup_prefix(dir:&Path,prefix:&str,keep:usize)->Result<(),String>{let mut items:Vec<(u64,PathBuf)>=Vec::new();for e in fs::read_dir(dir).map_err(|e|e.to_string())?{let e=e.map_err(|e|e.to_string())?;let p=e.path();let n=p.file_name().and_then(|x|x.to_str()).unwrap_or("");if !n.starts_with(prefix)||p.extension().and_then(|x|x.to_str())!=Some("db"){continue}let m=e.metadata().ok().and_then(|x|x.modified().ok()).and_then(|t|t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d|d.as_secs()).unwrap_or(0);items.push((m,p));}items.sort_by(|a,b|b.0.cmp(&a.0));for (_,p) in items.into_iter().skip(keep){let _=fs::remove_file(p);}Ok(())}
