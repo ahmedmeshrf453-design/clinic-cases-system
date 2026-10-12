@@ -1,0 +1,83 @@
+name: Clinic V7.1.41 - Atomic Cashier Payments
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  protect:
+    runs-on: windows-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Apply minimal atomic cashier fix
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          p = Path("src-tauri/src/lib.rs")
+          s = p.read_text(encoding="utf-8")
+          start = s.index("fn record_cashier_payment(")
+          end = s.index("\nfn finance_source_label", start)
+          old = s[start:end]
+          if "transaction_with_behavior" in old:
+              raise SystemExit("Atomic payment change already present. No automatic rewrite.")
+          if "let c=open_db(&state)?;" not in old or "cashier_items_for_range(&c," not in old or 'c.execute("INSERT INTO cashier_payments' not in old:
+              raise SystemExit("Unexpected cashier function layout; refusing to modify.")
+          new = old.replace(
+              "let c=open_db(&state)?;",
+              "let mut c=open_db(&state)?;let tx=c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;",
+              1
+          ).replace(
+              "cashier_items_for_range(&c,",
+              "cashier_items_for_range(&tx,",
+              1
+          ).replace(
+              'c.execute("INSERT INTO cashier_payments',
+              'tx.execute("INSERT INTO cashier_payments',
+              1
+          )
+          if "Ok(())}" not in new:
+              raise SystemExit("Unexpected ending; refusing to modify.")
+          new = new.replace("Ok(())}", "tx.commit().map_err(|e|e.to_string())?;Ok(())}", 1)
+          assert new.count("TransactionBehavior::Immediate")==1
+          assert new.count("tx.commit()")==1
+          p.write_text(s[:start]+new+s[end:], encoding="utf-8")
+          print("Atomic cashier transaction applied.")
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check frontend and Rust
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files = @(Get-ChildItem src-tauri/target/release/bundle/nsis -Filter '*.exe' -File)
+          if ($files.Count -ne 1) { throw 'Installer not found' }
+      - name: Commit tested Rust-only fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src-tauri/src/lib.rs
+          git diff --cached --quiet && exit 0
+          git commit -m 'Fix: make cashier balance check and payment atomic'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
