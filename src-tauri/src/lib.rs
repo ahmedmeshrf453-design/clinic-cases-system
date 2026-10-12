@@ -3573,6 +3573,16 @@ UNION ALL SELECT
   COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='radiology' AND cp.service_id=r.id),0)
 FROM radiology_orders r JOIN patients p ON p.id=r.patient_id
 WHERE p.archived=0 AND r.order_date BETWEEN ?1 AND ?2
+
+UNION ALL SELECT
+  s.service_key,s.id,p.id,p.full_name,p.phone,
+  CASE WHEN s.service_key='emergency' THEN 'طوارئ - ' ELSE 'خدمات أخرى - ' END || COALESCE(s.service_name,''),
+  s.case_date,COALESCE(s.case_time,''),'','','',
+  CAST(COALESCE(NULLIF(s.fee,''),'0') AS REAL),
+  COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp
+    WHERE cp.service_type=s.service_key AND cp.service_id=s.id),0)
+FROM service_cases s JOIN patients p ON p.id=s.patient_id
+WHERE p.archived=0 AND s.service_key IN ('emergency','others') AND s.case_date BETWEEN ?1 AND ?2
 ) x ORDER BY service_date DESC, service_time DESC, patient_name
 "#;
 
@@ -3594,7 +3604,7 @@ WHERE p.archived=0 AND r.order_date BETWEEN ?1 AND ?2
 #[tauri::command]
 fn list_cashier_items(state:State<AppState>,query:CashierQuery)->Result<Vec<CashierItem>,String>{let c=open_db(&state)?; cashier_items_for_range(&c,&query.from,&query.to)}
 #[tauri::command]
-fn record_cashier_payment(state:State<AppState>,input:CashierPaymentInput)->Result<(),String>{if !["clinic","lab","nursing","physio","radiology"].contains(&input.service_type.as_str()){return Err("نوع الخدمة غير صالح".into())}if input.patient_id.len()>128||input.service_id.len()>128{return Err("معرف الخدمة غير صالح".into())}let amount=parse_lab_money(&input.amount,"المبلغ")?;if amount<=0.0{return Err("المبلغ يجب أن يكون أكبر من صفر".into())}let method=input.payment_method.trim();if method.is_empty()||method.len()>80||method.chars().any(|c|c.is_control()){return Err("طريقة الدفع غير صالحة".into())}if input.notes.len()>500{return Err("ملاحظات الدفع أطول من المسموح".into())}let c=open_db(&state)?;let item=cashier_items_for_range(&c,"2000-01-01","2099-12-31")?.into_iter().find(|x|x.service_type==input.service_type&&x.service_id==input.service_id).ok_or_else(||"الخدمة غير موجودة".to_string())?;if item.patient_id!=input.patient_id{return Err("بيانات المريض غير متطابقة".into())}if amount>item.remaining+0.001{return Err("المبلغ أكبر من المتبقي".into())}c.execute("INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![Uuid::new_v4().to_string(),input.patient_id,input.service_type,input.service_id,format!("{:.2}",amount),method,input.notes.trim(),Local::now().format("%Y-%m-%d %H:%M:%S").to_string()]).map_err(|e|e.to_string())?;Ok(())}
+fn record_cashier_payment(state:State<AppState>,input:CashierPaymentInput)->Result<(),String>{if !["clinic","lab","nursing","physio","radiology","emergency","others"].contains(&input.service_type.as_str()){return Err("نوع الخدمة غير صالح".into())}if input.patient_id.len()>128||input.service_id.len()>128{return Err("معرف الخدمة غير صالح".into())}let amount=parse_lab_money(&input.amount,"المبلغ")?;if amount<=0.0{return Err("المبلغ يجب أن يكون أكبر من صفر".into())}let method=input.payment_method.trim();if method.is_empty()||method.len()>80||method.chars().any(|c|c.is_control()){return Err("طريقة الدفع غير صالحة".into())}if input.notes.len()>500{return Err("ملاحظات الدفع أطول من المسموح".into())}let c=open_db(&state)?;let item=cashier_items_for_range(&c,"2000-01-01","2099-12-31")?.into_iter().find(|x|x.service_type==input.service_type&&x.service_id==input.service_id).ok_or_else(||"الخدمة غير موجودة".to_string())?;if item.patient_id!=input.patient_id{return Err("بيانات المريض غير متطابقة".into())}if amount>item.remaining+0.001{return Err("المبلغ أكبر من المتبقي".into())}c.execute("INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![Uuid::new_v4().to_string(),input.patient_id,input.service_type,input.service_id,format!("{:.2}",amount),method,input.notes.trim(),Local::now().format("%Y-%m-%d %H:%M:%S").to_string()]).map_err(|e|e.to_string())?;Ok(())}
 
 fn finance_source_label(raw: &str) -> String {
     let value = raw.trim().to_lowercase();
@@ -3695,7 +3705,7 @@ fn list_payment_method_summary(
 }
 
 #[tauri::command]
-fn financial_report(state:State<AppState>,query:CashierQuery)->Result<FinancialSummary,String>{let c=open_db(&state)?; let items=cashier_items_for_range(&c,&query.from,&query.to)?; let defs=[("clinic","الكشف والاستشارات"),("lab","التحاليل"),("radiology","الأشعة"),("physio","العلاج الطبيعي"),("nursing","التمريض")]; let mut cats=Vec::new(); for (k,l) in defs{let s=items.iter().filter(|x|x.service_type==k).collect::<Vec<_>>(); cats.push(FinancialCategory{service_type:k.into(),label:l.into(),count:s.len() as i64,charges:s.iter().map(|x|x.charge).sum(),paid:s.iter().map(|x|x.paid).sum(),remaining:s.iter().map(|x|x.remaining).sum()});} Ok(FinancialSummary{total_charges:items.iter().map(|x|x.charge).sum(),total_paid:items.iter().map(|x|x.paid).sum(),total_remaining:items.iter().map(|x|x.remaining).sum(),categories:cats})}
+fn financial_report(state:State<AppState>,query:CashierQuery)->Result<FinancialSummary,String>{let c=open_db(&state)?; let items=cashier_items_for_range(&c,&query.from,&query.to)?; let defs=[("clinic","الكشف والاستشارات"),("lab","التحاليل"),("radiology","الأشعة"),("physio","العلاج الطبيعي"),("nursing","التمريض"),("emergency","الطوارئ"),("others","خدمات أخرى")]; let mut cats=Vec::new(); for (k,l) in defs{let s=items.iter().filter(|x|x.service_type==k).collect::<Vec<_>>(); cats.push(FinancialCategory{service_type:k.into(),label:l.into(),count:s.len() as i64,charges:s.iter().map(|x|x.charge).sum(),paid:s.iter().map(|x|x.paid).sum(),remaining:s.iter().map(|x|x.remaining).sum()});} Ok(FinancialSummary{total_charges:items.iter().map(|x|x.charge).sum(),total_paid:items.iter().map(|x|x.paid).sum(),total_remaining:items.iter().map(|x|x.remaining).sum(),categories:cats})}
 #[tauri::command]
 fn list_audit_logs(state:State<AppState>,limit:i64)->Result<Vec<AuditEntry>,String>{let c=open_db(&state)?; let mut s=c.prepare("SELECT id,action,entity_type,entity_id,details,created_at FROM audit_log ORDER BY id DESC LIMIT ?1").map_err(|e|e.to_string())?; let rows=s.query_map(params![limit.clamp(1,1000)],|r|Ok(AuditEntry{id:r.get(0)?,action:r.get(1)?,entity_type:r.get(2)?,entity_id:r.get(3)?,details:r.get(4)?,created_at:r.get(5)?})).map_err(|e|e.to_string())?; rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())}
 

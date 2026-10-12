@@ -2430,7 +2430,10 @@ function financeServiceLabel(serviceType: string) {
     clinic: 'كشف / استشارة',
     lab: 'تحاليل',
     nursing: 'خدمات تمريض',
-    radiology: 'أشعة'
+    radiology: 'أشعة',
+    physio: 'علاج طبيعي',
+    emergency: 'طوارئ',
+    others: 'خدمات أخرى'
   } as Record<string,string>)[serviceType] || serviceType || 'خدمة';
 }
 
@@ -2621,7 +2624,7 @@ async function renderFinance(){
         <label>إلى<input id="financeTo" type="date" value="${day}"></label>
         <label>الطبيب<select id="financeDoctor"><option value="">كل الأطباء</option>${doctors.map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}</select></label>
         <label>نوع الخدمة<select id="financeService">
-          <option value="">كل الخدمات</option><option value="clinic">كشف / استشارة</option><option value="lab">تحاليل</option><option value="nursing">خدمات تمريض</option><option value="radiology">أشعة</option>
+          <option value="">كل الخدمات</option><option value="clinic">كشف / استشارة</option><option value="lab">تحاليل</option><option value="nursing">خدمات تمريض</option><option value="radiology">أشعة</option><option value="physio">علاج طبيعي</option><option value="emergency">طوارئ</option><option value="others">خدمات أخرى</option>
         </select></label>
         <label>مصدر الحجز<select id="financeSource">
           <option value="">كل المصادر</option><option value="Vezeeta">Vezeeta</option><option value="Clinido">Clinido</option><option value="Ekshef">Ekshef</option><option value="حجز مباشر">حجز مباشر</option>
