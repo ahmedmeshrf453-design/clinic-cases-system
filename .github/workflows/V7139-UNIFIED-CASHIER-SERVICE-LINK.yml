@@ -1,0 +1,95 @@
+name: Clinic V7.1.39 - Unified Cashier Emergency Services
+'on':
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: main
+        fetch-depth: 0
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Integrate emergency and other services into cashier
+      shell: pwsh
+      run: "@'\nfrom pathlib import Path\np=Path('src-tauri/src/lib.rs')\ns=p.read_text(encoding='utf-8')\nneedle=\"\
+        FROM radiology_orders r JOIN patients p ON p.id=r.patient_id\\nWHERE p.archived=0 AND r.order_date BETWEEN\
+        \ ?1 AND ?2\\n) x ORDER BY\"\nassert s.count(needle)==1, 'Cashier SQL layout changed; abort without edit'\n\
+        add=\"\"\"FROM radiology_orders r JOIN patients p ON p.id=r.patient_id\nWHERE p.archived=0 AND r.order_date\
+        \ BETWEEN ?1 AND ?2\n\nUNION ALL SELECT\n  s.service_key,s.id,p.id,p.full_name,p.phone,\n  CASE WHEN s.service_key='emergency'\
+        \ THEN 'طوارئ - ' ELSE 'خدمات أخرى - ' END || COALESCE(s.service_name,''),\n  s.case_date,COALESCE(s.case_time,''),'','','',\n\
+        \  CAST(COALESCE(NULLIF(s.fee,''),'0') AS REAL),\n  COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments\
+        \ cp\n    WHERE cp.service_type=s.service_key AND cp.service_id=s.id),0)\nFROM service_cases s JOIN patients\
+        \ p ON p.id=s.patient_id\nWHERE p.archived=0 AND s.service_key IN ('emergency','others') AND s.case_date\
+        \ BETWEEN ?1 AND ?2\n) x ORDER BY\"\"\"\ns=s.replace(needle,add)\nold='[\"clinic\",\"lab\",\"nursing\",\"\
+        physio\",\"radiology\"].contains(&input.service_type.as_str())'\nassert s.count(old)==1, 'Payment service\
+        \ allowlist changed; abort'\ns=s.replace(old,'[\"clinic\",\"lab\",\"nursing\",\"physio\",\"radiology\",\"\
+        emergency\",\"others\"].contains(&input.service_type.as_str())')\nold='(\"clinic\",\"الكشف والاستشارات\"\
+        ),(\"lab\",\"التحاليل\"),(\"radiology\",\"الأشعة\"),(\"physio\",\"العلاج الطبيعي\"),(\"nursing\",\"التمريض\"\
+        )'\nassert s.count(old)==1, 'Financial categories changed; abort'\ns=s.replace(old,old+',(\"emergency\"\
+        ,\"الطوارئ\"),(\"others\",\"خدمات أخرى\")')\np.write_text(s,encoding='utf-8')\nf=Path('src/main.ts')\nt=f.read_text(encoding='utf-8')\n\
+        old=\"    radiology: 'أشعة'\"\nassert t.count(old)==1, 'Finance label changed; abort'\nt=t.replace(old,\"\
+        \    radiology: 'أشعة',\\n    physio: 'علاج طبيعي',\\n    emergency: 'طوارئ',\\n    others: 'خدمات أخرى'\"\
+        )\nold='<option value=\"radiology\">أشعة</option>'\nassert t.count(old)>=1, 'Finance service dropdown changed;\
+        \ abort'\nt=t.replace(old,old+'<option value=\"physio\">علاج طبيعي</option><option value=\"emergency\">طوارئ</option><option\
+        \ value=\"others\">خدمات أخرى</option>',1)\nf.write_text(t,encoding='utf-8')\nprint('Updated only cashier\
+        \ backend and financial UI labels/filters')\n'@ | python -\nif ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE\
+        \ }"
+    - name: Verify inter-section integration
+      shell: pwsh
+      run: '@''
+
+        from pathlib import Path
+
+        s=Path(''src-tauri/src/lib.rs'').read_text(encoding=''utf-8'')
+
+        t=Path(''src/main.ts'').read_text(encoding=''utf-8'')
+
+        assert "FROM service_cases s JOIN patients p ON p.id=s.patient_id" in s
+
+        assert "cp.service_type=s.service_key AND cp.service_id=s.id" in s
+
+        assert ''("emergency","الطوارئ"),("others","خدمات أخرى")'' in s
+
+        assert ''"emergency","others"].contains(&input.service_type.as_str())'' in s
+
+        assert ''<option value="emergency">طوارئ</option>'' in t
+
+        assert ''<option value="others">خدمات أخرى</option>'' in t
+
+        print(''Cashier service integration assertions passed'')
+
+        ''@ | python -
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+    - name: Test frontend and Rust
+      shell: pwsh
+      run: 'npm ci
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        npm run build
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+    - name: Build offline Windows installer
+      shell: pwsh
+      run: 'npm run tauri -- build --bundles nsis
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+    - name: Commit tested integration only
+      shell: bash
+      run: "set -euo pipefail\ngit config user.name 'github-actions[bot]'\ngit config user.email '41898282+github-actions[bot]@users.noreply.github.com'\n\
+        git add src-tauri/src/lib.rs src/main.ts\nif git diff --cached --quiet; then echo 'Already applied'; else\n\
+        \  git commit -m 'Finance: include emergency and other services in cashier'\n  git fetch origin main\n \
+        \ git rebase origin/main\n  git push origin HEAD:main\nfi"
