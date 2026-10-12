@@ -1,0 +1,96 @@
+name: Clinic Cases - Dependency Hardening Fixed
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  harden:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Baseline install and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Update compatible vulnerable JavaScript dependencies and regression test
+        shell: bash
+        run: |
+          set -uo pipefail
+          npm audit fix --package-lock-only --ignore-scripts --no-fund
+          code=$?
+          if [ "$code" -gt 1 ]; then echo "npm audit fix execution error: $code"; exit "$code"; fi
+          set -e
+          npm ci
+          npm run build
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Record remaining production dependency findings
+        shell: bash
+        run: |
+          set -uo pipefail
+          npm audit --omit=dev --json > dependency-audit.json 2> dependency-audit-stderr.txt
+          audit_code=$?
+          export AUDIT_EXIT_CODE="$audit_code"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          code=int(os.environ['AUDIT_EXIT_CODE'])
+          try:
+              data=json.loads(Path('dependency-audit.json').read_text(encoding='utf-8'))
+              vuln=data.get('metadata',{}).get('vulnerabilities',{})
+              if not isinstance(vuln,dict): raise ValueError('Missing audit metadata')
+              counts=', '.join(f'{k}: {vuln.get(k,0)}' for k in ('critical','high','moderate','low'))
+          except Exception as exc:
+              counts=f'Unable to parse audit JSON: {exc}'
+          result='\n'.join([
+              '## Dependency hardening',
+              '- Frontend build and Rust tests passed after updating compatible lockfile dependencies.',
+              f'- Remaining production vulnerabilities: {counts}',
+              f'- npm audit exit code: {code} (code 1 means vulnerabilities were found, not a workflow script error).',
+              '- No patient data, database or design files modified.',
+          ])+'\n'
+          summary=os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary:
+              with open(summary,'a',encoding='utf-8') as f: f.write(result)
+          print(result)
+          PY
+          if [ "$audit_code" -gt 1 ]; then
+            echo "npm audit could not run correctly: $audit_code" >&2
+            exit "$audit_code"
+          fi
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clinic-dependency-hardening-fixed-report
+          path: |
+            dependency-audit.json
+            dependency-audit-stderr.txt
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Commit only verified dependency updates
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo 'No compatible dependency changes needed.'
+          else
+            git commit -m 'Security: update compatible JavaScript dependency locks'
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
+          fi
