@@ -3541,14 +3541,14 @@ SELECT
   CAST(COALESCE(NULLIF(v.fee,''),'0') AS REAL) AS charge,
   COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='clinic' AND cp.service_id=v.id),0) AS paid
 FROM visits v JOIN patients p ON p.id=v.patient_id
-WHERE p.archived=0 AND v.visit_date BETWEEN ?1 AND ?2
+WHERE COALESCE(p.deleted_at,'')='' AND v.visit_date BETWEEN ?1 AND ?2
 
 UNION ALL SELECT
   'lab',o.id,p.id,p.full_name,p.phone,'تحاليل',o.order_date,COALESCE(o.order_time,''),'','','',
   CAST(COALESCE(NULLIF(o.net_total,''),'0') AS REAL),
   CAST(COALESCE(NULLIF(o.paid_amount,''),'0') AS REAL)+COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='lab' AND cp.service_id=o.id),0)
 FROM lab_orders o JOIN patients p ON p.id=o.patient_id
-WHERE p.archived=0 AND o.order_date BETWEEN ?1 AND ?2
+WHERE COALESCE(p.deleted_at,'')='' AND o.order_date BETWEEN ?1 AND ?2
 
 UNION ALL SELECT
   CASE WHEN n.service_name LIKE '@@PHYSIO@@%' THEN 'physio' ELSE 'nursing' END,
@@ -3565,14 +3565,14 @@ UNION ALL SELECT
       AND cp.service_id=n.id
   ),0)
 FROM nursing_orders n JOIN patients p ON p.id=n.patient_id
-WHERE p.archived=0 AND n.order_date BETWEEN ?1 AND ?2
+WHERE COALESCE(p.deleted_at,'')='' AND n.order_date BETWEEN ?1 AND ?2
 
 UNION ALL SELECT
   'radiology',r.id,p.id,p.full_name,p.phone,'أشعة - '||COALESCE(r.radiology_name,''),r.order_date,COALESCE(r.order_time,''),'','','',
   CAST(COALESCE(NULLIF(r.net_total,''),'0') AS REAL),
   COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='radiology' AND cp.service_id=r.id),0)
 FROM radiology_orders r JOIN patients p ON p.id=r.patient_id
-WHERE p.archived=0 AND r.order_date BETWEEN ?1 AND ?2
+WHERE COALESCE(p.deleted_at,'')='' AND r.order_date BETWEEN ?1 AND ?2
 
 UNION ALL SELECT
   s.service_key,s.id,p.id,p.full_name,p.phone,
@@ -3582,7 +3582,7 @@ UNION ALL SELECT
   COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp
     WHERE cp.service_type=s.service_key AND cp.service_id=s.id),0)
 FROM service_cases s JOIN patients p ON p.id=s.patient_id
-WHERE p.archived=0 AND s.service_key IN ('emergency','others') AND s.case_date BETWEEN ?1 AND ?2
+WHERE COALESCE(p.deleted_at,'')='' AND s.service_key IN ('emergency','others') AND s.case_date BETWEEN ?1 AND ?2
 ) x ORDER BY service_date DESC, service_time DESC, patient_name
 "#;
 
