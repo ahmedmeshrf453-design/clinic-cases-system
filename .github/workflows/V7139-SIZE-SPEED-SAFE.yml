@@ -1,0 +1,76 @@
+name: Clinic V7.1.39 - Safe Size and Performance
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  optimize:
+    runs-on: windows-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Apply safe release-only Rust optimizations
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          from pathlib import Path
+          p = Path('src-tauri/Cargo.toml')
+          s = p.read_text(encoding='utf-8')
+          if '[profile.release]' in s:
+              raise SystemExit('Release profile already exists: no automatic override. Review manually.')
+          s += '\n[profile.release]\nopt-level = 3\nlto = "thin"\ncodegen-units = 1\nstrip = "symbols"\n'
+          p.write_text(s, encoding='utf-8')
+          print('Release-only profile appended, no code or data touched.')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test frontend and Rust
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build complete Windows NSIS installer
+        shell: pwsh
+        run: |
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record bundle size
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem 'src-tauri/target/release/bundle/nsis' -Filter '*.exe' -Recurse -ErrorAction SilentlyContinue
+          if (-not $files) { throw 'No NSIS installer found; refusing to commit.' }
+          '## Windows build size' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          'Frontend, Rust tests, and complete NSIS installer succeeded.' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          foreach ($f in $files) {
+            $mb = [math]::Round($f.Length / 1MB, 2)
+            "- $($f.Name): $mb MB" | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            Write-Output "$($f.Name): $mb MB"
+          }
+          'Offline WebView2 installer retained; UI, PIN and patient data unchanged.' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+      - name: Commit tested release-profile optimization only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src-tauri/Cargo.toml
+          if git diff --cached --quiet; then
+            echo 'No release-profile changes.'
+          else
+            git commit -m 'Build: optimize Rust release size and runtime'
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
+          fi
