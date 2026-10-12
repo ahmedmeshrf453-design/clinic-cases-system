@@ -1,0 +1,89 @@
+name: Clinic Cases - Fix Critical jsPDF Vulnerability
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Upgrade vulnerable jsPDF explicitly
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "const p=require('./package.json');if(!p.dependencies.jspdf)process.exit(2);console.log('Before:',p.dependencies.jspdf)"
+          npm install 'jspdf@^4.2.1' --save --save-exact=false --ignore-scripts --no-fund
+          node -e "const p=require('./package.json');if(!p.dependencies.jspdf.startsWith('^4.'))process.exit(2);console.log('After:',p.dependencies.jspdf)"
+      - name: Check TypeScript and frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+      - name: Smoke-test PDF generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module -e "import {jsPDF} from 'jspdf'; const d=new jsPDF();d.text('PDF smoke test',10,10);const b=d.output('arraybuffer');if(b.byteLength<100)process.exit(2);console.log('jsPDF PDF output bytes:',b.byteLength)"
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Check production dependency vulnerabilities
+        shell: bash
+        run: |
+          set -uo pipefail
+          npm audit --omit=dev --json > dependency-audit.json 2> dependency-audit-stderr.log
+          code=$?
+          export AUDIT_EXIT="$code"
+          python - <<'PY'
+          import json,os,sys
+          from pathlib import Path
+          try:
+              data=json.loads(Path('dependency-audit.json').read_text(encoding='utf-8'))
+              vulnerabilities=data['metadata']['vulnerabilities']
+              counts={k:int(vulnerabilities.get(k,0)) for k in ('critical','high','moderate','low')}
+          except Exception as exc:
+              print('Audit failed to parse:',exc)
+              sys.exit(2)
+          summary='## Dependency security report\n'+''.join(f'- {key}: {val}\n' for key,val in counts.items())
+          print(summary)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as f:f.write(summary)
+          if counts['critical']>0:
+              print('Blocking commit: critical production vulnerabilities remain')
+              sys.exit(3)
+          if int(os.environ['AUDIT_EXIT'])>1:
+              sys.exit(4)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clinic-jspdf-security-audit
+          path: |
+            dependency-audit.json
+            dependency-audit-stderr.log
+          if-no-files-found: warn
+      - name: Commit tested jsPDF security fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo 'No dependency changes to commit'
+          else
+            git commit -m 'Security: upgrade jsPDF to 4.2.1+ and lock dependencies'
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
+          fi
