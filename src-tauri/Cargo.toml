@@ -26,3 +26,9 @@ uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 
 tauri-plugin-dialog = "2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
