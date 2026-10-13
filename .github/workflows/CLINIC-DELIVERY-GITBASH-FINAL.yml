@@ -1,0 +1,84 @@
+name: Clinic Delivery - Git Bash Corrected Final
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: clinic-final-restore-delivery
+  cancel-in-progress: false
+jobs:
+  deliver:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test restore and publish installer using native Windows Git Bash
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check PyYAML
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @'
+          from pathlib import Path
+          import re, subprocess, sys
+          import yaml
+
+          original = Path('.github/workflows/CLINIC-FINAL-ZIP-RESTORE-DELIVERY.yml')
+          pipeline = yaml.safe_load(original.read_text(encoding='utf-8'))
+          steps = [x for x in pipeline['jobs']['release']['steps'] if x.get('name')]
+          expected = [
+              'Apply previously tested offline Rust restore worker',
+              'Run actual native Windows ZIP restore integration tests',
+              'Run force-kill and rollback test on actual worker',
+              'Remove test-only changes from shipping code',
+              'Check and build final Windows installer',
+              'Commit tested production changes',
+              'Publish final EXE and checksum',
+          ]
+          if [x['name'] for x in steps] != expected:
+              raise SystemExit('Delivery steps changed: refusing to publish')
+
+          for number, step in enumerate(steps):
+              title = step['name']
+              body = step['run']
+              if title == 'Run force-kill and rollback test on actual worker':
+                  body, count = re.subn(
+                      r'(?m)^\s*marker="          p=Path\(\x27src-tauri/src/lib.rs\x27\)"\r?\n\s*index=script.find\(marker\)\r?\n\s*if index < 0: raise SystemExit\(\x27Crash fixture source structure changed\x27\)\r?\n',
+                      '\n', body, count=1
+                  )
+                  if count != 1:
+                      raise SystemExit('Original invalid test probe not found')
+                  old = 'script=script[index:]'
+                  new = 'script="from pathlib import Path\\n"+script[index:]'
+                  if body.count(old) != 1:
+                      raise SystemExit('Crash fixture extraction not found')
+                  body = body.replace(old, new, 1)
+                  if 'Crash fixture source structure changed' in body:
+                      raise SystemExit('Old test probe still present')
+              if step.get('shell') == 'bash':
+                  destination = Path(f'.delivery-final-{number}.sh')
+                  destination.write_text('set -euo pipefail\n' + body + '\n', encoding='utf-8')
+                  git_bash = Path(r'C:\Program Files\Git\bin\bash.exe')
+                  if not git_bash.is_file():
+                      raise SystemExit('Git for Windows Bash not found; refuse WSL fallback')
+                  command = [str(git_bash), str(destination)]
+              else:
+                  destination = Path(f'.delivery-final-{number}.ps1')
+                  destination.write_text('$ErrorActionPreference = "Stop"\n' + body + '\n', encoding='utf-8-sig')
+                  command = ['pwsh', '-NoProfile', '-NonInteractive', '-File', str(destination)]
+              print('RUN:', title, flush=True)
+              outcome = subprocess.run(command, check=False)
+              if outcome.returncode != 0:
+                  raise SystemExit(f'FAILED: {title} ({outcome.returncode})')
+              print('PASSED:', title, flush=True)
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
