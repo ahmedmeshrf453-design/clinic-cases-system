@@ -1,0 +1,182 @@
+name: Clinic Full Backup One Button - Tested Windows EXE
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  deliver:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Add in-app one-button full backup
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          p = Path('src-tauri/src/lib.rs')
+          s = p.read_text(encoding='utf-8')
+          assert 'fn create_full_backup(' not in s, 'A full-backup command already exists: stop to avoid rewriting'
+          assert 'fn checkpoint_and_copy(' in s and 'fn create_backup(' in s
+          fn = '''#[tauri::command]
+          fn create_full_backup(state: State<AppState>) -> Result<BackupItem, String> {
+              use zip::{ZipWriter, ZipArchive};
+              use zip::write::SimpleFileOptions;
+              fs::create_dir_all(&state.backup_dir).map_err(|e| e.to_string())?;
+              let stamp = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+              let target = state.backup_dir.join(format!("clinic-cases-full-{}-{}.zip", stamp, Uuid::new_v4()));
+              let temp_zip = state.backup_dir.join(format!(".full-{}.tmp", Uuid::new_v4()));
+              let temp_db = state.backup_dir.join(format!(".full-db-{}.db", Uuid::new_v4()));
+              let result = (|| -> Result<(), String> {
+                  checkpoint_and_copy(&state, &temp_db)?;
+                  let conn=open_db(&state)?;
+                  let root=fs::canonicalize(&state.attachments_dir).ok();
+                  let mut referenced=conn.prepare("SELECT stored_path FROM patient_attachments").map_err(|e|e.to_string())?;
+                  let paths=referenced.query_map([],|r|r.get::<_,String>(0)).map_err(|e|e.to_string())?;
+                  for item in paths {
+                      let path=PathBuf::from(item.map_err(|e|e.to_string())?);
+                      let real=fs::canonicalize(&path).map_err(|_|"أحد مرفقات المرضى مفقود، لم تُنشأ نسخة ناقصة".to_string())?;
+                      if !real.is_file() || root.as_ref().map(|x|!real.starts_with(x)).unwrap_or(true) {
+                          return Err("مسار مرفق غير آمن أو مفقود، تم إيقاف النسخ".into());
+                      }
+                  }
+                  drop(referenced);
+                  let output=fs::File::create(&temp_zip).map_err(|e|e.to_string())?;
+                  let mut zip=ZipWriter::new(output);
+                  let options=SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+                  let mut entries=0usize;
+                  let mut bytes=0u64;
+                  let mut add_file=|path:&Path, entry:&str| -> Result<(),String> {
+                      if path.is_symlink() {return Err("الروابط الرمزية غير مسموحة في النسخة".into());}
+                      let metadata=fs::metadata(path).map_err(|e|e.to_string())?;
+                      if !metadata.is_file(){return Err("عنصر النسخ ليس ملفًا".into());}
+                      bytes=bytes.checked_add(metadata.len()).ok_or("حجم النسخة غير صالح")?;
+                      if bytes>MAX_BACKUP_BYTES{return Err("حجم النسخة يتجاوز 2 جيجابايت".into());}
+                      zip.start_file(entry,options).map_err(|e|e.to_string())?;
+                      let mut input=fs::File::open(path).map_err(|e|e.to_string())?;
+                      std::io::copy(&mut input,&mut zip).map_err(|e|e.to_string())?;
+                      entries+=1;
+                      Ok(())
+                  };
+                  add_file(&temp_db,"database/clinic-cases.db")?;
+                  if state.attachments_dir.exists(){
+                      let mut pending=vec![state.attachments_dir.clone()];
+                      while let Some(dir)=pending.pop(){
+                          for next in fs::read_dir(&dir).map_err(|e|e.to_string())? {
+                              let path=next.map_err(|e|e.to_string())?.path();
+                              if path.is_symlink(){return Err("روابط رمزية في المرفقات غير مسموحة".into());}
+                              if path.is_dir(){pending.push(path);continue;}
+                              let relative=path.strip_prefix(&state.attachments_dir).map_err(|e|e.to_string())?;
+                              let entry=format!("attachments/{}",relative.to_string_lossy().replace('\\',"/"));
+                              add_file(&path,&entry)?;
+                          }
+                      }
+                  }
+                  let recovery=security_recovery_file_path(&state);
+                  if recovery.exists(){add_file(&recovery,"security/recovery-code.txt")?;}
+                  else if !meta_value(&conn,"security_pin_hash","")?.is_empty() {
+                      return Err("ملف استرداد PIN مفقود، تم إلغاء النسخ الكامل".into());
+                  }
+                  drop(add_file);
+                  zip.finish().map_err(|e|e.to_string())?;
+                  let verify=fs::File::open(&temp_zip).map_err(|e|e.to_string())?;
+                  let mut archive=ZipArchive::new(verify).map_err(|e|e.to_string())?;
+                  if archive.len()!=entries{return Err("عدد عناصر النسخة غير صحيح".into());}
+                  for i in 0..archive.len(){
+                      let mut item=archive.by_index(i).map_err(|e|e.to_string())?;
+                      std::io::copy(&mut item,&mut std::io::sink()).map_err(|e|e.to_string())?;
+                  }
+                  drop(archive);
+                  fs::rename(&temp_zip,&target).map_err(|e|e.to_string())?;
+                  Ok(())
+              })();
+              let _=fs::remove_file(&temp_db);
+              if result.is_err(){let _=fs::remove_file(&temp_zip);}
+              result?;
+              backup_item(&target)
+          }
+          
+          '''
+          marker='#[tauri::command]\nfn create_backup('
+          assert s.count(marker)==1
+          s=s.replace(marker,fn+marker,1)
+          marker='            create_backup,\n'
+          assert s.count(marker)==1
+          s=s.replace(marker,'            create_full_backup,\n'+marker,1)
+          p.write_text(s,encoding='utf-8')
+          c=Path('src-tauri/Cargo.toml');cs=c.read_text(encoding='utf-8')
+          assert '\nzip = ' not in cs
+          assert 'tauri-plugin-dialog = "2"' in cs
+          cs=cs.replace('tauri-plugin-dialog = "2"', 'tauri-plugin-dialog = "2"\nzip = { version = "2.4", default-features = false, features = ["deflate"] }', 1)
+          c.write_text(cs,encoding='utf-8')
+          ui=Path('src/main.ts');us=ui.read_text(encoding='utf-8')
+          old='<button class="btn primary small" id="backupNow">＋ إنشاء نسخة الآن</button>'
+          assert us.count(old)==1
+          us=us.replace(old,old+'\n          <button class="btn primary small" id="fullBackupNow">نسخة احتياطية كاملة</button>',1)
+          anchor="  document.querySelector<HTMLButtonElement>('#openBackupFolder')!.onclick = async () => {"
+          assert us.count(anchor)==1
+          handler='''  document.querySelector<HTMLButtonElement>('#fullBackupNow')!.onclick = async event => {
+              const button=event.currentTarget as HTMLButtonElement;
+              button.disabled=true;
+              try {
+                const item=await invoke<BackupItem>('create_full_backup');
+                toast(`تم حفظ النسخة الكاملة: ${item.name}`);
+                await renderScreen();
+              } catch (error) {
+                toast(`فشل النسخ الكامل: ${String(error)}`, 'error');
+                button.disabled=false;
+              }
+            };
+          '''
+          us=us.replace(anchor,handler+anchor,1)
+          ui.write_text(us,encoding='utf-8')
+          print('SUCCESS: added separate full backup ZIP command and in-app button')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate app and update Rust dependencies
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Windows NSIS offline installer
+        shell: pwsh
+        run: |
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files = @(Get-ChildItem src-tauri/target/release/bundle/nsis -File -Filter '*.exe')
+          if ($files.Count -ne 1) { throw 'Expected one Windows installer' }
+          Copy-Item -LiteralPath $files[0].FullName -Destination Clinic-Cases-Windows-Setup.exe
+          $hash=(Get-FileHash Clinic-Cases-Windows-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Clinic-Cases-Windows-Setup.exe" | Set-Content Clinic-Cases-Windows-Setup.exe.sha256 -Encoding ascii
+      - name: Commit only tested files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src-tauri/src/lib.rs src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m 'Add verified full patient backup button' || { echo 'Nothing to commit'; exit 1; }
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
+      - name: Publish direct EXE after successful tests
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag="clinic-full-backup-$($env:GITHUB_SHA.Substring(0,7))-$($env:GITHUB_RUN_ID)"
+          gh release create $tag Clinic-Cases-Windows-Setup.exe Clinic-Cases-Windows-Setup.exe.sha256 --target main --title "Clinic Cases - Full Backup Button" --notes "Windows x64 offline NSIS. Adds a full ZIP backup button. Existing DB-only backup and restore are unchanged. ZIP restoration is not yet integrated; protect ZIP as it contains unencrypted patient files and recovery code."
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "## Full Backup EXE" >> $env:GITHUB_STEP_SUMMARY
+          "Direct installer: https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Setup.exe" >> $env:GITHUB_STEP_SUMMARY
