@@ -1,0 +1,51 @@
+name: Clinic ZIP Restore - Safe Build Test
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Apply proposed restore patch on isolated runner only
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import re, subprocess, sys, textwrap
+          p=Path('.github/workflows/CLINIC-ZIP-FULL-RESTORE.yml')
+          source=p.read_text(encoding='utf-8')
+          found=re.search(r"(?ms)^          @'\r?\n(.*?)\r?\n          '@ \| python -", source)
+          if not found:
+              raise SystemExit('Restore patch script missing; no deployment attempted')
+          code=textwrap.dedent(found.group(1))
+          compile(code, str(p), 'exec')
+          subprocess.run([sys.executable,'-c',code],check=True)
+          print('Restore patch applied only to temporary CI workspace; nothing committed')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build-check proposed changes
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Report limits
+        shell: pwsh
+        run: |
+          '## Restore safety check' >> $env:GITHUB_STEP_SUMMARY
+          '- Proposed ZIP restore source compiled and existing tests passed.' >> $env:GITHUB_STEP_SUMMARY
+          '- NOT verified: real interrupted restore, rollback, Windows file locks, or file-path migration.' >> $env:GITHUB_STEP_SUMMARY
+          '- NO COMMIT and NO EXE RELEASE. Existing production system unchanged.' >> $env:GITHUB_STEP_SUMMARY
