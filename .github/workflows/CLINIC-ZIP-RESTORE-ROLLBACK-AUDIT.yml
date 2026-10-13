@@ -1,0 +1,88 @@
+name: Clinic ZIP Restore - Rollback Safety Audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate existing app without changing it
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check ZIP and rollback failure conditions
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import io, os, sqlite3, tempfile, zipfile
+          root=Path(tempfile.mkdtemp(prefix='clinic-restore-audit-'))
+          db=root/'clinic.db'
+          con=sqlite3.connect(db)
+          con.executescript('CREATE TABLE patients(id TEXT PRIMARY KEY); INSERT INTO patients VALUES ("test");')
+          con.commit()
+          con.close()
+          def verify_zip(blob):
+              with zipfile.ZipFile(io.BytesIO(blob)) as z:
+                  names=z.namelist()
+                  if len(names)!=len(set(names)): raise ValueError('duplicate member')
+                  if 'database/clinic-cases.db' not in names: raise ValueError('missing database')
+                  for n in names:
+                      parts=n.replace('\\','/').split('/')
+                      if n.startswith('/') or '..' in parts: raise ValueError('unsafe member')
+                      if not (n.startswith('attachments/') or n in ('database/clinic-cases.db','security/recovery-code.txt')): raise ValueError('unknown member')
+                  return True
+          stream=io.BytesIO()
+          with zipfile.ZipFile(stream,'w',zipfile.ZIP_DEFLATED) as z:
+              z.write(db,'database/clinic-cases.db')
+              z.writestr('attachments/test/document.txt','demo')
+          assert verify_zip(stream.getvalue())
+          for names in [['../outside','database/clinic-cases.db'],['database/clinic-cases.db','database/clinic-cases.db'],['untrusted.exe','database/clinic-cases.db']]:
+              stream=io.BytesIO()
+              with zipfile.ZipFile(stream,'w') as z:
+                  for n in names: z.writestr(n,b'test')
+              try: verify_zip(stream.getvalue())
+              except ValueError: pass
+              else: raise AssertionError('Unsafe ZIP should be rejected: '+str(names))
+          print('PASS: isolated ZIP structure checks; no real database or files accessed')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Identify blockers in proposed Rust restore patch
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          source=Path('.github/workflows/CLINIC-ZIP-FULL-RESTORE.yml').read_text(encoding='utf-8')
+          issues=[]
+          if 'fs::rename(&state.db_path,&original_db)' in source:
+              issues.append('Live database file is moved while the running SQLite application may still have open handles')
+          if 'if original_attachments.exists(){if state.attachments_dir.exists()' in source:
+              issues.append('Rollback does not clean newly restored attachment folder when original folder was absent')
+          if 'if original_code.exists(){if target_code.exists()' in source:
+              issues.append('Rollback does not clean newly restored PIN recovery file when original file was absent')
+          if 'let _=fs::rename(&original_db,&state.db_path)' in source:
+              issues.append('Critical rollback move errors are ignored')
+          summary=Path(__import__('os').environ['GITHUB_STEP_SUMMARY'])
+          with summary.open('a',encoding='utf-8') as f:
+              f.write('## ZIP restoration safety assessment\n\n')
+              f.write('Existing code tests and isolated ZIP validation passed. **Full restore is NOT approved for deployment.**\n\n')
+              for issue in issues: f.write('- BLOCKER: '+issue+'\n')
+              f.write('\nNo application code changed, no release published, and no real patient data used.\n')
+          print('Identified',len(issues),'safety blockers. Deployment intentionally disabled.')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
