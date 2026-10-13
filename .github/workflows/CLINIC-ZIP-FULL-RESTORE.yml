@@ -1,0 +1,94 @@
+name: Clinic One ZIP Full Restore - Protected Validation
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  restore:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Add guarded full ZIP restore
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          p=Path('src-tauri/src/lib.rs');s=p.read_text(encoding='utf-8')
+          assert 'fn create_full_backup(' in s and 'fn restore_full_backup(' not in s
+          marker='#[tauri::command]\nfn create_backup('
+          assert s.count(marker)==1
+          s=s.replace(marker, '#[tauri::command]\nfn restore_full_backup(state: State<AppState>, path: String) -> Result<(), String> {\n    use zip::ZipArchive;\n    use std::collections::HashSet;\n    let backup_root=fs::canonicalize(&state.backup_dir).map_err(|e|e.to_string())?;\n    let source=fs::canonicalize(&path).map_err(|_|"ملف النسخة غير موجود".to_string())?;\n    if !source.starts_with(&backup_root) || source.extension().and_then(|x|x.to_str())!=Some("zip") {\n        return Err("الاستعادة مسموحة من ملفات ZIP داخل مجلد النسخ الاحتياطية فقط".into());\n    }\n    let source_size=fs::metadata(&source).map_err(|e|e.to_string())?.len();\n    if source_size==0 || source_size>MAX_BACKUP_BYTES {return Err("حجم النسخة غير صالح".into());}\n    let stage_root=state.db_path.parent().ok_or("مجلد البيانات غير موجود")?\n        .join(format!(".full-restore-{}",Uuid::new_v4()));\n    fs::create_dir_all(&stage_root).map_err(|e|e.to_string())?;\n    let result=(||->Result<(),String>{\n        let file=fs::File::open(&source).map_err(|e|e.to_string())?;\n        let mut zip=ZipArchive::new(file).map_err(|_|"ملف ZIP غير صالح".to_string())?;\n        if zip.len()==0 || zip.len()>100000 {return Err("عدد ملفات النسخة غير صالح".into());}\n        let mut seen=HashSet::new();\n        let mut sum=0u64;\n        for i in 0..zip.len(){\n            let mut member=zip.by_index(i).map_err(|e|e.to_string())?;\n            let raw=member.name().to_string();\n            if raw.ends_with(\'/\') {continue;}\n            let name=member.enclosed_name().ok_or("مسار غير آمن داخل ZIP")?.to_path_buf();\n            let value=name.to_string_lossy().replace(\'\\\\\',"/");\n            if !(value=="database/clinic-cases.db" || value=="security/recovery-code.txt" || value.starts_with("attachments/")) {\n                return Err("النسخة تحتوي على ملف غير معروف".into());\n            }\n            if !seen.insert(value) {return Err("ملفات مكررة داخل ZIP".into());}\n            sum=sum.checked_add(member.size()).ok_or("حجم النسخة غير صالح")?;\n            if sum>MAX_BACKUP_BYTES {return Err("حجم النسخة بعد الفك غير مسموح".into());}\n            if member.unix_mode().map(|mode| mode & 0o170000 == 0o120000).unwrap_or(false) {return Err("روابط رمزية غير مسموحة".into());}\n            let destination=stage_root.join(&name);\n            if let Some(parent)=destination.parent(){fs::create_dir_all(parent).map_err(|e|e.to_string())?;}\n            let mut output=fs::File::create(&destination).map_err(|e|e.to_string())?;\n            std::io::copy(&mut member,&mut output).map_err(|e|e.to_string())?;\n        }\n        let staged_db=stage_root.join("database/clinic-cases.db");\n        if !staged_db.is_file() {return Err("قاعدة البيانات غير موجودة داخل النسخة".into());}\n        let mut db=Connection::open(&staged_db).map_err(|e|e.to_string())?;\n        let integrity:String=db.query_row("PRAGMA integrity_check",[],|r|r.get(0)).map_err(|e|e.to_string())?;\n        if integrity!="ok" || !backup_schema_compatible(&db)? {return Err("النسخة تحتوي على قاعدة بيانات غير سليمة".into());}\n        let mut fk=db.prepare("PRAGMA foreign_key_check").map_err(|e|e.to_string())?;\n        let mut rows=fk.query([]).map_err(|e|e.to_string())?;\n        if rows.next().map_err(|e|e.to_string())?.is_some(){return Err("روابط قاعدة البيانات غير سليمة".into());}\n        drop(rows);drop(fk);\n        let pin_hash=meta_value(&db,"security_pin_hash","")?;\n        let staged_code=stage_root.join("security/recovery-code.txt");\n        if !pin_hash.is_empty() && !staged_code.is_file(){return Err("النسخة لا تحتوي على ملف استرداد PIN".into());}\n        let mut updates=Vec::<(String,String)>::new();\n        {\n            let mut stmt=db.prepare("SELECT id,patient_id,stored_path FROM patient_attachments").map_err(|e|e.to_string())?;\n            let items=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?)))\n                .map_err(|e|e.to_string())?;\n            for item in items {\n                let (id,patient_id,stored)=item.map_err(|e|e.to_string())?;\n                let file=PathBuf::from(&stored);\n                let fname=file.file_name().ok_or("اسم مرفق غير صالح")?;\n                let relative=PathBuf::from(attachment_patient_storage_key(&patient_id)).join(fname);\n                let staged_attachment=stage_root.join("attachments").join(&relative);\n                if !staged_attachment.is_file(){return Err("مرفق مريض مفقود داخل النسخة".into());}\n                let new_path=state.attachments_dir.join(relative).to_string_lossy().to_string();\n                updates.push((id,new_path));\n            }\n        }\n        let tx=db.transaction().map_err(|e|e.to_string())?;\n        for (id,new_path) in updates {\n            tx.execute("UPDATE patient_attachments SET stored_path=?1 WHERE id=?2",params![new_path,id]).map_err(|e|e.to_string())?;\n        }\n        tx.commit().map_err(|e|e.to_string())?;\n        drop(db);\n        // A rollback-safe snapshot is mandatory before replacing live data.\n        let safety=state.backup_dir.join(format!("before-full-restore-{}.db",Uuid::new_v4()));\n        checkpoint_and_copy(&state,&safety)?;\n        let rollback=stage_root.join("rollback");\n        fs::create_dir_all(&rollback).map_err(|e|e.to_string())?;\n        let original_db=rollback.join("old.db");\n        let original_attachments=rollback.join("old-attachments");\n        let original_code=rollback.join("old-recovery.txt");\n        let target_code=security_recovery_file_path(&state);\n        let had_attachments=state.attachments_dir.exists();\n        let had_code=target_code.exists();\n        // Stop on a failed swap and put original files back.\n        fs::rename(&state.db_path,&original_db).map_err(|e|format!("تعذر بدء الاستعادة: {}",e))?;\n        let swap=(||->Result<(),String>{\n            if had_attachments {fs::rename(&state.attachments_dir,&original_attachments).map_err(|e|e.to_string())?;}\n            if had_code {fs::rename(&target_code,&original_code).map_err(|e|e.to_string())?;}\n            fs::rename(&staged_db,&state.db_path).map_err(|e|e.to_string())?;\n            let staged_attachments=stage_root.join("attachments");\n            if staged_attachments.exists(){fs::rename(&staged_attachments,&state.attachments_dir).map_err(|e|e.to_string())?;}\n            if staged_code.exists(){fs::rename(&staged_code,&target_code).map_err(|e|e.to_string())?;}\n            Ok(())\n        })();\n        if let Err(e)=swap {\n            // Remove only staged replacements (if present) and restore originals.\n            if state.db_path.exists(){let _=fs::remove_file(&state.db_path);}\n            let _=fs::rename(&original_db,&state.db_path);\n            if original_attachments.exists(){if state.attachments_dir.exists(){let _=fs::remove_dir_all(&state.attachments_dir);}let _=fs::rename(&original_attachments,&state.attachments_dir);}\n            if original_code.exists(){if target_code.exists(){let _=fs::remove_file(&target_code);}let _=fs::rename(&original_code,&target_code);}\n            return Err(format!("فشلت الاستعادة، تمت محاولة إعادة الملفات الأصلية: {}",e));\n        }\n        // Existing WAL content is already checkpointed by checkpoint_and_copy.\n        let _=fs::remove_file(format!("{}-wal",state.db_path.display()));\n        let _=fs::remove_file(format!("{}-shm",state.db_path.display()));\n        let check=Connection::open(&state.db_path).map_err(|e|e.to_string())?;\n        let status:String=check.query_row("PRAGMA quick_check",[],|r|r.get(0)).map_err(|e|e.to_string())?;\n        drop(check);\n        if status!="ok" {\n            let _=fs::remove_file(&state.db_path);\n            let _=fs::rename(&original_db,&state.db_path);\n            if original_attachments.exists(){if state.attachments_dir.exists(){let _=fs::remove_dir_all(&state.attachments_dir);}let _=fs::rename(&original_attachments,&state.attachments_dir);}\n            if original_code.exists(){if target_code.exists(){let _=fs::remove_file(&target_code);}let _=fs::rename(&original_code,&target_code);}\n            return Err("فشل فحص قاعدة البيانات بعد الاستعادة؛ تمت محاولة استرجاع الملفات الأصلية".into());\n        }\n        Ok(())\n    })();\n    // Keep rollback files if the replacement was unsuccessful.\n    if result.is_ok() {let _=fs::remove_dir_all(&stage_root);}\n    result\n}\n\n' + marker,1)
+          marker='            create_full_backup,\n'
+          assert s.count(marker)==1
+          s=s.replace(marker, marker+'            restore_full_backup,\n',1)
+          p.write_text(s,encoding='utf-8')
+          ui=Path('src/main.ts');t=ui.read_text(encoding='utf-8')
+          needle='<button class="btn danger-outline small" data-restore-backup="${esc(b.path)}">استعادة هذه النسخة</button>'
+          assert t.count(needle)==1
+          t=t.replace(needle,'''${b.name.endsWith('.zip') ? `<button class="btn danger-outline small" data-restore-full="${esc(b.path)}">استعادة النسخة الكاملة</button>` : `<button class="btn danger-outline small" data-restore-backup="${esc(b.path)}">استعادة هذه النسخة</button>`}''',1)
+          marker="  document.querySelectorAll<HTMLButtonElement>('[data-restore-backup]').forEach"
+          assert t.count(marker)==1
+          t=t.replace(marker,'''  document.querySelectorAll<HTMLButtonElement>('[data-restore-full]').forEach(b => b.onclick = async () => {
+              if (!confirm('سيتم استبدال قاعدة البيانات والمرفقات وإعدادات PIN من النسخة المختارة. تأكد من حفظ نسخة أمان. هل تريد المتابعة؟')) return;
+              const btn=b;btn.disabled=true;
+              try {await invoke('restore_full_backup',{path:btn.dataset.restoreFull});toast('تمت الاستعادة الكاملة. أغلق البرنامج وافتحه من جديد.');}
+              catch(err){toast(`فشلت الاستعادة: ${String(err)}`,'error');btn.disabled=false;}
+            });
+          ''' +marker,1)
+          ui.write_text(t,encoding='utf-8')
+          needle='if p.extension().and_then(|x| x.to_str()) == Some("db") {'
+          assert s.count(needle)>=1
+          start=s.index('fn list_backups(');end=s.index('fn backup_table_has_columns',start)
+          segment=s[start:end]
+          assert segment.count(needle)==1
+          segment=segment.replace(needle,'if matches!(p.extension().and_then(|x| x.to_str()),Some("db") | Some("zip")) {',1)
+          s=s[:start]+segment+s[end:]
+          p.write_text(s,encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test app before publishing
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Windows offline installer
+        shell: pwsh
+        run: |
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files=@(Get-ChildItem src-tauri/target/release/bundle/nsis -Filter '*.exe' -File)
+          if ($files.Count -ne 1) { throw 'No unique Windows installer' }
+          Copy-Item $files[0].FullName Clinic-Cases-Windows-Setup.exe
+      - name: Commit tested source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src-tauri/src/lib.rs src/main.ts
+          git commit -m 'Add guarded ZIP full restore' 
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
+      - name: Publish EXE
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{{{ secrets.GITHUB_TOKEN }}}}
+        run: |
+          $tag="clinic-full-restore-$($env:GITHUB_RUN_ID)"
+          gh release create $tag Clinic-Cases-Windows-Setup.exe --target main --title 'Clinic Cases - Full Backup Restore' --notes 'Adds in-app ZIP restore. Take an additional offline copy before testing on real records.'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "Direct EXE: https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Setup.exe" >> $env:GITHUB_STEP_SUMMARY
