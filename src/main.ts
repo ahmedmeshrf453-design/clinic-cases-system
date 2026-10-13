@@ -1975,10 +1975,6 @@ function serviceDockHtml() {
           ${nav('physio','🦵','العلاج الطبيعي')}
           ${nav('nursing','✚','خدمات التمريض')}
           ${nav('cashier','💵','الكاشير')}
-          ${nav('finance','📊','المالية')}
-          ${nav('alerts','🔔','التنبيهات')}
-          ${nav('audit','🧾','سجل العمليات')}
-          ${nav('reports','▤','التقارير')}
         </div>
       </div>
 
@@ -1988,9 +1984,6 @@ function serviceDockHtml() {
           <small>الحفظ والإعدادات</small>
         </div>
         <div class="service-hub-buttons system-buttons">
-          ${nav('archive','▣','الأرشيف')}
-          ${nav('trash','🗑','سلة المحذوفات')}
-          ${nav('backups','⟳','النسخ الاحتياطية')}
           ${nav('settings','⚙','الإعدادات')}
         </div>
       </div>
@@ -2021,14 +2014,6 @@ function shell(content: string, title: string, subtitle: string) {
           ${navButton('physio','🦵','العلاج الطبيعي')}
           ${navButton('nursing','✚','خدمات التمريض')}
           ${navButton('cashier','💵','الكاشير')}
-          ${navButton('finance','📊','التقارير المالية')}
-          ${navButton('alerts','🔔','التنبيهات')}
-          ${navButton('audit','🧾','Audit Log')}
-          ${navButton('security','🔐','الحماية')}
-          ${navButton('reports','▤','التقارير')}
-          ${navButton('archive','▣','الأرشيف')}
-          ${navButton('trash','🗑','سلة المحذوفات')}
-          ${navButton('backups','⟳','النسخ الاحتياطية')}
           ${navButton('settings','⚙','الإعدادات')}
         </nav>
 
@@ -5516,6 +5501,23 @@ async function renderSettings() {
         </div>
       </div>
 
+      <section class="settings-tools-card" aria-label="إدارة النظام">
+        <h3>إدارة النظام</h3>
+        <p>التقارير والنسخ الاحتياطية والحماية والأرشيف في مكان واحد.</p>
+        <div class="settings-tools-grid">
+          ${[
+            ['finance','📊','التقارير المالية'],
+            ['alerts','🔔','التنبيهات'],
+            ['audit','🧾','Audit Log'],
+            ['security','🔐','الحماية'],
+            ['reports','▤','التقارير'],
+            ['archive','▣','الأرشيف'],
+            ['trash','🗑','سلة المحذوفات'],
+            ['backups','⟳','النسخ الاحتياطية']
+          ].map(([key,icon,label])=>`<button class="settings-tool-link" type="button" data-settings-go="${key}"><span class="settings-tool-icon">${icon}</span><strong>${label}</strong><span class="settings-tool-arrow">←</span></button>`).join('')}
+        </div>
+      </section>
+
       <form id="settingsForm" class="settings-sections">
         <section class="settings-section-card">
           <div class="settings-section-head">
@@ -5661,6 +5663,10 @@ async function renderSettings() {
 
   document.querySelector<HTMLButtonElement>('#goBackupsFromSettings')!.onclick = () => navigate('backups');
   document.querySelector<HTMLButtonElement>('#healthCheckBtn')!.onclick = runSettingsHealthCheck;
+
+  document.querySelectorAll<HTMLButtonElement>('[data-settings-go]').forEach(btn => {
+    btn.onclick = () => navigate(btn.dataset.settingsGo as Screen);
+  });
 
   document.querySelector<HTMLFormElement>('#settingsForm')!.onsubmit = async e => {
     e.preventDefault();
