@@ -1,0 +1,93 @@
+name: Clinic Full Backup Button - Rust Fix and Release
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deliver:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Apply full backup feature with corrected Rust path escaping
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import re
+          import textwrap
+          import subprocess
+          import sys
+          original=Path('.github/workflows/CLINIC-ONE-BUTTON-FULL-BACKUP.yml').read_text(encoding='utf-8')
+          match=re.search(r"(?ms)^          @'\r?\n(.*?)\r?\n          '@ \| python -",original)
+          if not match:
+              raise SystemExit('Original backup workflow patch script not found; stopping safely')
+          script=textwrap.dedent(match.group(1))
+          old=re.findall(r'^.*let entry=format!\("attachments/\{\}".*$',script,flags=re.M)
+          if len(old)!=1:
+              raise SystemExit(f'Expected one attachment path statement; found {len(old)}')
+          # No char escaping: use the native platform path separator.
+          fixed='let entry=format!("attachments/{}",relative.to_string_lossy().replace(std::path::MAIN_SEPARATOR,"/"));'
+          script=script.replace(old[0].strip(),fixed,1)
+          if "std::path::MAIN_SEPARATOR" not in script:
+              raise SystemExit('Rust path fix not applied')
+          subprocess.run([sys.executable,'-c',script],check=True)
+          rust=Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')
+          assert fixed in rust, 'Corrected Rust expression missing from patched source'
+          assert 'fn create_full_backup(' in rust
+          assert 'create_full_backup,' in rust
+          print('Applied checked full-backup patch with corrected Rust syntax')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate frontend and backend
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build offline Windows EXE
+        shell: pwsh
+        run: |
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files = @(Get-ChildItem src-tauri/target/release/bundle/nsis -File -Filter '*.exe')
+          if ($files.Count -ne 1) { throw 'Expected exactly one installer' }
+          Copy-Item -LiteralPath $files[0].FullName -Destination 'Clinic-Cases-Windows-Setup.exe'
+          $hash = (Get-FileHash 'Clinic-Cases-Windows-Setup.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Clinic-Cases-Windows-Setup.exe" | Set-Content 'Clinic-Cases-Windows-Setup.exe.sha256' -Encoding ascii
+      - name: Commit verified feature
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src-tauri/src/lib.rs src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git diff --cached --quiet && { echo 'No tested changes to publish'; exit 1; }
+          git commit -m 'Add tested full backup ZIP button'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
+      - name: Publish direct installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "clinic-full-backup-fixed-$($env:GITHUB_RUN_ID)"
+          gh release create $tag 'Clinic-Cases-Windows-Setup.exe' 'Clinic-Cases-Windows-Setup.exe.sha256' --target main --title 'Clinic Cases - Full Backup Button' --notes 'Adds one-button full ZIP backup. ZIP restore is NOT available inside app; existing database-only restore unchanged. ZIP contains unencrypted patient data and PIN recovery material.'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "## Windows installer" >> $env:GITHUB_STEP_SUMMARY
+          "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Setup.exe" >> $env:GITHUB_STEP_SUMMARY
