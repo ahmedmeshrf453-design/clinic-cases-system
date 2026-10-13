@@ -1,0 +1,137 @@
+name: Clinic Final ZIP Restore Delivery
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: clinic-final-restore-delivery
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Apply previously tested offline Rust restore worker
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import re,sys,subprocess,textwrap
+          source=Path('.github/workflows/CLINIC-ZIP-OFFLINE-RESTORE-BUILD-CHECK.yml').read_text(encoding='utf-8')
+          m=re.search(r"(?ms)^          @'\r?\n(.*?)\r?\n          '@ \| python -",source)
+          if not m: raise SystemExit('Original restore patch missing; no delivery')
+          code=textwrap.dedent(m.group(1))
+          compile(code,'worker-patch','exec')
+          subprocess.run([sys.executable,'-c',code],check=True)
+          rust=Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')
+          ui=Path('src/main.ts').read_text(encoding='utf-8')
+          assert 'fn restore_zip_worker(' in rust and 'fn restore_rollback(' in rust
+          assert 'request_zip_restore,' in rust and 'data-restore-zip' in ui
+          print('Offline restore backend and UI applied to clean source')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run actual native Windows ZIP restore integration tests
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import re,sys,subprocess,textwrap
+          source=Path('.github/workflows/CLINIC-ZIP-RESTORE-RUST-INTEGRATION.yml').read_text(encoding='utf-8')
+          m=re.search(r"(?ms)      - name: Add real Rust restore and rollback integration tests\r?\n.*?          @'\r?\n(.*?)\r?\n          '@ \| python -",source)
+          if not m: raise SystemExit('Integration tests missing')
+          subprocess.run([sys.executable,'-c',textwrap.dedent(m.group(1))],check=True)
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked offline_restore_integration_gate -- --test-threads=1 --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run force-kill and rollback test on actual worker
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import re,sys,subprocess,textwrap
+          source=Path('.github/workflows/CLINIC-ZIP-RESTORE-FORCED-TERMINATION.yml').read_text(encoding='utf-8')
+          m=re.search(r"(?ms)      - name: Prepare real Rust worker and deliberate crash injection in disposable CI\r?\n.*?          @'\r?\n(.*?)\r?\n          '@ \| python -",source)
+          if not m: raise SystemExit('Crash test fixture missing')
+          script=textwrap.dedent(m.group(1))
+          # The historical fixture initially patches the worker itself; we already applied it.
+          # Keep only its deterministic test injection and tests, without rerunning the worker patch.
+          marker="          p=Path('src-tauri/src/lib.rs')"
+          index=script.find(marker)
+          if index < 0: raise SystemExit('Crash fixture source structure changed')
+          # Dedented script has p= at column 0.
+          marker="p=Path('src-tauri/src/lib.rs')"
+          index=script.find(marker)
+          if index < 0: raise SystemExit('Crash fixture patch section missing')
+          script=script[index:]
+          subprocess.run([sys.executable,'-c',script],check=True)
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked offline_restore_crash_gate -- --test-threads=1 --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Remove test-only changes from shipping code
+        shell: pwsh
+        run: |
+          git restore -- src-tauri/src/lib.rs src/main.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @'
+          from pathlib import Path
+          import re,sys,subprocess,textwrap
+          source=Path('.github/workflows/CLINIC-ZIP-OFFLINE-RESTORE-BUILD-CHECK.yml').read_text(encoding='utf-8')
+          m=re.search(r"(?ms)^          @'\r?\n(.*?)\r?\n          '@ \| python -",source)
+          if not m: raise SystemExit('Worker patch missing')
+          subprocess.run([sys.executable,'-c',textwrap.dedent(m.group(1))],check=True)
+          s=Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')
+          assert 'mod offline_restore_crash_gate' not in s
+          assert 'CLINIC_RESTORE_KILL_PAUSE' not in s
+          assert 'mod offline_restore_integration_gate' not in s
+          print('Production source has no testing hooks')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check and build final Windows installer
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files = @(Get-ChildItem src-tauri/target/release/bundle/nsis -File -Filter '*.exe')
+          if ($files.Count -ne 1) { throw 'Expected exactly one Windows installer' }
+          Copy-Item -LiteralPath $files[0].FullName -Destination Clinic-Cases-Windows-Setup.exe
+          $hash=(Get-FileHash Clinic-Cases-Windows-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Clinic-Cases-Windows-Setup.exe" | Set-Content Clinic-Cases-Windows-Setup.exe.sha256 -Encoding ascii
+      - name: Commit tested production changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src-tauri/src/lib.rs
+          git diff --cached --quiet && { echo 'Nothing to release: worker already applied?'; exit 1; }
+          git commit -m 'Deliver offline ZIP restore with rollback and UI'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
+      - name: Publish final EXE and checksum
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag="clinic-zip-restore-final-$($env:GITHUB_RUN_ID)"
+          gh release create $tag Clinic-Cases-Windows-Setup.exe Clinic-Cases-Windows-Setup.exe.sha256 --target main --title 'Clinic Cases - Final ZIP Restore Delivery' --notes 'Windows x64 offline installer. ZIP backup, preflight, offline restore with rollback. Tests passed on synthetic Windows data. Before restoring patient data keep an external backup. ZIP is not encrypted.'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "## FINAL EXE" >> $env:GITHUB_STEP_SUMMARY
+          "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Setup.exe" >> $env:GITHUB_STEP_SUMMARY
