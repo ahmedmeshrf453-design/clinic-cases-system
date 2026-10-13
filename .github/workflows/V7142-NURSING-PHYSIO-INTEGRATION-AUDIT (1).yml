@@ -1,0 +1,86 @@
+name: Clinic V7.1.42 - Nursing Physio Integration Audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  integration-audit:
+    runs-on: windows-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test real cashier SQL with isolated synthetic records
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import re, sqlite3
+          s=Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')
+          ui=Path('src/main.ts').read_text(encoding='utf-8')
+          start=s.index('fn cashier_items_for_range(')
+          end=s.index('\n#[tauri::command]',start)
+          body=s[start:end]
+          m=re.search(r'let sql=r#"(.*?)"#;',body,re.S)
+          if not m: raise SystemExit('Cashier SQL not found')
+          sql=m.group(1)
+          assert "THEN 'physio' ELSE 'nursing'" in sql, 'Distinct nursing/physio classification missing'
+          assert "cp.service_type=CASE WHEN n.service_name LIKE '@@PHYSIO@@%'" in sql, 'Payment classification mismatch'
+          assert '"physio","العلاج الطبيعي"' in s and '"nursing","التمريض"' in s, 'Missing financial categories'
+          assert 'all.filter(isPhysioOrder)' in ui, 'Physio screen filter missing'
+          assert "startsWith(PHYSIO_PREFIX)" in ui, 'Physio frontend discriminator missing'
+          con=sqlite3.connect(':memory:')
+          con.executescript('''
+          CREATE TABLE patients(id TEXT PRIMARY KEY,full_name TEXT,phone TEXT,deleted_at TEXT DEFAULT '',archived INTEGER DEFAULT 0);
+          CREATE TABLE visits(id TEXT,patient_id TEXT,visit_type TEXT,doctor TEXT,visit_date TEXT,visit_time TEXT,fee TEXT,booking_source TEXT);
+          CREATE TABLE lab_orders(id TEXT,patient_id TEXT,order_date TEXT,order_time TEXT,net_total TEXT,paid_amount TEXT);
+          CREATE TABLE nursing_orders(id TEXT,patient_id TEXT,service_name TEXT,order_date TEXT,order_time TEXT,price TEXT);
+          CREATE TABLE radiology_orders(id TEXT,patient_id TEXT,radiology_name TEXT,order_date TEXT,order_time TEXT,net_total TEXT);
+          CREATE TABLE service_cases(id TEXT,patient_id TEXT,service_key TEXT,service_name TEXT,case_date TEXT,case_time TEXT,fee TEXT);
+          CREATE TABLE cashier_payments(id TEXT,patient_id TEXT,service_type TEXT,service_id TEXT,amount TEXT,payment_method TEXT,notes TEXT,created_at TEXT);
+          INSERT INTO patients(id,full_name,phone) VALUES('p1','Test Patient','010');
+          INSERT INTO nursing_orders VALUES('n1','p1','Nursing visit','2026-10-12','12:00','100');
+          INSERT INTO nursing_orders VALUES('f1','p1','@@PHYSIO@@Therapy • 2 جلسة','2026-10-12','12:30','300');
+          INSERT INTO cashier_payments VALUES('c1','p1','nursing','n1','40','cash','','2026-10-12');
+          INSERT INTO cashier_payments VALUES('c2','p1','physio','f1','100','cash','','2026-10-12');
+          ''')
+          rows=con.execute(sql,('2026-10-12','2026-10-12')).fetchall()
+          by_id={r[1]:r for r in rows}
+          assert len(rows)==2, f'Expected 2 distinct services, got {len(rows)}'
+          assert by_id['n1'][0]=='nursing' and by_id['f1'][0]=='physio', f'Bad categories {rows}'
+          assert float(by_id['n1'][11])==100 and float(by_id['n1'][12])==40
+          assert float(by_id['f1'][11])==300 and float(by_id['f1'][12])==100
+          # Archiving must preserve financial history; trash must hide it.
+          con.execute("UPDATE patients SET archived=1 WHERE id='p1'")
+          assert len(con.execute(sql,('2026-10-12','2026-10-12')).fetchall())==2,'Archived finance disappeared'
+          con.execute("UPDATE patients SET deleted_at='2026-10-13' WHERE id='p1'")
+          assert len(con.execute(sql,('2026-10-12','2026-10-12')).fetchall())==0,'Trashed patient still in cashier'
+          print('PASS: physio/nursing counted separately with correct payments; archive retained; trash excluded')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build frontend and test backend
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test full Windows installer
+        shell: pwsh
+        run: |
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $items = @(Get-ChildItem src-tauri/target/release/bundle/nsis -File -Filter '*.exe')
+          if ($items.Count -ne 1) { throw 'Expected one NSIS setup' }
+          '## V7.1.42 integration audit' >> $env:GITHUB_STEP_SUMMARY
+          '- Synthetic SQLite integration checks passed: nursing, physiotherapy, payments, archive and trash.' >> $env:GITHUB_STEP_SUMMARY
+          '- Frontend build, Rust tests, Windows setup build passed.' >> $env:GITHUB_STEP_SUMMARY
+          '- No source files or patient data were modified.' >> $env:GITHUB_STEP_SUMMARY
