@@ -1,0 +1,118 @@
+name: Clinic ZIP Restore - Forced Termination Gate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  crash-test:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Prepare real Rust worker and deliberate crash injection in disposable CI
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import re, sys, subprocess, textwrap
+          source=Path('.github/workflows/CLINIC-ZIP-OFFLINE-RESTORE-BUILD-CHECK.yml').read_text(encoding='utf-8')
+          m=re.search(r"(?ms)^          @'\r?\n(.*?)\r?\n          '@ \| python -",source)
+          if not m: raise SystemExit('Original offline worker patch not found')
+          subprocess.run([sys.executable,'-c',textwrap.dedent(m.group(1))],check=True)
+          p=Path('src-tauri/src/lib.rs')
+          s=p.read_text(encoding='utf-8')
+          needle='        let check=Connection::open(&db).map_err(|e|e.to_string())?;'
+          assert s.count(needle)==1
+          injection='''        #[cfg(test)]
+                  if std::env::var_os("CLINIC_RESTORE_KILL_PAUSE").is_some() {
+                      fs::write(data_dir.join("restore-kill-checkpoint"), b"partial-swapped").map_err(|e|e.to_string())?;
+                      std::thread::sleep(std::time::Duration::from_secs(40));
+                  }
+          '''
+          s=s.replace(needle,injection+needle,1)
+          tests=r'''
+          #[cfg(test)]
+          mod offline_restore_crash_gate {
+              use super::*;
+              use std::io::Write;
+              use std::process::{Command,Stdio};
+              use std::time::{Duration as StdDuration,Instant};
+              use zip::write::SimpleFileOptions;
+              fn workdir()->PathBuf {
+                  let dir=std::env::temp_dir().join(format!("clinic-crash-test-{}",Uuid::new_v4()));
+                  fs::create_dir_all(&dir).unwrap();dir
+              }
+              #[test]
+              fn child_worker() {
+                  if std::env::var_os("CLINIC_CRASH_CHILD").is_none() {return;}
+                  let dir=PathBuf::from(std::env::var("CLINIC_CRASH_DATA").unwrap());
+                  let backup=PathBuf::from(std::env::var("CLINIC_CRASH_BACKUP").unwrap());
+                  let source=backup.join("test.zip");
+                  restore_zip_worker(&dir,&backup,&source).unwrap();
+              }
+              #[test]
+              fn kills_real_worker_during_partial_swap_then_rolls_back() {
+                  if std::env::var_os("CLINIC_CRASH_CHILD").is_some(){return;}
+                  let root=workdir();
+                  let data=root.join("data");let backup=root.join("backups");
+                  fs::create_dir_all(&data).unwrap();fs::create_dir_all(&backup).unwrap();
+                  let live=data.join("clinic-cases.db");init_db(&live).unwrap();
+                  Connection::open(&live).unwrap().execute_batch("PRAGMA user_version=7;").unwrap();
+                  let attachments=data.join("patient-attachments");fs::create_dir_all(&attachments).unwrap();
+                  fs::write(attachments.join("old.txt"),b"ORIGINAL_SCAN").unwrap();
+                  fs::write(backup.join(SECURITY_RECOVERY_FILE_NAME),b"ORIGINAL_CODE").unwrap();
+                  let newdb=root.join("source.db");fs::copy(&live,&newdb).unwrap();
+                  Connection::open(&newdb).unwrap().execute_batch("PRAGMA user_version=42;").unwrap();
+                  let archive=backup.join("test.zip");
+                  let mut zip=zip::ZipWriter::new(fs::File::create(&archive).unwrap());
+                  let opts=SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+                  zip.start_file("database/clinic-cases.db",opts).unwrap();
+                  zip.write_all(&fs::read(&newdb).unwrap()).unwrap();
+                  zip.start_file("attachments/any-folder/new.txt",opts).unwrap();zip.write_all(b"RESTORED_SCAN").unwrap();
+                  zip.start_file("security/recovery-code.txt",opts).unwrap();zip.write_all(b"RESTORED_CODE").unwrap();
+                  zip.finish().unwrap();
+                  let mut child=Command::new(std::env::current_exe().unwrap())
+                    .arg("--exact").arg("offline_restore_crash_gate::child_worker").arg("--nocapture")
+                    .env("CLINIC_CRASH_CHILD","1").env("CLINIC_CRASH_DATA",&data)
+                    .env("CLINIC_CRASH_BACKUP",&backup).env("CLINIC_RESTORE_KILL_PAUSE","1")
+                    .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+                  let began=Instant::now();
+                  while !data.join("restore-kill-checkpoint").exists() {
+                      if let Some(status)=child.try_wait().unwrap(){panic!("Worker exited before partial swap: {status}");}
+                      if began.elapsed()>StdDuration::from_secs(75){let _=child.kill();panic!("Timed out waiting for actual swap checkpoint");}
+                      std::thread::sleep(StdDuration::from_millis(100));
+                  }
+                  assert!(restore_marker(&data).exists());
+                  assert_eq!(Connection::open(&live).unwrap().query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),42);
+                  assert!(attachments.join("any-folder/new.txt").exists());
+                  child.kill().unwrap();child.wait().unwrap();
+                  restore_rollback(&data).unwrap();
+                  assert_eq!(Connection::open(&live).unwrap().query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),7);
+                  assert_eq!(fs::read(attachments.join("old.txt")).unwrap(),b"ORIGINAL_SCAN");
+                  assert!(!attachments.join("any-folder/new.txt").exists());
+                  assert_eq!(fs::read(backup.join(SECURITY_RECOVERY_FILE_NAME)).unwrap(),b"ORIGINAL_CODE");
+                  assert!(!restore_marker(&data).exists());
+                  fs::remove_dir_all(root).unwrap();
+              }
+          }
+          '''
+          p.write_text(s+'\n'+tests,encoding='utf-8')
+          print('Injected deterministic pause into actual Rust restore worker (CI only); added kill/rollback native test')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actually terminate worker after partial replacement and verify rollback
+        shell: pwsh
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --locked offline_restore_crash_gate -- --test-threads=1 --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Report scope
+        shell: pwsh
+        run: |
+          '## Actual process termination recovery test' >> $env:GITHUB_STEP_SUMMARY
+          '- Real Rust offline worker is force-killed after live DB and attachment replacement, using synthetic Windows fixtures.' >> $env:GITHUB_STEP_SUMMARY
+          '- On green, rollback of DB, attachments, and PIN recovery is verified.' >> $env:GITHUB_STEP_SUMMARY
+          '- This is a controlled process kill, not a real power outage or disk failure.' >> $env:GITHUB_STEP_SUMMARY
+          '- Nothing committed; no EXE released; no patient data touched.' >> $env:GITHUB_STEP_SUMMARY
