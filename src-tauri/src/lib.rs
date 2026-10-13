@@ -3867,6 +3867,84 @@ fn health_check(state: State<AppState>) -> Result<HealthCheck, String> {
 }
 
 #[tauri::command]
+fn create_full_backup(state: State<AppState>) -> Result<BackupItem, String> {
+    use zip::{ZipWriter, ZipArchive};
+    use zip::write::SimpleFileOptions;
+    fs::create_dir_all(&state.backup_dir).map_err(|e| e.to_string())?;
+    let stamp = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+    let target = state.backup_dir.join(format!("clinic-cases-full-{}-{}.zip", stamp, Uuid::new_v4()));
+    let temp_zip = state.backup_dir.join(format!(".full-{}.tmp", Uuid::new_v4()));
+    let temp_db = state.backup_dir.join(format!(".full-db-{}.db", Uuid::new_v4()));
+    let result = (|| -> Result<(), String> {
+        checkpoint_and_copy(&state, &temp_db)?;
+        let conn=open_db(&state)?;
+        let root=fs::canonicalize(&state.attachments_dir).ok();
+        let mut referenced=conn.prepare("SELECT stored_path FROM patient_attachments").map_err(|e|e.to_string())?;
+        let paths=referenced.query_map([],|r|r.get::<_,String>(0)).map_err(|e|e.to_string())?;
+        for item in paths {
+            let path=PathBuf::from(item.map_err(|e|e.to_string())?);
+            let real=fs::canonicalize(&path).map_err(|_|"أحد مرفقات المرضى مفقود، لم تُنشأ نسخة ناقصة".to_string())?;
+            if !real.is_file() || root.as_ref().map(|x|!real.starts_with(x)).unwrap_or(true) {
+                return Err("مسار مرفق غير آمن أو مفقود، تم إيقاف النسخ".into());
+            }
+        }
+        drop(referenced);
+        let output=fs::File::create(&temp_zip).map_err(|e|e.to_string())?;
+        let mut zip=ZipWriter::new(output);
+        let options=SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let mut entries=0usize;
+        let mut bytes=0u64;
+        let mut add_file=|path:&Path, entry:&str| -> Result<(),String> {
+            if path.is_symlink() {return Err("الروابط الرمزية غير مسموحة في النسخة".into());}
+            let metadata=fs::metadata(path).map_err(|e|e.to_string())?;
+            if !metadata.is_file(){return Err("عنصر النسخ ليس ملفًا".into());}
+            bytes=bytes.checked_add(metadata.len()).ok_or("حجم النسخة غير صالح")?;
+            if bytes>MAX_BACKUP_BYTES{return Err("حجم النسخة يتجاوز 2 جيجابايت".into());}
+            zip.start_file(entry,options).map_err(|e|e.to_string())?;
+            let mut input=fs::File::open(path).map_err(|e|e.to_string())?;
+            std::io::copy(&mut input,&mut zip).map_err(|e|e.to_string())?;
+            entries+=1;
+            Ok(())
+        };
+        add_file(&temp_db,"database/clinic-cases.db")?;
+        if state.attachments_dir.exists(){
+            let mut pending=vec![state.attachments_dir.clone()];
+            while let Some(dir)=pending.pop(){
+                for next in fs::read_dir(&dir).map_err(|e|e.to_string())? {
+                    let path=next.map_err(|e|e.to_string())?.path();
+                    if path.is_symlink(){return Err("روابط رمزية في المرفقات غير مسموحة".into());}
+                    if path.is_dir(){pending.push(path);continue;}
+                    let relative=path.strip_prefix(&state.attachments_dir).map_err(|e|e.to_string())?;
+                    let entry=format!("attachments/{}",relative.to_string_lossy().replace(std::path::MAIN_SEPARATOR,"/"));
+                    add_file(&path,&entry)?;
+                }
+            }
+        }
+        let recovery=security_recovery_file_path(&state);
+        if recovery.exists(){add_file(&recovery,"security/recovery-code.txt")?;}
+        else if !meta_value(&conn,"security_pin_hash","")?.is_empty() {
+            return Err("ملف استرداد PIN مفقود، تم إلغاء النسخ الكامل".into());
+        }
+        drop(add_file);
+        zip.finish().map_err(|e|e.to_string())?;
+        let verify=fs::File::open(&temp_zip).map_err(|e|e.to_string())?;
+        let mut archive=ZipArchive::new(verify).map_err(|e|e.to_string())?;
+        if archive.len()!=entries{return Err("عدد عناصر النسخة غير صحيح".into());}
+        for i in 0..archive.len(){
+            let mut item=archive.by_index(i).map_err(|e|e.to_string())?;
+            std::io::copy(&mut item,&mut std::io::sink()).map_err(|e|e.to_string())?;
+        }
+        drop(archive);
+        fs::rename(&temp_zip,&target).map_err(|e|e.to_string())?;
+        Ok(())
+    })();
+    let _=fs::remove_file(&temp_db);
+    if result.is_err(){let _=fs::remove_file(&temp_zip);}
+    result?;
+    backup_item(&target)
+}
+
+#[tauri::command]
 fn create_backup(state: State<AppState>) -> Result<BackupItem, String> {
     fs::create_dir_all(&state.backup_dir).map_err(|e| e.to_string())?;
     let stamp = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
@@ -4194,6 +4272,7 @@ pub fn run() {
             get_settings,
             save_settings,
             health_check,
+            create_full_backup,
             create_backup,
             list_backups,
             restore_backup,

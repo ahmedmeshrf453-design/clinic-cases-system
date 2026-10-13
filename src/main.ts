@@ -5694,6 +5694,7 @@ async function renderBackups() {
         <div class="filters">
           <button class="btn ghost small" id="openBackupFolder">فتح المجلد</button>
           <button class="btn primary small" id="backupNow">＋ إنشاء نسخة الآن</button>
+          <button class="btn primary small" id="fullBackupNow">نسخة احتياطية كاملة</button>
         </div>
       </div>
       <div class="backup-list">
@@ -5710,6 +5711,18 @@ async function renderBackups() {
     const item = await invoke<BackupItem>('create_backup');
     toast(`تم إنشاء النسخة: ${item.name}`);
     await renderScreen();
+  };
+  document.querySelector<HTMLButtonElement>('#fullBackupNow')!.onclick = async event => {
+    const button=event.currentTarget as HTMLButtonElement;
+    button.disabled=true;
+    try {
+      const item=await invoke<BackupItem>('create_full_backup');
+      toast(`تم حفظ النسخة الكاملة: ${item.name}`);
+      await renderScreen();
+    } catch (error) {
+      toast(`فشل النسخ الكامل: ${String(error)}`, 'error');
+      button.disabled=false;
+    }
   };
   document.querySelector<HTMLButtonElement>('#openBackupFolder')!.onclick = async () => {
     await invoke('open_backup_folder');
