@@ -1,0 +1,163 @@
+name: Clinic V7.1.45 - Duplicate Cashier Payment Guard
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: main
+        fetch-depth: 0
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Apply guarded patch
+      shell: pwsh
+      run: '@''
+
+        from pathlib import Path
+
+        p=Path(''src-tauri/src/lib.rs'')
+
+        s=p.read_text(encoding=''utf-8'')
+
+        a=''struct CashierPaymentInput { patient_id:String, service_type:String, service_id:String, amount:String, payment_method:String,
+        notes:String }''
+
+        assert s.count(a)==1
+
+        s=s.replace(a,a[:-2]+'', request_id:String }'',1)
+
+        anchor=''      CREATE TABLE IF NOT EXISTS cashier_payments(''
+
+        assert s.count(anchor)==1
+
+        new_table="      CREATE TABLE IF NOT EXISTS cashier_payment_requests(request_id TEXT PRIMARY KEY, patient_id TEXT
+        NOT NULL, service_type TEXT NOT NULL, service_id TEXT NOT NULL, amount TEXT NOT NULL, payment_method TEXT NOT NULL,
+        notes TEXT NOT NULL, payment_id TEXT NOT NULL UNIQUE);\n"
+
+        s=s.replace(anchor,new_table+anchor,1)
+
+        start=s.index(''fn record_cashier_payment('')
+
+        end=s.index(''\nfn finance_source_label'',start)
+
+        f=s[start:end]
+
+        assert ''TransactionBehavior::Immediate'' in f and ''tx.commit()'' in f
+
+        f=f.replace(''let mut c=open_db(&state)?;'', ''if Uuid::parse_str(input.request_id.trim()).is_err(){return Err("معرف
+        التحصيل غير صالح".into())}let amount_key=format!("{:.2}",amount);let mut c=open_db(&state)?;'',1)
+
+        a=''let item=cashier_items_for_range(&tx,''
+
+        assert f.count(a)==1
+
+        check="let previous:Option<(String,String,String,String,String,String)>=tx.query_row("SELECT patient_id,service_type,service_id,amount,payment_method,notes
+        FROM cashier_payment_requests WHERE request_id=?1",params![input.request_id.trim()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))).optional().map_err(|e|e.to_string())?;if
+        let Some(previous)=previous {if previous==(input.patient_id.clone(),input.service_type.clone(),input.service_id.clone(),amount_key.clone(),method.to_string(),input.notes.trim().to_string()){return
+        Ok(())}return Err("معرف التحصيل مستخدم لعملية أخرى".into());}"
+
+        f=f.replace(a,check+a,1)
+
+        a=''tx.execute("INSERT INTO cashier_payments''
+
+        assert f.count(a)==1
+
+        insert="let payment_id=Uuid::new_v4().to_string();tx.execute("INSERT INTO cashier_payment_requests(request_id,patient_id,service_type,service_id,amount,payment_method,notes,payment_id)
+        VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![input.request_id.trim(),&input.patient_id,&input.service_type,&input.service_id,&amount_key,method,input.notes.trim(),&payment_id]).map_err(|e|e.to_string())?;"
+
+        f=f.replace(a,insert+a,1)
+
+        a=''params![Uuid::new_v4().to_string(),input.patient_id,input.service_type,input.service_id,format!("{:.2}",amount),method,input.notes.trim(),''
+
+        assert f.count(a)==1
+
+        f=f.replace(a,''params![payment_id,input.patient_id,input.service_type,input.service_id,amount_key,method,input.notes.trim(),'',1)
+
+        s=s[:start]+f+s[end:]
+
+        p.write_text(s,encoding=''utf-8'')
+
+        p=Path(''src/main.ts'');s=p.read_text(encoding=''utf-8'')
+
+        a=''function openCashierPaymentModal(item:{patientId:string;serviceType:string;serviceId:string;remaining:number},onSaved:()=>Promise<void>){const
+        root=''
+
+        assert s.count(a)==1
+
+        s=s.replace(a,a.replace(''const root='',''const requestId=crypto.randomUUID();let saving=false;const root=''),1)
+
+        a="document.querySelector<HTMLFormElement>(''#cashierPaymentForm'')!.onsubmit=async e=>{e.preventDefault();const fd=new
+        FormData(e.currentTarget as HTMLFormElement);try{"
+
+        assert s.count(a)==1
+
+        s=s.replace(a,"document.querySelector<HTMLFormElement>(''#cashierPaymentForm'')!.onsubmit=async e=>{e.preventDefault();if(saving)return;saving=true;const
+        form=e.currentTarget as HTMLFormElement;const submit=form.querySelector<HTMLButtonElement>(''button.btn.primary'');if(submit)submit.disabled=true;const
+        fd=new FormData(form);try{",1)
+
+        a="serviceId:item.serviceId,amount:String(fd.get(''amount'')||'''')"
+
+        assert s.count(a)==1
+
+        s=s.replace(a,"serviceId:item.serviceId,requestId,amount:String(fd.get(''amount'')||'''')",1)
+
+        a="}catch(err){toast(`تعذر تسجيل التحصيل: ${String(err)}`,''error'')}}}"
+
+        assert s.count(a)==1
+
+        s=s.replace(a,"}catch(err){toast(`تعذر تسجيل التحصيل: ${String(err)}`,''error'');saving=false;if(submit)submit.disabled=false}}}",1)
+
+        p.write_text(s,encoding=''utf-8'')
+
+        print(''PAYMENT IDEMPOTENCY PATCH OK'')
+
+        ''@ | python -
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+    - name: Frontend and Rust tests
+      shell: pwsh
+      run: 'npm ci
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        npm run build
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+    - name: Windows installer build
+      shell: pwsh
+      run: 'npm run tauri -- build --bundles nsis
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        if (-not (Get-ChildItem src-tauri/target/release/bundle/nsis -Filter ''*.exe'')) { throw ''Missing installer'' }'
+    - name: Commit tested patch
+      shell: bash
+      run: 'set -euo pipefail
+
+        git config user.name ''github-actions[bot]''
+
+        git config user.email ''41898282+github-actions[bot]@users.noreply.github.com''
+
+        git add src-tauri/src/lib.rs src/main.ts
+
+        if git diff --cached --quiet; then exit 0; fi
+
+        git commit -m ''Prevent duplicate cashier submission with request ID''
+
+        git fetch origin main
+
+        git rebase origin/main
+
+        git push origin HEAD:main'
