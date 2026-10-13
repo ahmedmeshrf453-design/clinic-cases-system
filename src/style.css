@@ -5088,3 +5088,78 @@ table td{font-size:13px !important}
 
 /* V7.1.37 lab guide tube cues */
 .lab-guide-body .lab-guide-field{line-height:1.65!important}
+
+
+/* Specialty dashboard polish: keep existing imagery, ordering and branding */
+.specialty-home-v7110 #specialtyGridHome {
+  gap: 11px !important;
+}
+.specialty-home-v7110 #specialtyGridHome .hologram-specialty-card {
+  height: 194px !important;
+  min-height: 194px !important;
+  padding: 12px 9px 13px !important;
+  gap: 9px !important;
+  border-radius: 18px !important;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease !important;
+}
+.specialty-home-v7110 #specialtyGridHome .hologram-specialty-card:hover {
+  transform: translateY(-3px) !important;
+  border-color: #83bcd8 !important;
+  box-shadow: 0 10px 24px rgba(21,72,108,.13) !important;
+}
+.specialty-home-v7110 #specialtyGridHome .specialty-hologram-icon {
+  width: 124px !important;
+  height: 124px !important;
+  min-width: 124px !important;
+  min-height: 124px !important;
+  flex: 0 0 124px !important;
+  margin: 0 auto !important;
+  border: none !important;
+  background: transparent !important;
+  overflow: hidden !important;
+}
+.specialty-home-v7110 #specialtyGridHome .specialty-hologram-icon img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  object-position: center !important;
+}
+.specialty-home-v7110 #specialtyGridHome .specialty-card-copy {
+  min-height: 29px !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+}
+.specialty-home-v7110 #specialtyGridHome .specialty-card-copy strong {
+  max-width: 100% !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
+.specialty-home-v7110 #specialtyGridHome:has(> :last-child:nth-child(7n + 3)) > :nth-last-child(3) {
+  grid-column: 3;
+}
+@media (max-width: 1380px) {
+  .specialty-home-v7110 #specialtyGridHome:has(> :last-child:nth-child(7n + 3)) > :nth-last-child(3) {
+    grid-column: auto;
+  }
+}
+@media (max-width: 900px) {
+  .specialty-home-v7110 #specialtyGridHome .hologram-specialty-card {
+    height: 178px !important;
+    min-height: 178px !important;
+  }
+  .specialty-home-v7110 #specialtyGridHome .specialty-hologram-icon {
+    width: 105px !important;
+    height: 105px !important;
+    min-width: 105px !important;
+    min-height: 105px !important;
+    flex-basis: 105px !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .specialty-home-v7110 #specialtyGridHome .hologram-specialty-card {
+    transition: none !important;
+  }
+}
