@@ -1,0 +1,149 @@
+name: Clinic ZIP Restore - In App Preflight
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Add non-destructive in-app ZIP preflight
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          sfile=Path('src-tauri/src/lib.rs'); s=sfile.read_text(encoding='utf-8')
+          ui=Path('src/main.ts'); t=ui.read_text(encoding='utf-8')
+          assert 'fn inspect_full_backup(' not in s
+          marker='#[tauri::command]\nfn create_backup('
+          assert s.count(marker)==1
+          fn=r'''#[tauri::command]
+          fn inspect_full_backup(state: State<AppState>, path: String) -> Result<String, String> {
+              use zip::ZipArchive;
+              use std::collections::HashSet;
+              let root=fs::canonicalize(&state.backup_dir).map_err(|e|e.to_string())?;
+              let source=fs::canonicalize(&path).map_err(|e|e.to_string())?;
+              if !source.starts_with(&root) || source.extension().and_then(|x|x.to_str()).map(|x|!x.eq_ignore_ascii_case("zip")).unwrap_or(true) {
+                  return Err("يمكن فحص نسخ ZIP داخل مجلد النسخ الاحتياطية فقط".into());
+              }
+              let metadata=fs::metadata(&source).map_err(|e|e.to_string())?;
+              if metadata.len()==0 || metadata.len()>MAX_BACKUP_BYTES {return Err("حجم ملف ZIP غير صالح".into());}
+              let dir=state.backup_dir.join(format!(".preflight-{}",Uuid::new_v4()));
+              fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
+              let result=(||->Result<String,String>{
+                  let mut archive=ZipArchive::new(fs::File::open(&source).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
+                  if archive.len()==0 || archive.len()>100000 {return Err("عدد عناصر ZIP غير صالح".into());}
+                  let mut seen=HashSet::new(); let mut total=0u64; let mut attachments=0usize;
+                  let db_file=dir.join("clinic-cases.db");
+                  for i in 0..archive.len(){
+                      let mut member=archive.by_index(i).map_err(|e|e.to_string())?;
+                      if member.is_dir() {continue;}
+                      let relative=member.enclosed_name().ok_or("مسار غير آمن داخل ZIP")?.to_path_buf();
+                      let name=relative.to_string_lossy().replace(std::path::MAIN_SEPARATOR,"/");
+                      if !(name=="database/clinic-cases.db" || name=="security/recovery-code.txt" || name.starts_with("attachments/")) {
+                          return Err("ملف غير متوقع داخل ZIP".into());
+                      }
+                      if !seen.insert(name.clone()) {return Err("أسماء متكررة داخل ZIP".into());}
+                      if member.unix_mode().map(|mode| mode & 0o170000 == 0o120000).unwrap_or(false) {return Err("رابط رمزي غير مسموح".into());}
+                      total=total.checked_add(member.size()).ok_or("حجم ZIP غير صالح")?;
+                      if total>MAX_BACKUP_BYTES {return Err("ملفات ZIP تتجاوز 2 جيجابايت".into());}
+                      if name.starts_with("attachments/") {attachments+=1;}
+                      if name=="database/clinic-cases.db" {
+                          let mut target=fs::File::create(&db_file).map_err(|e|e.to_string())?;
+                          std::io::copy(&mut member,&mut target).map_err(|e|e.to_string())?;
+                      } else {
+                          // Read all bytes to verify compressed member integrity / CRC, without writing patient attachments.
+                          std::io::copy(&mut member,&mut std::io::sink()).map_err(|e|e.to_string())?;
+                      }
+                  }
+                  if !seen.contains("database/clinic-cases.db") {return Err("قاعدة البيانات غير موجودة داخل ZIP".into());}
+                  let conn=Connection::open_with_flags(&db_file,rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e|e.to_string())?;
+                  let integrity:String=conn.query_row("PRAGMA integrity_check",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+                  if integrity!="ok" || !backup_schema_compatible(&conn)? {return Err("قاعدة بيانات النسخة غير سليمة".into());}
+                  let app_id:i64=conn.query_row("PRAGMA application_id",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+                  if app_id!=0 && app_id!=CLINIC_APPLICATION_ID {return Err("قاعدة البيانات لا تخص النظام".into());}
+                  let mut fk=conn.prepare("PRAGMA foreign_key_check").map_err(|e|e.to_string())?;
+                  let mut rows=fk.query([]).map_err(|e|e.to_string())?;
+                  if rows.next().map_err(|e|e.to_string())?.is_some() {return Err("خطأ في روابط قاعدة البيانات".into());}
+                  drop(rows);drop(fk);
+                  let mut stmt=conn.prepare("SELECT patient_id,stored_path FROM patient_attachments").map_err(|e|e.to_string())?;
+                  let files=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).map_err(|e|e.to_string())?;
+                  for file in files {
+                      let (patient_id, stored)=file.map_err(|e|e.to_string())?;
+                      let basename=Path::new(&stored).file_name().ok_or("مسار مرفق غير صالح")?.to_string_lossy();
+                      let expected=format!("attachments/{}/{}",attachment_patient_storage_key(&patient_id),basename);
+                      if !seen.contains(&expected) {return Err(format!("مرفق مفقود من ZIP: {}",basename));}
+                  }
+                  let pin_hash=meta_value(&conn,"security_pin_hash","")?;
+                  if !pin_hash.is_empty() && !seen.contains("security/recovery-code.txt") {return Err("ملف استرداد PIN مفقود".into());}
+                  Ok(format!("الفحص ناجح: قاعدة البيانات سليمة، وعدد المرفقات {}. لم تتغير أي بيانات.",attachments))
+              })();
+              let _=fs::remove_dir_all(&dir);
+              result
+          }
+
+          '''
+          s=s.replace(marker,fn+marker,1)
+          marker='            create_full_backup,\n'
+          assert s.count(marker)==1
+          s=s.replace(marker,marker+'            inspect_full_backup,\n',1)
+          start=s.index('fn list_backups(');end=s.index('fn backup_table_has_columns',start)
+          segment=s[start:end]
+          old='if p.extension().and_then(|x| x.to_str()) == Some("db") {'
+          assert segment.count(old)==1
+          segment=segment.replace(old,'if matches!(p.extension().and_then(|x| x.to_str()),Some("db") | Some("zip")) {',1)
+          s=s[:start]+segment+s[end:]
+          sfile.write_text(s,encoding='utf-8')
+          button='<button class="btn danger-outline small" data-restore-backup="${esc(b.path)}">استعادة هذه النسخة</button>'
+          assert t.count(button)==1
+          replacement='${b.name.toLowerCase().endsWith(".zip") ? `<button class="btn ghost small" data-inspect-zip="${esc(b.path)}">فحص نسخة ZIP</button>` : `<button class="btn danger-outline small" data-restore-backup="${esc(b.path)}">استعادة هذه النسخة</button>`}'
+          t=t.replace(button,replacement,1)
+          anchor="  document.querySelectorAll<HTMLButtonElement>('[data-restore-backup]').forEach"
+          assert t.count(anchor)==1
+          handler='''  document.querySelectorAll<HTMLButtonElement>('[data-inspect-zip]').forEach(b => b.onclick = async () => {
+              b.disabled=true;
+              try {const message=await invoke<string>('inspect_full_backup',{path:b.dataset.inspectZip});toast(message);}
+              catch(e){toast(`فشل فحص ZIP: ${String(e)}`,'error');}
+              finally{b.disabled=false;}
+            });
+          '''
+          t=t.replace(anchor,handler+anchor,1)
+          ui.write_text(t,encoding='utf-8')
+          print('Added ZIP inspection only; no destructive restore command')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate frontend and Rust
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Commit validated preflight only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.ts src-tauri/src/lib.rs
+          git commit -m 'Add non-destructive ZIP backup validation screen'
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
+      - name: Report scope
+        shell: pwsh
+        run: |
+          '## ZIP preflight' >> $env:GITHUB_STEP_SUMMARY
+          'Added non-destructive ZIP verification; no restore action, installer, or release published. Actual restore must use a separately tested offline process.' >> $env:GITHUB_STEP_SUMMARY
