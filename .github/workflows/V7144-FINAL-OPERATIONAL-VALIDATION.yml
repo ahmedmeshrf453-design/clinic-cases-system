@@ -1,0 +1,98 @@
+name: Clinic V7.1.44 - Final Operational Validation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate integration invariants and identify unfinished protections
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import re, sqlite3
+          rust=Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')
+          ui=Path('src/main.ts').read_text(encoding='utf-8')
+          start=rust.index('fn cashier_items_for_range(')
+          end=rust.index('\n#[tauri::command]',start)
+          body=rust[start:end]
+          match=re.search(r'let sql=r#"(.*?)"#;',body,re.S)
+          assert match, 'Cashier SQL missing'
+          sql=match.group(1)
+          assert "THEN 'physio' ELSE 'nursing'" in sql, 'Physio classification lost'
+          assert 'FROM service_cases s JOIN patients p' in sql, 'Emergency and other services missing'
+          assert 'p.archived=0' not in sql, 'Archived finance is excluded'
+          assert sql.count("COALESCE(p.deleted_at,'')=''") == 5, 'Trash exclusion changed'
+          pay=rust[rust.index('fn record_cashier_payment('):rust.index('\nfn finance_source_label',rust.index('fn record_cashier_payment('))]
+          assert 'TransactionBehavior::Immediate' in pay and 'tx.commit()' in pay, 'Atomic payment transaction missing'
+          assert 'fn checkpoint_and_copy(' in rust and 'PRAGMA integrity_check' in rust
+          assert 'fn restore_backup(' in rust and 'backup_schema_compatible' in rust
+          assert 'function isPhysioOrder(' in ui
+          con=sqlite3.connect(':memory:')
+          con.executescript('''
+          CREATE TABLE patients(id TEXT PRIMARY KEY,full_name TEXT,phone TEXT,deleted_at TEXT DEFAULT '',archived INTEGER DEFAULT 0);
+          CREATE TABLE visits(id TEXT,patient_id TEXT,visit_type TEXT,doctor TEXT,visit_date TEXT,visit_time TEXT,fee TEXT,booking_source TEXT);
+          CREATE TABLE lab_orders(id TEXT,patient_id TEXT,order_date TEXT,order_time TEXT,net_total TEXT,paid_amount TEXT);
+          CREATE TABLE nursing_orders(id TEXT,patient_id TEXT,service_name TEXT,order_date TEXT,order_time TEXT,price TEXT);
+          CREATE TABLE radiology_orders(id TEXT,patient_id TEXT,radiology_name TEXT,order_date TEXT,order_time TEXT,net_total TEXT);
+          CREATE TABLE service_cases(id TEXT,patient_id TEXT,service_key TEXT,service_name TEXT,case_date TEXT,case_time TEXT,fee TEXT);
+          CREATE TABLE cashier_payments(id TEXT,patient_id TEXT,service_type TEXT,service_id TEXT,amount TEXT,payment_method TEXT,notes TEXT,created_at TEXT);
+          INSERT INTO patients VALUES('p','Patient','010','',0);
+          INSERT INTO visits VALUES('v','p','كشف','Doctor','2026-10-13','12:00','100','عادي');
+          INSERT INTO lab_orders VALUES('l','p','2026-10-13','12:00','120','20');
+          INSERT INTO nursing_orders VALUES('n','p','Nursing','2026-10-13','12:00','80');
+          INSERT INTO nursing_orders VALUES('f','p','@@PHYSIO@@Session','2026-10-13','12:00','90');
+          INSERT INTO radiology_orders VALUES('r','p','Xray','2026-10-13','12:00','110');
+          INSERT INTO service_cases VALUES('e','p','emergency','Emergency','2026-10-13','12:00','50');
+          INSERT INTO service_cases VALUES('o','p','others','Other','2026-10-13','12:00','30');
+          INSERT INTO cashier_payments VALUES('cn','p','nursing','n','30','cash','','2026-10-13');
+          INSERT INTO cashier_payments VALUES('cf','p','physio','f','40','cash','','2026-10-13');
+          ''')
+          def get(): return con.execute(sql,('2026-10-13','2026-10-13')).fetchall()
+          rows=get()
+          assert len(rows)==7, f'Expected 7 service records; got {len(rows)}'
+          assert set(r[0] for r in rows)=={'clinic','lab','nursing','physio','radiology','emergency','others'}
+          byid={r[1]:r for r in rows}
+          assert float(byid['n'][12])==30 and float(byid['f'][12])==40
+          assert abs(sum(float(r[11]) for r in rows)-580)<0.001
+          con.execute("UPDATE patients SET archived=1 WHERE id='p'")
+          assert len(get())==7, 'Archived transactions disappeared'
+          con.execute("UPDATE patients SET deleted_at='2026-10-13' WHERE id='p'")
+          assert len(get())==0, 'Trash transactions not excluded'
+          print('PASS: 7 service categories; paid values; archive and trash handling; atomic-payment guard present')
+          print('LIMITATION: This is isolated SQL/static validation, NOT UI or on-device database restore testing.')
+          print('LIMITATION: Duplicate submission idempotency and dedicated physio service-type migration are NOT implemented.')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Frontend build and Rust tests
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Windows installer without publishing an unverified operational release
+        shell: pwsh
+        run: |
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files = @(Get-ChildItem 'src-tauri/target/release/bundle/nsis' -File -Filter '*.exe')
+          if ($files.Count -ne 1) { throw 'Expected exactly one NSIS installer' }
+          '## V7.1.44 - Automated validation' >> $env:GITHUB_STEP_SUMMARY
+          '- PASS: 7-category cashier SQL integration on synthetic isolated data.' >> $env:GITHUB_STEP_SUMMARY
+          '- PASS: Rust tests, frontend build, Windows installer build.' >> $env:GITHUB_STEP_SUMMARY
+          '- NOT VERIFIED: actual clinic device workflow, printing, full restore, duplicate payment submission.' >> $env:GITHUB_STEP_SUMMARY
+          '- No code or real patient data modified; no production release published.' >> $env:GITHUB_STEP_SUMMARY
