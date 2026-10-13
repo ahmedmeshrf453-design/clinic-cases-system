@@ -3945,6 +3945,71 @@ fn create_full_backup(state: State<AppState>) -> Result<BackupItem, String> {
 }
 
 #[tauri::command]
+fn inspect_full_backup(state: State<AppState>, path: String) -> Result<String, String> {
+    use zip::ZipArchive;
+    use std::collections::HashSet;
+    let root=fs::canonicalize(&state.backup_dir).map_err(|e|e.to_string())?;
+    let source=fs::canonicalize(&path).map_err(|e|e.to_string())?;
+    if !source.starts_with(&root) || source.extension().and_then(|x|x.to_str()).map(|x|!x.eq_ignore_ascii_case("zip")).unwrap_or(true) {
+        return Err("يمكن فحص نسخ ZIP داخل مجلد النسخ الاحتياطية فقط".into());
+    }
+    let metadata=fs::metadata(&source).map_err(|e|e.to_string())?;
+    if metadata.len()==0 || metadata.len()>MAX_BACKUP_BYTES {return Err("حجم ملف ZIP غير صالح".into());}
+    let dir=state.backup_dir.join(format!(".preflight-{}",Uuid::new_v4()));
+    fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
+    let result=(||->Result<String,String>{
+        let mut archive=ZipArchive::new(fs::File::open(&source).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
+        if archive.len()==0 || archive.len()>100000 {return Err("عدد عناصر ZIP غير صالح".into());}
+        let mut seen=HashSet::new(); let mut total=0u64; let mut attachments=0usize;
+        let db_file=dir.join("clinic-cases.db");
+        for i in 0..archive.len(){
+            let mut member=archive.by_index(i).map_err(|e|e.to_string())?;
+            if member.is_dir() {continue;}
+            let relative=member.enclosed_name().ok_or("مسار غير آمن داخل ZIP")?.to_path_buf();
+            let name=relative.to_string_lossy().replace(std::path::MAIN_SEPARATOR,"/");
+            if !(name=="database/clinic-cases.db" || name=="security/recovery-code.txt" || name.starts_with("attachments/")) {
+                return Err("ملف غير متوقع داخل ZIP".into());
+            }
+            if !seen.insert(name.clone()) {return Err("أسماء متكررة داخل ZIP".into());}
+            if member.unix_mode().map(|mode| mode & 0o170000 == 0o120000).unwrap_or(false) {return Err("رابط رمزي غير مسموح".into());}
+            total=total.checked_add(member.size()).ok_or("حجم ZIP غير صالح")?;
+            if total>MAX_BACKUP_BYTES {return Err("ملفات ZIP تتجاوز 2 جيجابايت".into());}
+            if name.starts_with("attachments/") {attachments+=1;}
+            if name=="database/clinic-cases.db" {
+                let mut target=fs::File::create(&db_file).map_err(|e|e.to_string())?;
+                std::io::copy(&mut member,&mut target).map_err(|e|e.to_string())?;
+            } else {
+                // Read all bytes to verify compressed member integrity / CRC, without writing patient attachments.
+                std::io::copy(&mut member,&mut std::io::sink()).map_err(|e|e.to_string())?;
+            }
+        }
+        if !seen.contains("database/clinic-cases.db") {return Err("قاعدة البيانات غير موجودة داخل ZIP".into());}
+        let conn=Connection::open_with_flags(&db_file,rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e|e.to_string())?;
+        let integrity:String=conn.query_row("PRAGMA integrity_check",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if integrity!="ok" || !backup_schema_compatible(&conn)? {return Err("قاعدة بيانات النسخة غير سليمة".into());}
+        let app_id:i64=conn.query_row("PRAGMA application_id",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if app_id!=0 && app_id!=CLINIC_APPLICATION_ID {return Err("قاعدة البيانات لا تخص النظام".into());}
+        let mut fk=conn.prepare("PRAGMA foreign_key_check").map_err(|e|e.to_string())?;
+        let mut rows=fk.query([]).map_err(|e|e.to_string())?;
+        if rows.next().map_err(|e|e.to_string())?.is_some() {return Err("خطأ في روابط قاعدة البيانات".into());}
+        drop(rows);drop(fk);
+        let mut stmt=conn.prepare("SELECT patient_id,stored_path FROM patient_attachments").map_err(|e|e.to_string())?;
+        let files=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).map_err(|e|e.to_string())?;
+        for file in files {
+            let (patient_id, stored)=file.map_err(|e|e.to_string())?;
+            let basename=Path::new(&stored).file_name().ok_or("مسار مرفق غير صالح")?.to_string_lossy();
+            let expected=format!("attachments/{}/{}",attachment_patient_storage_key(&patient_id),basename);
+            if !seen.contains(&expected) {return Err(format!("مرفق مفقود من ZIP: {}",basename));}
+        }
+        let pin_hash=meta_value(&conn,"security_pin_hash","")?;
+        if !pin_hash.is_empty() && !seen.contains("security/recovery-code.txt") {return Err("ملف استرداد PIN مفقود".into());}
+        Ok(format!("الفحص ناجح: قاعدة البيانات سليمة، وعدد المرفقات {}. لم تتغير أي بيانات.",attachments))
+    })();
+    let _=fs::remove_dir_all(&dir);
+    result
+}
+
+#[tauri::command]
 fn create_backup(state: State<AppState>) -> Result<BackupItem, String> {
     fs::create_dir_all(&state.backup_dir).map_err(|e| e.to_string())?;
     let stamp = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
@@ -3961,7 +4026,7 @@ fn list_backups(state: State<AppState>) -> Result<Vec<BackupItem>, String> {
     let mut items = Vec::new();
     for e in fs::read_dir(&state.backup_dir).map_err(|e| e.to_string())? {
         let p = e.map_err(|e| e.to_string())?.path();
-        if p.extension().and_then(|x| x.to_str()) == Some("db") {
+        if matches!(p.extension().and_then(|x| x.to_str()),Some("db") | Some("zip")) {
             if let Ok(i) = backup_item(&p) {
                 items.push(i);
             }
@@ -4273,6 +4338,7 @@ pub fn run() {
             save_settings,
             health_check,
             create_full_backup,
+            inspect_full_backup,
             create_backup,
             list_backups,
             restore_backup,

@@ -5701,7 +5701,7 @@ async function renderBackups() {
         ${backups.length ? backups.map(b => `
           <article class="backup-row">
             <div><strong>${esc(b.name)}</strong><small>${esc(b.modified)} • ${(b.size/1024/1024).toFixed(2)} MB</small></div>
-            <button class="btn danger-outline small" data-restore-backup="${esc(b.path)}">استعادة هذه النسخة</button>
+            ${b.name.toLowerCase().endsWith(".zip") ? `<button class="btn ghost small" data-inspect-zip="${esc(b.path)}">فحص نسخة ZIP</button>` : `<button class="btn danger-outline small" data-restore-backup="${esc(b.path)}">استعادة هذه النسخة</button>`}
           </article>
         `).join('') : `<div class="empty-block">لا توجد نسخ احتياطية حتى الآن</div>`}
       </div>
@@ -5727,6 +5727,12 @@ async function renderBackups() {
   document.querySelector<HTMLButtonElement>('#openBackupFolder')!.onclick = async () => {
     await invoke('open_backup_folder');
   };
+  document.querySelectorAll<HTMLButtonElement>('[data-inspect-zip]').forEach(b => b.onclick = async () => {
+    b.disabled=true;
+    try {const message=await invoke<string>('inspect_full_backup',{path:b.dataset.inspectZip});toast(message);}
+    catch(e){toast(`فشل فحص ZIP: ${String(e)}`,'error');}
+    finally{b.disabled=false;}
+  });
   document.querySelectorAll<HTMLButtonElement>('[data-restore-backup]').forEach(b => b.onclick = async () => {
     if (!confirm('سيتم استبدال قاعدة البيانات الحالية بهذه النسخة. تم إنشاء نسخة أمان تلقائيًا قبل الاستعادة. هل تريد المتابعة؟')) return;
     try {
