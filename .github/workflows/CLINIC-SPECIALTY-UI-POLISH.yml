@@ -1,0 +1,155 @@
+name: Clinic Specialty Cards - UI Polish and Windows EXE
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: clinic-specialty-ui-polish
+  cancel-in-progress: false
+jobs:
+  deliver:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Apply scoped specialty-card CSS only
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          p=Path('src/style.css')
+          s=p.read_text(encoding='utf-8')
+          marker='/* Specialty dashboard polish: keep existing imagery, ordering and branding */'
+          if marker in s: raise SystemExit('Polish already applied: refusing duplicate patch')
+          patch = r'''
+          /* Specialty dashboard polish: keep existing imagery, ordering and branding */
+          .specialty-home-v7110 #specialtyGridHome {
+            gap: 11px !important;
+          }
+          .specialty-home-v7110 #specialtyGridHome .hologram-specialty-card {
+            height: 194px !important;
+            min-height: 194px !important;
+            padding: 12px 9px 13px !important;
+            gap: 9px !important;
+            border-radius: 18px !important;
+            transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease !important;
+          }
+          .specialty-home-v7110 #specialtyGridHome .hologram-specialty-card:hover {
+            transform: translateY(-3px) !important;
+            border-color: #83bcd8 !important;
+            box-shadow: 0 10px 24px rgba(21,72,108,.13) !important;
+          }
+          .specialty-home-v7110 #specialtyGridHome .specialty-hologram-icon {
+            width: 124px !important;
+            height: 124px !important;
+            min-width: 124px !important;
+            min-height: 124px !important;
+            flex: 0 0 124px !important;
+            margin: 0 auto !important;
+            border: none !important;
+            background: transparent !important;
+            overflow: hidden !important;
+          }
+          .specialty-home-v7110 #specialtyGridHome .specialty-hologram-icon img {
+            display: block !important;
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: contain !important;
+            object-position: center !important;
+          }
+          .specialty-home-v7110 #specialtyGridHome .specialty-card-copy {
+            min-height: 29px !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+          }
+          .specialty-home-v7110 #specialtyGridHome .specialty-card-copy strong {
+            max-width: 100% !important;
+            font-size: 13px !important;
+            line-height: 1.45 !important;
+            white-space: normal !important;
+            overflow-wrap: anywhere !important;
+          }
+          .specialty-home-v7110 #specialtyGridHome:has(> :last-child:nth-child(7n + 3)) > :nth-last-child(3) {
+            grid-column: 3;
+          }
+          @media (max-width: 1380px) {
+            .specialty-home-v7110 #specialtyGridHome:has(> :last-child:nth-child(7n + 3)) > :nth-last-child(3) {
+              grid-column: auto;
+            }
+          }
+          @media (max-width: 900px) {
+            .specialty-home-v7110 #specialtyGridHome .hologram-specialty-card {
+              height: 178px !important;
+              min-height: 178px !important;
+            }
+            .specialty-home-v7110 #specialtyGridHome .specialty-hologram-icon {
+              width: 105px !important;
+              height: 105px !important;
+              min-width: 105px !important;
+              min-height: 105px !important;
+              flex-basis: 105px !important;
+            }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .specialty-home-v7110 #specialtyGridHome .hologram-specialty-card {
+              transition: none !important;
+            }
+          }
+          '''
+          assert '#specialtyGridHome' in patch and 'specialty-home-v7110' in patch
+          p.write_text(s+'\n'+patch,encoding='utf-8')
+          print('Scoped dashboard CSS applied. Other source files unchanged.')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate source and build UI
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $changed=@(git diff --name-only)
+          if ($changed.Count -ne 1 -or $changed[0] -ne 'src/style.css') { throw "Unexpected source changes: $changed" }
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files=@(Get-ChildItem 'src-tauri/target/release/bundle/nsis' -File -Filter '*.exe')
+          if ($files.Count -ne 1) { throw 'Expected exactly one NSIS installer' }
+          Copy-Item -LiteralPath $files[0].FullName -Destination 'Clinic-Cases-Windows-Setup.exe'
+          $hash=(Get-FileHash 'Clinic-Cases-Windows-Setup.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Clinic-Cases-Windows-Setup.exe" | Set-Content 'Clinic-Cases-Windows-Setup.exe.sha256' -Encoding ascii
+      - name: Commit tested CSS only
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- src/style.css
+          git commit -m 'Polish specialty cards without changing medical images or features'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git fetch origin main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git rebase origin/main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish verified installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag="clinic-specialty-ui-polish-$($env:GITHUB_RUN_ID)"
+          gh release create $tag 'Clinic-Cases-Windows-Setup.exe' 'Clinic-Cases-Windows-Setup.exe.sha256' --target main --title 'Clinic Cases - Specialty Dashboard Polish' --notes 'UI-only CSS improvement to specialty cards: larger consistently fitted existing medical images, balanced card spacing, subtle hover, and final-row alignment. No database, doctors, PIN or existing patient records changed.'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Setup.exe" >> $env:GITHUB_STEP_SUMMARY
