@@ -1,0 +1,113 @@
+name: Clinic V7.1.43 - Integration Gate and Direct EXE
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  verify-and-publish:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test linked cashier records in isolated SQLite
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import re, sqlite3
+          source=Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')
+          ui=Path('src/main.ts').read_text(encoding='utf-8')
+          start=source.index('fn cashier_items_for_range(')
+          end=source.index('\n#[tauri::command]',start)
+          match=re.search(r'let sql=r#"(.*?)"#;',source[start:end],re.S)
+          assert match, 'Missing cashier SQL'
+          sql=match.group(1)
+          assert 'TransactionBehavior::Immediate' in source[source.index('fn record_cashier_payment('):source.index('\nfn finance_source_label')], 'Atomic payment fix missing'
+          assert 'fn restore_backup(' in source and 'PRAGMA integrity_check' in source, 'Backup validation missing'
+          assert 'all.filter(isPhysioOrder)' in ui, 'Physiotherapy UI filter missing'
+          db=sqlite3.connect(':memory:')
+          db.executescript('''
+          CREATE TABLE patients(id TEXT PRIMARY KEY,full_name TEXT,phone TEXT,deleted_at TEXT DEFAULT '',archived INTEGER DEFAULT 0);
+          CREATE TABLE visits(id TEXT,patient_id TEXT,visit_type TEXT,doctor TEXT,visit_date TEXT,visit_time TEXT,fee TEXT,booking_source TEXT);
+          CREATE TABLE lab_orders(id TEXT,patient_id TEXT,order_date TEXT,order_time TEXT,net_total TEXT,paid_amount TEXT);
+          CREATE TABLE nursing_orders(id TEXT,patient_id TEXT,service_name TEXT,order_date TEXT,order_time TEXT,price TEXT);
+          CREATE TABLE radiology_orders(id TEXT,patient_id TEXT,radiology_name TEXT,order_date TEXT,order_time TEXT,net_total TEXT);
+          CREATE TABLE service_cases(id TEXT,patient_id TEXT,service_key TEXT,service_name TEXT,case_date TEXT,case_time TEXT,fee TEXT);
+          CREATE TABLE cashier_payments(id TEXT,patient_id TEXT,service_type TEXT,service_id TEXT,amount TEXT,payment_method TEXT,notes TEXT,created_at TEXT);
+          INSERT INTO patients(id,full_name,phone) VALUES('p1','Synthetic Patient','010');
+          INSERT INTO visits VALUES('v1','p1','كشف','دكتور','2026-10-12','10:00','200','عادي');
+          INSERT INTO lab_orders VALUES('l1','p1','2026-10-12','11:00','150','25');
+          INSERT INTO nursing_orders VALUES('n1','p1','تمريض','2026-10-12','12:00','100');
+          INSERT INTO nursing_orders VALUES('f1','p1','@@PHYSIO@@جلسة','2026-10-12','13:00','300');
+          INSERT INTO radiology_orders VALUES('r1','p1','أشعة','2026-10-12','14:00','220');
+          INSERT INTO service_cases VALUES('e1','p1','emergency','طوارئ','2026-10-12','15:00','80');
+          INSERT INTO service_cases VALUES('o1','p1','others','خدمة أخرى','2026-10-12','16:00','60');
+          INSERT INTO cashier_payments VALUES('c1','p1','clinic','v1','50','نقدي','','2026-10-12');
+          INSERT INTO cashier_payments VALUES('c2','p1','physio','f1','100','نقدي','','2026-10-12');
+          INSERT INTO cashier_payments VALUES('c3','p1','emergency','e1','30','نقدي','','2026-10-12');
+          ''')
+          rows=db.execute(sql,('2026-10-12','2026-10-12')).fetchall()
+          items={row[1]:row for row in rows}
+          assert len(rows)==7, f'Expected 7 linked services, got {len(rows)}'
+          types={r[0] for r in rows}
+          assert types=={'clinic','lab','nursing','physio','radiology','emergency','others'},types
+          assert (float(items['v1'][11]),float(items['v1'][12]))==(200,50)
+          assert (float(items['l1'][11]),float(items['l1'][12]))==(150,25)
+          assert (float(items['f1'][11]),float(items['f1'][12]))==(300,100)
+          assert (float(items['e1'][11]),float(items['e1'][12]))==(80,30)
+          assert sum(float(r[11]) for r in rows)==1110
+          assert sum(float(r[12]) for r in rows)==205
+          db.execute("UPDATE patients SET archived=1 WHERE id='p1'")
+          assert len(db.execute(sql,('2026-10-12','2026-10-12')).fetchall())==7, 'Archive lost historical money'
+          db.execute("UPDATE patients SET deleted_at='2026-10-13' WHERE id='p1'")
+          assert not db.execute(sql,('2026-10-12','2026-10-12')).fetchall(), 'Trash included in cashier'
+          print('PASS: seven linked departments, payment sums, archive and trash')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Frontend build and Rust tests
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile Windows offline installer
+        shell: pwsh
+        run: |
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Prepare setup and checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(Get-ChildItem 'src-tauri/target/release/bundle/nsis' -File -Filter '*.exe')
+          if ($files.Count -ne 1) { throw "Expected one installer, got $($files.Count)" }
+          Copy-Item -LiteralPath $files[0].FullName -Destination 'Clinic-Cases-Windows-Setup.exe'
+          $sha=(Get-FileHash 'Clinic-Cases-Windows-Setup.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$sha  Clinic-Cases-Windows-Setup.exe" | Set-Content 'Clinic-Cases-Windows-Setup.exe.sha256' -Encoding ascii
+          $v=(Get-Content 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json).version
+          if ($v -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
+          $tag="v$v-integration-$($env:GITHUB_SHA.Substring(0,7))"
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+          '## V7.1.43 integration gate' >> $env:GITHUB_STEP_SUMMARY
+          '- Synthetic seven-service cashier integration: passed' >> $env:GITHUB_STEP_SUMMARY
+          '- Frontend and Rust tests, offline Windows build: passed' >> $env:GITHUB_STEP_SUMMARY
+          '- This does not replace real-world patient workflow and backup restore tests.' >> $env:GITHUB_STEP_SUMMARY
+          "- Installer size: $([math]::Round($files[0].Length/1MB,2)) MB" >> $env:GITHUB_STEP_SUMMARY
+          "- Direct EXE: https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Setup.exe" >> $env:GITHUB_STEP_SUMMARY
+      - name: Publish directly downloadable EXE
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$env:RELEASE_TAG" 'Clinic-Cases-Windows-Setup.exe' 'Clinic-Cases-Windows-Setup.exe.sha256' --target "$env:GITHUB_SHA" --title "Clinic Cases Integration-Checked $env:RELEASE_TAG" --notes 'Integration-gated Windows offline installer. App version unchanged. Tests include seven departments on synthetic data, frontend, Rust and NSIS compilation. Manual real-data testing is still required.'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
