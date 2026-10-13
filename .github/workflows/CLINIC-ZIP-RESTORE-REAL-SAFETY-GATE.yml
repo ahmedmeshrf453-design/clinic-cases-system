@@ -1,0 +1,114 @@
+name: Clinic ZIP Restore - Real Safety Gate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  safety-gate:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run isolated ZIP restoration and rollback simulations
+        shell: pwsh
+        run: |
+          @'
+          import io, os, sqlite3, tempfile, zipfile
+          from pathlib import Path
+          def make_db(path, who):
+              con = sqlite3.connect(path)
+              con.execute('CREATE TABLE patients (id TEXT PRIMARY KEY, name TEXT NOT NULL)')
+              con.execute('INSERT INTO patients VALUES (?,?)',('p1',who))
+              con.commit(); con.close()
+          def check_db(path):
+              con=sqlite3.connect(path)
+              ok=con.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
+              name=con.execute('SELECT name FROM patients WHERE id=?',('p1',)).fetchone()[0]
+              con.close()
+              return ok,name
+          def validate_extract(archive_path, stage):
+              with zipfile.ZipFile(archive_path) as z:
+                  seen=set(); total=0
+                  if len(z.infolist())>10000: raise ValueError('Too many entries')
+                  for item in z.infolist():
+                      name=item.filename
+                      parts=name.replace('\\','/').split('/')
+                      if item.is_dir(): continue
+                      if (name.startswith('/') or name.startswith('\\') or ':' in name or '..' in parts or not name or any(not p for p in parts)):
+                          raise ValueError('Unsafe entry')
+                      if not (name=='database/clinic-cases.db' or name=='security/recovery-code.txt' or name.startswith('attachments/')):
+                          raise ValueError('Unknown entry')
+                      if name in seen: raise ValueError('Duplicate entry')
+                      seen.add(name)
+                      total+=item.file_size
+                      if total>50*1024*1024: raise ValueError('Too large')
+                      mode=item.external_attr >> 16
+                      if mode & 0o170000 == 0o120000: raise ValueError('Symlink')
+                      target=stage.joinpath(*parts)
+                      target.parent.mkdir(parents=True,exist_ok=True)
+                      with z.open(item) as src, open(target,'wb') as out:
+                          while data:=src.read(1024*1024): out.write(data)
+              if 'database/clinic-cases.db' not in seen: raise ValueError('No DB')
+              return seen
+          with tempfile.TemporaryDirectory() as work:
+              root=Path(work); live=root/'live';live.mkdir()
+              make_db(live/'clinic-cases.db','ORIGINAL')
+              attach=live/'attachments'/'p1';attach.mkdir(parents=True)
+              (attach/'scan.pdf').write_bytes(b'ORIGINAL-SCAN')
+              code=live/'recovery-code.txt';code.write_text('ORIGINAL-RECOVERY')
+              source=root/'source.db';make_db(source,'RESTORED')
+              good=root/'good.zip'
+              with zipfile.ZipFile(good,'w',zipfile.ZIP_DEFLATED) as z:
+                  z.write(source,'database/clinic-cases.db')
+                  z.writestr('attachments/p1/scan.pdf',b'RESTORED-SCAN')
+                  z.writestr('security/recovery-code.txt','RESTORED-RECOVERY')
+              stage=root/'stage';stage.mkdir()
+              assert len(validate_extract(good,stage))==3
+              assert check_db(stage/'database'/'clinic-cases.db')==(True,'RESTORED')
+              # Exercise rollback of all three categories after an injected failure.
+              original={k:(live/k).read_bytes() for k in ['clinic-cases.db','recovery-code.txt']}
+              original_scan=(attach/'scan.pdf').read_bytes()
+              try:
+                  (live/'clinic-cases.db').write_bytes((stage/'database'/'clinic-cases.db').read_bytes())
+                  (attach/'scan.pdf').write_bytes(b'RESTORED-SCAN')
+                  raise RuntimeError('Injected failure during file swap')
+              except RuntimeError:
+                  for k,data in original.items(): (live/k).write_bytes(data)
+                  (attach/'scan.pdf').write_bytes(original_scan)
+              assert check_db(live/'clinic-cases.db')==(True,'ORIGINAL')
+              assert (attach/'scan.pdf').read_bytes()==b'ORIGINAL-SCAN'
+              assert code.read_text()=='ORIGINAL-RECOVERY'
+              # Negative ZIP cases.
+              bad_cases=[['../outside'],['database/clinic-cases.db','database/clinic-cases.db'],['evil.exe']]
+              for n,names in enumerate(bad_cases):
+                  bad=root/f'bad-{n}.zip'
+                  with zipfile.ZipFile(bad,'w') as z:
+                      for name in names:z.writestr(name,b'bad')
+                  try: validate_extract(bad,root/f'bad-stage-{n}')
+                  except ValueError: pass
+                  else: raise AssertionError('Unsafe ZIP accepted')
+              print('PASS: isolated ZIP extraction, DB integrity, attachment validation, recovery file, injected rollback, unsafe ZIP rejection')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build current program unchanged
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: State validation boundary
+        shell: pwsh
+        run: |
+          '## ZIP restore safety gate' >> $env:GITHUB_STEP_SUMMARY
+          '- PASS: isolated Python ZIP and injected rollback tests if job is green.' >> $env:GITHUB_STEP_SUMMARY
+          '- PASS: existing frontend build and Rust tests if job is green.' >> $env:GITHUB_STEP_SUMMARY
+          '- NOT TESTED: actual Rust restore operation, active SQLite handles, app restart, Windows process interruption.' >> $env:GITHUB_STEP_SUMMARY
+          '- No app source edited, no patient data accessed, no release published.' >> $env:GITHUB_STEP_SUMMARY
