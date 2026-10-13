@@ -1,0 +1,83 @@
+name: Clinic Final ZIP Restore Delivery Fixed
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: clinic-final-restore-delivery
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Execute corrected final delivery pipeline
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check PyYAML
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @'
+          from pathlib import Path
+          import re,subprocess,sys
+          import yaml
+          original=Path('.github/workflows/CLINIC-FINAL-ZIP-RESTORE-DELIVERY.yml')
+          pipeline=yaml.safe_load(original.read_text(encoding='utf-8'))
+          steps=pipeline['jobs']['release']['steps']
+          wanted=[
+            'Apply previously tested offline Rust restore worker',
+            'Run actual native Windows ZIP restore integration tests',
+            'Run force-kill and rollback test on actual worker',
+            'Remove test-only changes from shipping code',
+            'Check and build final Windows installer',
+            'Commit tested production changes',
+            'Publish final EXE and checksum',
+          ]
+          actual=[s.get('name') for s in steps if s.get('name')]
+          if actual!=wanted:
+              raise SystemExit(f'Unexpected delivery steps: {actual}')
+          for i,step in enumerate(steps):
+              if 'name' not in step: continue
+              title=step['name']
+              script=step['run']
+              if title=='Run force-kill and rollback test on actual worker':
+                  # Remove the duplicate, incorrectly indented probe that raised
+                  # "Crash fixture source structure changed" before the real probe.
+                  broken='''          marker="          p=Path('src-tauri/src/lib.rs')"
+          index=script.find(marker)
+          if index < 0: raise SystemExit('Crash fixture source structure changed')
+          '''
+                  if broken in script:
+                      script=script.replace(broken,'',1)
+                  else:
+                      script=re.sub(r'(?m)^\s*marker="          p=Path\(\x27src-tauri/src/lib.rs\x27\)"\n\s*index=script.find\(marker\)\n\s*if index < 0: raise SystemExit\(\x27Crash fixture source structure changed\x27\)\n','',script,count=1)
+                  if 'Crash fixture source structure changed' in script:
+                      raise SystemExit('Broken probe still present; abort before commit')
+              # PowerShell scripts execute sequentially in the same checkout.
+              # Explicitly halt if any test/build/commit/release step fails.
+              shell=step.get('shell','pwsh')
+              if shell=='bash':
+                  dest=Path(f'.github-delivery-step-{i}.sh')
+                  dest.write_text('set -euo pipefail\n'+script+'\n',encoding='utf-8')
+                  command=['bash',str(dest)]
+              else:
+                  dest=Path(f'.github-delivery-step-{i}.ps1')
+                  dest.write_text('$ErrorActionPreference = "Stop"\n'+script+'\n',encoding='utf-8-sig')
+                  command=['pwsh','-NoProfile','-NonInteractive','-File',str(dest)]
+              print(f'RUN: {title}',flush=True)
+              result=subprocess.run(command,check=False)
+              if result.returncode!=0:
+                  raise SystemExit(f'FAILED: {title}, exit={result.returncode}')
+              print(f'PASS: {title}',flush=True)
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
