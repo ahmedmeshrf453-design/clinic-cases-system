@@ -1,0 +1,161 @@
+name: Clinic ZIP Restore - Actual Rust Integration Tests
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Apply offline restore code only in disposable CI checkout
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import re,sys,subprocess,textwrap
+          source=Path('.github/workflows/CLINIC-ZIP-OFFLINE-RESTORE-BUILD-CHECK.yml').read_text(encoding='utf-8')
+          m=re.search(r"(?ms)^          @'\r?\n(.*?)\r?\n          '@ \| python -",source)
+          if not m: raise SystemExit('Cannot locate proposed Rust worker patch')
+          code=textwrap.dedent(m.group(1))
+          compile(code,'original-worker-patch','exec')
+          subprocess.run([sys.executable,'-c',code],check=True)
+          p=Path('src-tauri/src/lib.rs')
+          assert 'fn restore_zip_worker(' in p.read_text(encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Add real Rust restore and rollback integration tests
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          p=Path('src-tauri/src/lib.rs')
+          s=p.read_text(encoding='utf-8')
+          assert 'mod offline_restore_integration_gate' not in s
+          tests=r'''
+          #[cfg(test)]
+          mod offline_restore_integration_gate {
+              use super::*;
+              use zip::write::SimpleFileOptions;
+              fn scratch() -> PathBuf {
+                  let p=std::env::temp_dir().join(format!("clinic-restore-test-{}",Uuid::new_v4()));
+                  fs::create_dir_all(&p).unwrap();p
+              }
+              fn make_archive(source_db:&Path,backup:&Path,include_scan:bool,include_pin:bool) -> PathBuf {
+                  use std::io::Write;
+                  let target=backup.join("test-full.zip");
+                  let mut z=zip::ZipWriter::new(fs::File::create(&target).unwrap());
+                  let options=SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+                  z.start_file("database/clinic-cases.db",options).unwrap();
+                  z.write_all(&fs::read(source_db).unwrap()).unwrap();
+                  if include_scan {
+                      z.start_file("attachments/any-folder/sample.txt",options).unwrap();
+                      z.write_all(b"RESTORED_ATTACHMENT").unwrap();
+                  }
+                  if include_pin {
+                      z.start_file("security/recovery-code.txt",options).unwrap();
+                      z.write_all(b"RESTORED_PIN_RECOVERY").unwrap();
+                  }
+                  z.finish().unwrap();target
+              }
+              fn read_user_version(path:&Path) -> i64 {
+                  Connection::open(path).unwrap().query_row("PRAGMA user_version",[],|r|r.get(0)).unwrap()
+              }
+              #[test]
+              fn restores_real_db_attachments_and_recovery_from_zip() {
+                  let root=scratch();let data=root.join("data");let backup=root.join("backups");
+                  fs::create_dir_all(&data).unwrap();fs::create_dir_all(&backup).unwrap();
+                  let live=data.join("clinic-cases.db");init_db(&live).unwrap();
+                  let original=Connection::open(&live).unwrap();original.execute_batch("PRAGMA user_version=7;").unwrap();drop(original);
+                  let old_scan=data.join("patient-attachments");fs::create_dir_all(&old_scan).unwrap();
+                  fs::write(old_scan.join("old.txt"),b"ORIGINAL_ATTACHMENT").unwrap();
+                  let code=backup.join(SECURITY_RECOVERY_FILE_NAME);fs::write(&code,b"ORIGINAL_PIN_RECOVERY").unwrap();
+                  let newdb=root.join("new.db");fs::copy(&live,&newdb).unwrap();
+                  let restored=Connection::open(&newdb).unwrap();restored.execute_batch("PRAGMA user_version=42;").unwrap();drop(restored);
+                  let archive=make_archive(&newdb,&backup,true,true);
+                  restore_zip_worker(&data,&backup,&archive).unwrap();
+                  assert_eq!(read_user_version(&live),42);
+                  assert_eq!(fs::read(data.join("patient-attachments/any-folder/sample.txt")).unwrap(),b"RESTORED_ATTACHMENT");
+                  assert!(!data.join("patient-attachments/old.txt").exists());
+                  assert_eq!(fs::read(&code).unwrap(),b"RESTORED_PIN_RECOVERY");
+                  assert!(!restore_marker(&data).exists());
+                  let _=fs::remove_dir_all(&root);
+              }
+              #[test]
+              fn rejects_corrupt_zip_and_preserves_existing_live_data() {
+                  let root=scratch();let data=root.join("data");let backup=root.join("backups");
+                  fs::create_dir_all(&data).unwrap();fs::create_dir_all(&backup).unwrap();
+                  let live=data.join("clinic-cases.db");init_db(&live).unwrap();
+                  Connection::open(&live).unwrap().execute_batch("PRAGMA user_version=7;").unwrap();
+                  let attachments=data.join("patient-attachments");fs::create_dir_all(&attachments).unwrap();
+                  fs::write(attachments.join("original.txt"),b"SAFE").unwrap();
+                  let archive=backup.join("bad.zip");fs::write(&archive,b"not a ZIP").unwrap();
+                  assert!(restore_zip_worker(&data,&backup,&archive).is_err());
+                  assert_eq!(read_user_version(&live),7);
+                  assert_eq!(fs::read(attachments.join("original.txt")).unwrap(),b"SAFE");
+                  assert!(!restore_marker(&data).exists());
+                  let _=fs::remove_dir_all(&root);
+              }
+              #[test]
+              fn rollback_restores_all_three_live_file_categories() {
+                  let root=scratch();let data=root.join("data");let backup=root.join("backups");
+                  fs::create_dir_all(&data).unwrap();fs::create_dir_all(&backup).unwrap();
+                  let live=data.join("clinic-cases.db");init_db(&live).unwrap();
+                  Connection::open(&live).unwrap().execute_batch("PRAGMA user_version=7;").unwrap();
+                  let attachments=data.join("patient-attachments");fs::create_dir_all(&attachments).unwrap();
+                  fs::write(attachments.join("old.txt"),b"ORIGINAL_SCAN").unwrap();
+                  let code=backup.join(SECURITY_RECOVERY_FILE_NAME);fs::write(&code,b"ORIGINAL_CODE").unwrap();
+                  let id=Uuid::new_v4().to_string();let stage=data.join(format!(".clinic-full-restore-{}",id));
+                  let old=stage.join("original");fs::create_dir_all(&old).unwrap();
+                  fs::copy(&live,old.join("db")).unwrap();
+                  restore_copy_tree(&attachments,&old.join("attachments")).unwrap();
+                  fs::copy(&code,old.join("recovery-code.txt")).unwrap();
+                  fs::write(stage.join("recovery-target.txt"),code.to_string_lossy().as_bytes()).unwrap();
+                  fs::write(restore_marker(&data),id.as_bytes()).unwrap();
+                  Connection::open(&live).unwrap().execute_batch("PRAGMA user_version=42;").unwrap();
+                  fs::remove_file(attachments.join("old.txt")).unwrap();
+                  fs::write(attachments.join("new.txt"),b"BAD_NEW_SCAN").unwrap();
+                  fs::write(&code,b"BAD_NEW_CODE").unwrap();
+                  restore_rollback(&data).unwrap();
+                  assert_eq!(read_user_version(&live),7);
+                  assert_eq!(fs::read(attachments.join("old.txt")).unwrap(),b"ORIGINAL_SCAN");
+                  assert!(!attachments.join("new.txt").exists());
+                  assert_eq!(fs::read(&code).unwrap(),b"ORIGINAL_CODE");
+                  assert!(!restore_marker(&data).exists());
+                  let _=fs::remove_dir_all(&root);
+              }
+          }
+          '''
+          p.write_text(s+'\n'+tests,encoding='utf-8')
+          print('Three native Rust integration tests attached to disposable checkout')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run actual native restore and rollback tests
+        shell: pwsh
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --locked offline_restore_integration_gate -- --test-threads=1 --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Existing test suite and frontend
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: State test boundary
+        shell: pwsh
+        run: |
+          '## Native Rust ZIP restoration gate' >> $env:GITHUB_STEP_SUMMARY
+          'When green: real Rust restore, invalid ZIP, and rollback functions passed on synthetic Windows data.' >> $env:GITHUB_STEP_SUMMARY
+          'Still untested: forcibly terminated process during actual file replacement; not production-approved.' >> $env:GITHUB_STEP_SUMMARY
+          'No files committed and no installer or release published.' >> $env:GITHUB_STEP_SUMMARY
