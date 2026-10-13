@@ -1,0 +1,90 @@
+name: Clinic Sidebar Items to Settings
+'on':
+  workflow_dispatch: null
+permissions:
+  contents: write
+jobs:
+  deliver:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: main
+        fetch-depth: 0
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Move admin links into settings only
+      shell: pwsh
+      run: "@'\nfrom pathlib import Path\np=Path('src/main.ts')\ns=p.read_text(encoding='utf-8')\nitems=[('finance','\U0001F4CA','التقارير المالية'),('alerts','\U0001F514','التنبيهات'),('audit','\U0001F9FE','Audit Log'),('security','\U0001F510','الحماية'),('reports','▤','التقارير'),('archive','▣','الأرشيف'),('trash','\U0001F5D1','سلة المحذوفات'),('backups','⟳','النسخ الاحتياطية')]\nfor key,icon,label in items:\n    line=\"          ${navButton('\"+key+\"','\"+icon+\"','\"+label+\"')}\\n\"\n    assert s.count(line)==1, f'Missing or duplicate sidebar entry: {label}'\n    s=s.replace(line,'',1)\n# Keep only 'Settings' as administrative item in the sidebar.\n# The service hub should also route these through settings, not repeat shortcuts.\na=s.index('function serviceDockHtml()');b=s.index('function shell(',a)\nhub=s[a:b]\nfor key in ('finance','alerts','audit','reports','archive','trash','backups'):\n    matches=[line for line in hub.splitlines(keepends=True) if \"${nav('\"+key+\"',\" in line]\n    assert len(matches)==1,(key,matches)\n    hub=hub.replace(matches[0],'',1)\ns=s[:a]+hub+s[b:]\nanchor='      <form id=\"settingsForm\" class=\"settings-sections\">'\nassert s.count(anchor)==1\ncards='''      <section class=\"settings-tools-card\" aria-label=\"إدارة النظام\">\n        <h3>إدارة النظام</h3>\n        <p>التقارير والنسخ الاحتياطية والحماية والأرشيف في مكان واحد.</p>\n        <div class=\"settings-tools-grid\">\n          ${[\n            ['finance','\U0001F4CA','التقارير المالية'],\n            ['alerts','\U0001F514','التنبيهات'],\n            ['audit','\U0001F9FE','Audit Log'],\n            ['security','\U0001F510','الحماية'],\n            ['reports','▤','التقارير'],\n            ['archive','▣','الأرشيف'],\n            ['trash','\U0001F5D1','سلة المحذوفات'],\n            ['backups','⟳','النسخ الاحتياطية']\n          ].map(([key,icon,label])=>`<button class=\"settings-tool-link\" type=\"button\" data-settings-go=\"${key}\"><span class=\"settings-tool-icon\">${icon}</span><strong>${label}</strong><span\
+        \ class=\"settings-tool-arrow\">←</span></button>`).join('')}\n        </div>\n      </section>\n\n'''\ns=s.replace(anchor,cards+anchor,1)\n# Register new buttons after shell() has rendered and before form event wiring.\nanchor=\"  document.querySelector<HTMLFormElement>('#settingsForm')!.onsubmit = async e => {\"\nassert s.count(anchor)==1\ns=s.replace(anchor,\"  document.querySelectorAll<HTMLButtonElement>('[data-settings-go]').forEach(btn => {\\n    btn.onclick = () => navigate(btn.dataset.settingsGo as Screen);\\n  });\\n\\n\"+anchor,1)\np.write_text(s,encoding='utf-8')\ncss=Path('src/style.css')\nassert '/* Admin links in Settings: October 2026 */' not in css.read_text(encoding='utf-8')\ncss.write_text(css.read_text(encoding='utf-8')+'''\\n/* Admin links in Settings: October 2026 */\n.settings-tools-card{padding:17px 19px;border:1px solid #dce7ef;border-radius:17px;background:#fff;box-shadow:0 7px 20px rgba(20,52,77,.045);margin:14px 0}\n.settings-tools-card h3{margin:0 0 4px;font-size:18px;color:#173650}\n.settings-tools-card p{margin:0 0 14px;font-size:12px;color:#708a9a}\n.settings-tools-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}\n.settings-tool-link{display:flex;align-items:center;gap:9px;min-height:55px;padding:9px 12px;border:1px solid #d7e6ef;border-radius:12px;background:#f9fcfe;color:#173650;text-align:right;cursor:pointer;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}\n.settings-tool-link:hover{transform:translateY(-2px);border-color:#75b9d4;box-shadow:0 6px 17px rgba(20,83,118,.1)}\n.settings-tool-link:focus-visible{outline:2px solid #338bb1;outline-offset:2px}\n.settings-tool-link strong{font-size:12.5px;flex:1}\n.settings-tool-icon{width:34px;height:34px;display:grid;place-items:center;background:#eaf4fa;border-radius:9px;font-size:18px}\n.settings-tool-arrow{color:#7390a2}\n@media(prefers-reduced-motion:reduce){.settings-tool-link{transition:none}}\n''',encoding='utf-8')\n\
+        print('SUCCESS: sidebar navigation consolidated into settings, only UI files modified')\n'@ | python -\nif ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+    - name: Validate frontend and Rust
+      shell: pwsh
+      run: 'npm ci
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        npm run build
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $changed=@(git diff --name-only)
+
+        if ($changed.Count -ne 2 -or ($changed -notcontains ''src/main.ts'') -or ($changed -notcontains ''src/style.css'')) { throw "Unexpected changed files: $changed" }'
+    - name: Build Windows installer
+      shell: pwsh
+      run: 'npm run tauri -- build --bundles nsis
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $files=@(Get-ChildItem src-tauri/target/release/bundle/nsis -File -Filter ''*.exe'')
+
+        if ($files.Count -ne 1) { throw ''Expected exactly one installer'' }
+
+        Copy-Item -LiteralPath $files[0].FullName -Destination Clinic-Cases-Windows-Setup.exe
+
+        $hash=(Get-FileHash Clinic-Cases-Windows-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+
+        "$hash  Clinic-Cases-Windows-Setup.exe" | Set-Content Clinic-Cases-Windows-Setup.exe.sha256 -Encoding ascii'
+    - name: Commit tested layout
+      shell: pwsh
+      run: 'git config user.name ''github-actions[bot]''
+
+        git config user.email ''41898282+github-actions[bot]@users.noreply.github.com''
+
+        git add src/main.ts src/style.css
+
+        git commit -m ''Move administration links into Settings''
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        git fetch origin main
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        git rebase origin/main
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        git push origin HEAD:main
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+    - name: Publish installer
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: '$tag="clinic-settings-sidebar-$($env:GITHUB_RUN_ID)"
+
+        gh release create $tag Clinic-Cases-Windows-Setup.exe Clinic-Cases-Windows-Setup.exe.sha256 --target main --title ''Clinic Cases - Settings Navigation'' --notes ''Sidebar now keeps Settings while finance, alerts, audit, security, reports, archive, trash and backups are grouped within Settings. No database or PIN changes.''
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Setup.exe" >> $env:GITHUB_STEP_SUMMARY'
