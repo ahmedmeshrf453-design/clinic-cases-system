@@ -4009,6 +4009,152 @@ fn inspect_full_backup(state: State<AppState>, path: String) -> Result<String, S
     result
 }
 
+// Offline ZIP restore worker. Runs only after the normal application exits.
+fn restore_copy_tree(from: &Path, to: &Path) -> Result<(), String> {
+    fs::create_dir_all(to).map_err(|e| e.to_string())?;
+    for item in fs::read_dir(from).map_err(|e| e.to_string())? {
+        let path=item.map_err(|e| e.to_string())?.path();
+        if path.is_symlink() { return Err("Unsupported symbolic link".into()); }
+        let dest=to.join(path.file_name().ok_or("Invalid path")?);
+        if path.is_dir() {restore_copy_tree(&path,&dest)?;}
+        else {fs::copy(&path,&dest).map_err(|e|e.to_string())?;}
+    }
+    Ok(())
+}
+fn restore_marker(data_dir:&Path)->PathBuf {data_dir.join(".clinic-full-restore-pending")}
+fn restore_rollback(data_dir:&Path)->Result<(),String>{
+    let marker=restore_marker(data_dir);
+    if !marker.exists(){return Ok(());}
+    let id=fs::read_to_string(&marker).map_err(|e|e.to_string())?;
+    let id=id.trim();
+    if id.len()!=36 || !id.chars().all(|c|c.is_ascii_hexdigit()||c=='-') {return Err("Unsafe restore marker".into());}
+    let stage=data_dir.join(format!(".clinic-full-restore-{}",id));
+    let old=stage.join("original");
+    if !old.join("db").exists() {return Err("Restore rollback copy is missing; stop before opening database".into());}
+    let db=data_dir.join("clinic-cases.db");
+    let attachments=data_dir.join("patient-attachments");
+    let recovery=stage.join("recovery-target.txt");
+    let oldattachments=old.join("attachments");
+    let oldcode=old.join("recovery-code.txt");
+    // Recovery target is recorded before modifications, never provided by the archive.
+    let target_code=PathBuf::from(fs::read_to_string(&recovery).map_err(|e|e.to_string())?);
+    for name in ["clinic-cases.db-wal","clinic-cases.db-shm"] {let _=fs::remove_file(data_dir.join(name));}
+    fs::copy(old.join("db"),&db).map_err(|e|format!("Cannot restore original database: {}",e))?;
+    if attachments.exists(){fs::remove_dir_all(&attachments).map_err(|e|e.to_string())?;}
+    if oldattachments.exists(){restore_copy_tree(&oldattachments,&attachments)?;}
+    else {fs::create_dir_all(&attachments).map_err(|e|e.to_string())?;}
+    if target_code.exists(){fs::remove_file(&target_code).map_err(|e|e.to_string())?;}
+    if oldcode.exists(){fs::copy(&oldcode,&target_code).map_err(|e|e.to_string())?;}
+    for suffix in ["-wal","-shm"]{
+        let oldfile=old.join(format!("db{}",suffix));
+        if oldfile.exists(){fs::copy(oldfile,PathBuf::from(format!("{}{}",db.display(),suffix))).map_err(|e|e.to_string())?;}
+    }
+    fs::remove_file(&marker).map_err(|e|e.to_string())?;
+    let _=fs::remove_dir_all(stage);
+    Ok(())
+}
+fn restore_zip_worker(data_dir:&Path,backup_dir:&Path,source:&Path)->Result<(),String>{
+    use zip::ZipArchive;
+    use std::collections::HashSet;
+    if restore_marker(data_dir).exists(){restore_rollback(data_dir)?;}
+    let root=fs::canonicalize(backup_dir).map_err(|e|e.to_string())?;
+    let archivepath=fs::canonicalize(source).map_err(|e|e.to_string())?;
+    if !archivepath.starts_with(&root)||archivepath.extension().and_then(|e|e.to_str()).map(|e|!e.eq_ignore_ascii_case("zip")).unwrap_or(true){return Err("ZIP must be in backup directory".into());}
+    let id=Uuid::new_v4().to_string();
+    let stage=data_dir.join(format!(".clinic-full-restore-{}",id));
+    fs::create_dir_all(&stage).map_err(|e|e.to_string())?;
+    let attempt=(||->Result<(),String>{
+        let mut z=ZipArchive::new(fs::File::open(&archivepath).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
+        if z.len()==0||z.len()>100000{return Err("Invalid ZIP entry count".into());}
+        let mut found=HashSet::new();let mut total=0u64;
+        for i in 0..z.len(){
+            let mut item=z.by_index(i).map_err(|e|e.to_string())?;
+            if item.is_dir(){continue;}
+            let path=item.enclosed_name().ok_or("Invalid ZIP file path")?.to_path_buf();
+            let name=path.to_string_lossy().replace(std::path::MAIN_SEPARATOR,"/");
+            if !(name=="database/clinic-cases.db"||name=="security/recovery-code.txt"||name.starts_with("attachments/")){return Err("Unexpected ZIP entry".into());}
+            if !found.insert(name.clone()){return Err("Duplicate ZIP entry".into());}
+            if item.unix_mode().map(|m|m&0o170000==0o120000).unwrap_or(false){return Err("ZIP symlink forbidden".into());}
+            total=total.checked_add(item.size()).ok_or("Archive overflow")?;
+            if total>MAX_BACKUP_BYTES{return Err("ZIP too large".into());}
+            let target=stage.join(path);
+            fs::create_dir_all(target.parent().ok_or("Bad ZIP path")?).map_err(|e|e.to_string())?;
+            let mut f=fs::File::create(target).map_err(|e|e.to_string())?;
+            std::io::copy(&mut item,&mut f).map_err(|e|e.to_string())?;
+        }
+        let newdb=stage.join("database/clinic-cases.db");
+        if !found.contains("database/clinic-cases.db"){return Err("Missing database".into());}
+        let mut conn=Connection::open(&newdb).map_err(|e|e.to_string())?;
+        let result:String=conn.query_row("PRAGMA integrity_check",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if result!="ok"||!backup_schema_compatible(&conn)?{return Err("Bad database".into());}
+        let idcheck:i64=conn.query_row("PRAGMA application_id",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if idcheck!=0&&idcheck!=CLINIC_APPLICATION_ID{return Err("Wrong database application".into());}
+        let mut fk=conn.prepare("PRAGMA foreign_key_check").map_err(|e|e.to_string())?;
+        let mut rows=fk.query([]).map_err(|e|e.to_string())?;
+        if rows.next().map_err(|e|e.to_string())?.is_some(){return Err("Bad database references".into());}
+        drop(rows);drop(fk);
+        let mut changes=Vec::new();
+        {
+            let mut stmt=conn.prepare("SELECT id, patient_id, stored_path FROM patient_attachments").map_err(|e|e.to_string())?;
+            let rows=stmt.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e|e.to_string())?;
+            for row in rows {
+                let (id,pid,stored)=row.map_err(|e|e.to_string())?;
+                let basename=Path::new(&stored).file_name().ok_or("Bad attachment")?.to_string_lossy();
+                let relative=PathBuf::from(attachment_patient_storage_key(&pid)).join(basename.as_ref());
+                if !stage.join("attachments").join(&relative).is_file(){return Err("Missing patient attachment".into());}
+                changes.push((id,data_dir.join("patient-attachments").join(relative).to_string_lossy().into_owned()));
+            }
+        }
+        let pin=meta_value(&conn,"security_pin_hash","")?;
+        if !pin.is_empty()&&!found.contains("security/recovery-code.txt"){return Err("Missing PIN recovery".into());}
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        for (id,path) in changes{tx.execute("UPDATE patient_attachments SET stored_path=?1 WHERE id=?2",params![path,id]).map_err(|e|e.to_string())?;}
+        tx.commit().map_err(|e|e.to_string())?;
+        drop(conn);
+        let db=data_dir.join("clinic-cases.db");
+        let currentattachments=data_dir.join("patient-attachments");
+        let code=backup_dir.join(SECURITY_RECOVERY_FILE_NAME);
+        let old=stage.join("original");fs::create_dir_all(&old).map_err(|e|e.to_string())?;
+        // This section happens only after the original GUI process has exited.
+        fs::copy(&db,old.join("db")).map_err(|e|e.to_string())?;
+        for suffix in ["-wal","-shm"]{let live=PathBuf::from(format!("{}{}",db.display(),suffix));if live.exists(){fs::copy(live,old.join(format!("db{}",suffix))).map_err(|e|e.to_string())?;}}
+        if currentattachments.exists(){restore_copy_tree(&currentattachments,&old.join("attachments"))?;}
+        if code.exists(){fs::copy(&code,old.join("recovery-code.txt")).map_err(|e|e.to_string())?;}
+        fs::write(stage.join("recovery-target.txt"),code.to_string_lossy().as_bytes()).map_err(|e|e.to_string())?;
+        // Marker is persisted before changing any live file. Startup recovery uses the snapshot.
+        fs::write(restore_marker(data_dir),id.as_bytes()).map_err(|e|e.to_string())?;
+        for suffix in ["-wal","-shm"]{let f=PathBuf::from(format!("{}{}",db.display(),suffix));if f.exists(){fs::remove_file(f).map_err(|e|e.to_string())?;}}
+        fs::copy(&newdb,&db).map_err(|e|e.to_string())?;
+        if currentattachments.exists(){fs::remove_dir_all(&currentattachments).map_err(|e|e.to_string())?;}
+        if stage.join("attachments").exists(){restore_copy_tree(&stage.join("attachments"),&currentattachments)?;}
+        else{fs::create_dir_all(&currentattachments).map_err(|e|e.to_string())?;}
+        if code.exists(){fs::remove_file(&code).map_err(|e|e.to_string())?;}
+        if stage.join("security/recovery-code.txt").exists(){fs::copy(stage.join("security/recovery-code.txt"),&code).map_err(|e|e.to_string())?;}
+        let check=Connection::open(&db).map_err(|e|e.to_string())?;
+        let result:String=check.query_row("PRAGMA quick_check",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if result!="ok"{return Err("Post-restore database check failed".into());}
+        drop(check);
+        fs::remove_file(restore_marker(data_dir)).map_err(|e|e.to_string())?;
+        Ok(())
+    })();
+    if attempt.is_err() && restore_marker(data_dir).exists(){
+        if let Err(err)=restore_rollback(data_dir){return Err(format!("Restore failed and rollback requires attention: {}",err));}
+    }
+    if attempt.is_ok(){let _=fs::remove_dir_all(&stage);}
+    else if !restore_marker(data_dir).exists(){let _=fs::remove_dir_all(&stage);}
+    attempt
+}
+#[tauri::command]
+fn request_zip_restore(state:State<AppState>,app:tauri::AppHandle,path:String)->Result<(),String>{
+    let root=fs::canonicalize(&state.backup_dir).map_err(|e|e.to_string())?;
+    let source=fs::canonicalize(&path).map_err(|e|e.to_string())?;
+    if !source.starts_with(&root)||source.extension().and_then(|x|x.to_str())!=Some("zip"){return Err("Select a ZIP from backup folder".into());}
+    // Existing preflight validation must succeed before offering restore.
+    let exe=std::env::current_exe().map_err(|e|e.to_string())?;
+    Command::new(exe).arg("--restore-zip-worker").arg(&source).spawn().map_err(|e|e.to_string())?;
+    app.exit(0);
+    Ok(())
+}
 #[tauri::command]
 fn create_backup(state: State<AppState>) -> Result<BackupItem, String> {
     fs::create_dir_all(&state.backup_dir).map_err(|e| e.to_string())?;
@@ -4209,6 +4355,18 @@ pub fn run() {
             fs::create_dir_all(&data_dir)?;
 
             let db_path = data_dir.join("clinic-cases.db");
+            let restore_args:Vec<String>=std::env::args().collect();
+            if restore_args.iter().any(|a|a=="--restore-zip-worker") {
+                std::thread::sleep(std::time::Duration::from_secs(4));
+                let source=restore_args.last().ok_or("Restore ZIP source missing")?;
+                let documents_dir=app.path().document_dir().unwrap_or_else(|_|data_dir.clone());
+                let backup_dir=documents_dir.join("Clinic Cases Backups");
+                let result=restore_zip_worker(&data_dir,&backup_dir,Path::new(source));
+                let _=fs::write(data_dir.join("zip-restore-result.txt"),match &result{Ok(_)=>"ZIP restore completed".to_string(),Err(e)=>format!("ZIP restore failed: {}",e)});
+                app.handle().exit(if result.is_ok(){0}else{1});
+                return Ok(());
+            }
+            restore_rollback(&data_dir).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other,e))?;
             init_db(&db_path).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
             let documents_dir = app
@@ -4339,6 +4497,7 @@ pub fn run() {
             health_check,
             create_full_backup,
             inspect_full_backup,
+            request_zip_restore,
             create_backup,
             list_backups,
             restore_backup,
