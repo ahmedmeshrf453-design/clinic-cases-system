@@ -1,0 +1,114 @@
+name: Clinic AK Brand UI Safe Release
+'on':
+  workflow_dispatch: null
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: main
+        fetch-depth: 0
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Apply AK brand CSS safely
+      shell: pwsh
+      run: '@''
+
+        from pathlib import Path
+
+        import base64
+
+        p=Path(''src/style.css'')
+
+        s=p.read_text(encoding=''utf-8'')
+
+        marker=''AK_CLINIC_FULL_BRAND_20261014''
+
+        if marker in s: raise SystemExit(''Theme already exists; aborting duplicate update'')
+
+        css=base64.b64decode(''Ci8qIEFLX0NMSU5JQ19GVUxMX0JSQU5EXzIwMjYxMDE0IC0gc2FmZSB2aXN1YWwtb25seSB0aGVtZSAqLwo6cm9vdHstLWFrLW5hdnk6IzBhMmI0YTstLWFrLWRlZXA6IzBiMzc2MDstLWFrLXR1cnF1b2lzZTojMTliNGM4Oy0tYWstbGlnaHQ6I2VhZjhmYjstLWFrLWluazojMTkzYjU4fQouYXBwLXNoZWxsLm1vZGVybi1zaGVsbC12NjZ7YmFja2dyb3VuZDojZjBmNmZhIWltcG9ydGFudDtjb2xvcjp2YXIoLS1hay1pbmspfQoubW9kZXJuLXNpZGViYXJ7YmFja2dyb3VuZDpsaW5lYXItZ3JhZGllbnQoMTgwZGVnLCMwOTJjNGUsIzEwNDg3MikhaW1wb3J0YW50O2JvcmRlci1jb2xvcjojMTc0ZTcwIWltcG9ydGFudH0KLm1vZGVybi1zaWRlYmFyLWJyYW5ke2JvcmRlci1ib3R0b206MXB4IHNvbGlkIHJnYmEoMTM1LDIyNiwyMzUsLjIzKSFpbXBvcnRhbnR9Ci5tb2Rlcm4tc2lkZWJhciAubmF2e2JvcmRlci1yYWRpdXM6MTNweCFpbXBvcnRhbnQ7dHJhbnNpdGlvbjpiYWNrZ3JvdW5kIC4xN3MgZWFzZSxib3gtc2hhZG93IC4xN3MgZWFzZSFpbXBvcnRhbnR9Ci5tb2Rlcm4tc2lkZWJhciAubmF2OmhvdmVyLC5tb2Rlcm4tc2lkZWJhciAubmF2LmFjdGl2ZXtiYWNrZ3JvdW5kOnJnYmEoNDAsMTk2LDIxNiwuMTgpIWltcG9ydGFudDtib3gtc2hhZG93Omluc2V0IDNweCAwIDAgdmFyKC0tYWstdHVycXVvaXNlKSFpbXBvcnRhbnR9Ci5tb2Rlcm4tc2lkZWJhciAubmF2LWxhYmVsLC5tb2Rlcm4tc2lkZWJhciAubmF2LWljb257Y29sb3I6I2Y2ZmNmZiFpbXBvcnRhbnR9Ci5tb2Rlcm4tbWFpbntiYWNrZ3JvdW5kOnJhZGlhbC1ncmFkaWVudChjaXJjbGUgYXQgODUlIDEyJSxyZ2JhKDMxLDE4MywyMDgsLjA3KSx0cmFuc3BhcmVudCAzMiUpLCNmMGY2ZmEhaW1wb3J0YW50fQoubW9kZXJuLW1haW4gLnNwZWNpYWx0eS1ob21lLWhlcm8sLm1vZGVybi1tYWluIC5zZXR0aW5ncy1oZXJve2JvcmRlcjoxcHggc29saWQgI2M5ZTNlZCFpbXBvcnRhbnQ7Ym9yZGVyLXJhZGl1czoxOXB4IWltcG9ydGFudDtib3gtc2hhZG93OjAgMTBweCAyOHB4IHJnYmEoMTMsNTUsOTYsLjA3KSFpbXBvcnRhbnR9Ci5tb2Rlcm4tbWFpbiAuc3BlY2lhbHR5LWhvbWUtaGVybyBoMiwubW9kZXJuLW1haW4gLmhvbWUtc2VjdGlvbi10aXRsZSBzdHJvbmd7Y29sb3I6dmFyKC0tYWstbmF2eSkhaW1wb3J0YW50fQoubW9kZXJuLW1haW4gOmlzKC5ob2xvZ3JhbS1zcGVjaWFsdHktY2FyZCwuY2xpbmljLXNlcnZpY2UtY2FyZCwuc2V0dGluZ3Mtc2VjdGlvbi1jYXJkLC5zZXR0aW5ncy10b29scy1jYXJkKXtib3JkZXItY29sb3I6I2NkZTVlYyFpbXBvcnRhbnQ7Ym94LXNoYWRvdzowIDdweCAxOXB4IHJnYmEoMTEsNTUsOTYsLjA3NSkhaW1wb3J0YW50O3RyYW5zaXRpb246dHJhbnNmb3JtIC4xOHMgZWFzZSxib3gtc2hhZG93IC4xOHMgZWFzZSFpbXBvcnRhbnR9Ci5tb2Rlcm4tbWFpbiA6aXMoLmhvbG9ncmFtLXNwZWNpYWx0eS1jYXJkLC5jbGluaWMtc2VydmljZS1jYXJkLC5zZXR0aW5ncy10b29sLWxpbmspOmhvdmVye2JvcmRlci1jb2xvcjp2YXIoLS1hay10dXJxdW9pc2UpIWltcG9ydGFudDtib3gtc2hhZG93OjAgMTJweCAyNXB4IHJnYmEoMTEsNTUsOTYsLjEzKSFpbXBvcnRhbnR9Ci5tb2Rlcm4tbWFpbiAuaG9tZS1xdWljay1hY3Rpb25zIGJ1dHRvbntiYWNrZ3JvdW5kOmxpbmVhci1ncmFkaWVudCgxODBkZWcsI2ZmZiwjZWZmOWZjKSFpbXBvcnRhbnQ7Ym9yZGVyOjFweCBzb2xpZCAjYmZkZWU5IWltcG9ydGFudDtjb2xvcjp2YXIoLS1hay1uYXZ5KSFpbXBvcnRhbnQ7Ym94LXNoYWRvdzowIDdweCAxOHB4IHJnYmEoMTEsNTUsOTYsLjA4KSFpbXBvcnRhbnR9Ci5tb2Rlcm4tbWFpbiA6aXMoaW5wdXQsdGV4dGFyZWEsc2VsZWN0KTpmb2N1c3tib3JkZXItY29sb3I6IzE5YjRjOCFpbXBvcnRhbnQ7b3V0bGluZToycHggc29saWQgcmdiYSgyNSwxODAsMjAwLC4xNCkhaW1wb3J0YW50O291dGxpbmUtb2Zmc2V0OjFweH0KLm1vZGVybi1tYWluIC5zZXR0aW5ncy12ZXJzaW9uLWJveHtiYWNrZ3JvdW5kOmxpbmVhci1ncmFkaWVudCgxMzVkZWcsIzBiMzU1ZCwjMTI2NTg3KSFpbXBvcnRhbnQ7Y29sb3I6I2ZmZiFpbXBvcnRhbnR9Ci8qIEtlZXAgZXhpc3RpbmcgbWVkaWNhbCBpbWFnZXJ5LCBkYXRhIGdyaWQgY29sb3JzLCBhbGVydHMsIGZpbmFuY2lhbCBzdGF0dXNlcywgYnV0dG9ucyBhbmQgUElOIHdvcmtmbG93IHVuY2hhbmdlZC4gKi8KQG1lZGlhKHByZWZlcnMtcmVkdWNlZC1tb3Rpb246cmVkdWNlKXsubW9kZXJuLXNpZGViYXIgLm5hdiwubW9kZXJuLW1haW4gOmlzKC5ob2xvZ3JhbS1zcGVjaWFsdHktY2FyZCwuY2xpbmljLXNlcnZpY2UtY2FyZCwuc2V0dGluZ3Mtc2VjdGlvbi1jYXJkLC5zZXR0aW5ncy10b29scy1jYXJkKXt0cmFuc2l0aW9uOm5vbmUhaW1wb3J0YW50fX0K'').decode(''utf-8'')
+
+        assert marker in css
+
+        p.write_text(s+''\n''+css,encoding=''utf-8'')
+
+        ''@ | python -
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+    - name: Validate source
+      shell: pwsh
+      run: 'npm ci
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        npm run build
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $changed=@(git diff --name-only)
+
+        if ($changed.Count -ne 1 -or $changed[0] -ne ''src/style.css'') { throw "Unexpected source modifications:
+        $changed" }'
+    - name: Build EXE
+      shell: pwsh
+      run: 'npm run tauri -- build --bundles nsis
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $files=@(Get-ChildItem ''src-tauri/target/release/bundle/nsis'' -File -Filter ''*.exe'')
+
+        if ($files.Count -ne 1) { throw ''Installer not found or multiple installers'' }
+
+        Copy-Item -LiteralPath $files[0].FullName -Destination ''Clinic-Cases-Windows-Setup.exe''
+
+        $hash=(Get-FileHash ''Clinic-Cases-Windows-Setup.exe'' -Algorithm SHA256).Hash.ToLowerInvariant()
+
+        "$hash  Clinic-Cases-Windows-Setup.exe" | Set-Content ''Clinic-Cases-Windows-Setup.exe.sha256'' -Encoding
+        ascii'
+    - name: Commit visual-only change
+      shell: pwsh
+      run: 'git config user.name ''github-actions[bot]''
+
+        git config user.email ''41898282+github-actions[bot]@users.noreply.github.com''
+
+        git add -- src/style.css
+
+        git commit -m ''Apply clinic AK branding to navigation and dashboard''
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        git fetch origin main
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        git rebase origin/main
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        git push origin HEAD:main
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+    - name: Publish Windows installer
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: '$tag="clinic-ak-brand-safe-$($env:GITHUB_RUN_ID)"
+
+        gh release create $tag ''Clinic-Cases-Windows-Setup.exe'' ''Clinic-Cases-Windows-Setup.exe.sha256'' --target
+        main --title ''Clinic Cases AK Brand UI'' --notes ''Visual-only AK theme: navy and turquoise dashboard,
+        sidebar, settings and home tiles. No patient/PIN/database logic changes. Verify appearance before rollout.''
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Setup.exe" >> $env:GITHUB_STEP_SUMMARY'
