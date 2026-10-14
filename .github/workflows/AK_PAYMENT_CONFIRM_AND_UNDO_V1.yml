@@ -1,0 +1,381 @@
+name: AK Payment Confirm and Undo V1
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/AK_PAYMENT_CONFIRM_AND_UNDO_V1.yml'
+permissions:
+  contents: write
+concurrency:
+  group: ak-payment-confirm-and-undo-v1
+  cancel-in-progress: false
+jobs:
+  patch-test-build-release:
+    runs-on: windows-latest
+    timeout-minutes: 130
+    steps:
+      - name: Checkout exact main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Install Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Apply verified payment confirmation and undo patch
+        shell: bash
+        run: |
+          cat > ak_confirm_undo_patch_v1.py <<'PY'
+          from pathlib import Path
+          import json, subprocess
+          
+          MAIN=Path('src/main.ts')
+          LIB=Path('src-tauri/src/lib.rs')
+          CSS=Path('src/style.css')
+          CONF=Path('src-tauri/tauri.conf.json')
+          CARGO=Path('src-tauri/Cargo.toml')
+          MARK='AK_PAYMENT_CONFIRM_AND_UNDO_V1'
+          
+          
+          def exact(text, old, new, name):
+              n=text.count(old)
+              if n!=1:
+                  raise RuntimeError(f'{name}: expected exactly one anchor, found {n}; no files changed')
+              return text.replace(old,new,1)
+          
+          m=MAIN.read_text(encoding='utf-8')
+          r=LIB.read_text(encoding='utf-8')
+          c=CSS.read_text(encoding='utf-8')
+          
+          if all(MARK in x for x in (m,r,c)):
+              print('Payment confirmation and reversal already applied; no duplication')
+          elif any(MARK in x for x in (m,r,c)):
+              raise RuntimeError('Partially applied payment patch; abort without modification')
+          else:
+              # Confirmation for both create-visit flows, including default full payment.
+              m=exact(m,'function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {',r'''// AK_PAYMENT_CONFIRM_AND_UNDO_V1: require positive confirmation for any amount marked received.
+          function confirmClinicVisitReceipt(fd:FormData, payment:{paymentStatus:string;paidAmount:string;paymentMethod:string}) {
+            const paid=Number(payment.paidAmount||'0');
+            if(payment.paymentStatus==='unpaid'||paid<=0)return true;
+            const total=Number(String(fd.get('fee')||'0'));
+            const name=String(fd.get('fullName')||'').trim()||'المريض الحالي';
+            const status=payment.paymentStatus==='partial'?'دفع جزئي':'مدفوع بالكامل';
+            return window.confirm(`تأكيد تسجيل سداد الكشف\nالمريض: ${name}\nالحالة: ${status}\nقيمة الكشف: ${total.toFixed(2)} ج.م\nالمبلغ الذي تم استلامه بالفعل: ${paid.toFixed(2)} ج.م\nطريقة الدفع: ${payment.paymentMethod}\n\nهل استلمت المبلغ فعلًا وتريد تسجيله في الكاشير؟`);
+          }
+          
+          function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {''','clinic receipt confirmation helper')
+              m=exact(m,'''      const paymentInput = clinicVisitPaymentPayload(fd);
+                const result=await invoke<{id:string,existed:boolean}>('register_patient',{input:{''','''      const paymentInput = clinicVisitPaymentPayload(fd);
+                if (!confirmClinicVisitReceipt(fd,paymentInput)) return;
+                const result=await invoke<{id:string,existed:boolean}>('register_patient',{input:{''','specialty confirm prior to patient registration')
+              m=exact(m,'''    try {
+                await invoke('add_visit', { input: {
+                  patientId: patient.id,''','''    try {
+                const paymentInput=clinicVisitPaymentPayload(fd);
+                if(!confirmClinicVisitReceipt(fd,paymentInput))return;
+                await invoke('add_visit', { input: {
+                  patientId: patient.id,''','patient visit confirm before atomic write')
+              m=exact(m,'''        ...clinicVisitPaymentPayload(fd),
+                  status: 'حضر',''','''        ...paymentInput,
+                  status: 'حضر',''','patient visit confirmed payload')
+          
+              # Confirm BOTH ordinary cashier collection and historical settlement with exact displayed amount.
+              m=exact(m,'''    if(historical && !window.confirm('هل أنت متأكد أن المبلغ دُفع سابقًا بالفعل؟ لن يُسجل كتحصيل نقدي جديد، لكن سيُسوى المستحق في ملف المريض.'))return;
+              button.disabled=true;''','''    const paidAmount=Number(String(fd.get('amount')||'0'));
+              if(!Number.isFinite(paidAmount)||paidAmount<=0){toast('أدخل مبلغًا صحيحًا','error');return}
+              const method=String(fd.get('paymentMethod')||'');
+              const msg=historical
+                ? `تأكيد تسوية سداد سابق بمبلغ ${paidAmount.toFixed(2)} ج.م\nهل تحققت من أن المريض دفع هذا المبلغ بالفعل؟\nلن يُعتبر تحصيلًا نقديًا جديدًا.`
+                : `تأكيد تحصيل مبلغ ${paidAmount.toFixed(2)} ج.م\nطريقة الدفع: ${method}\nهل تم استلام هذا المبلغ فعلًا؟`;
+              if(!window.confirm(msg))return;
+              button.disabled=true;''','require cashier receipt confirmation')
+          
+              # Show an auditable list of all payments and recorded reversals inside patient account review.
+              m=exact(m,'async function openPatientAccountModal(patientId:string){',r'''// AK_PAYMENT_CONFIRM_AND_UNDO_V1 — journal records including void status; never delete receipts.
+          type PatientCashierReceipt={
+            id:string;serviceType:string;serviceId:string;amount:number;paymentMethod:string;
+            notes:string;createdAt:string;voided:boolean;voidReason:string
+          };
+          
+          async function openPatientAccountModal(patientId:string){''','cashier history TS model')
+              start=m.index('async function openPatientAccountModal(patientId:string){')
+              end=m.index('async function renderCashier()',start)
+              a=m[start:end]
+              a=exact(a,'''    const [details,all]=await Promise.all([
+                invoke<PatientDetails>('get_patient_details',{id:patientId}),
+                invoke<CashierItem[]>('list_cashier_items',{query:{from:'2000-01-01',to:'2099-12-31'}})
+              ]);''','''    const [details,all,receipts]=await Promise.all([
+                invoke<PatientDetails>('get_patient_details',{id:patientId}),
+                invoke<CashierItem[]>('list_cashier_items',{query:{from:'2000-01-01',to:'2099-12-31'}}),
+                invoke<PatientCashierReceipt[]>('list_patient_cashier_receipts',{patientId})
+              ]);''','get receipt history with account')
+              a=exact(a,'''    const remaining=rows.reduce((s,r)=>s+r.remaining,0);
+              const back=async()=>{''','''    const remaining=rows.reduce((s,r)=>s+r.remaining,0);
+              const labels=new Map(rows.map(r=>[`${r.serviceType}:${r.serviceId}`,r.serviceLabel]));
+              const back=async()=>{''','receipt labels by service')
+              a=exact(a,'''      </table></div>
+                <div class="form-actions"><button type="button" class="btn ghost" id="backToPatientFromAccount">''',r'''      </table></div>
+                <h3 class="patient-receipts-title">🧾 سجل التحصيل والتسويات والإلغاءات</h3>
+                <p class="patient-receipts-hint">يمكن إلغاء أي سداد مسجل بالخطأ مع الاحتفاظ بالعملية الأصلية وسبب الإلغاء في سجل النظام. مدفوعات التحاليل عند تسجيل الطلب تُراجع في تفاصيل التحليل.</p>
+                <div class="table-wrap"><table class="v7-cashier-table patient-receipts-table">
+                  <thead><tr><th>التاريخ</th><th>الخدمة</th><th>المبلغ</th><th>طريقة الدفع</th><th>الحالة</th><th>إجراء</th></tr></thead>
+                  <tbody>${receipts.length?receipts.map((p,i)=>`<tr>
+                    <td>${esc(p.createdAt)}</td><td>${esc(labels.get(`${p.serviceType}:${p.serviceId}`)||p.serviceType)}</td>
+                    <td class="ltr">${p.amount.toFixed(2)} ج.م</td><td>${esc(p.paymentMethod)}</td>
+                    <td>${p.voided?`<span class="patient-receipt-voided">أُلغي — ${esc(p.voidReason)}</span>`:'<span class="v7-paid-badge">مسجل</span>'}</td>
+                    <td>${!p.voided?`<button class="btn danger-outline small" type="button" data-patient-void-receipt="${i}">إلغاء السداد</button>`:'—'}</td>
+                  </tr>`).join(''):'<tr><td colspan="6" class="empty-row">لا توجد عمليات تحصيل مسجلة</td></tr>'}</tbody>
+                </table></div>
+                <div class="form-actions"><button type="button" class="btn ghost" id="backToPatientFromAccount">''','patient payment reversal controls')
+              a=exact(a,'''    root.querySelectorAll<HTMLButtonElement>('[data-patient-account-previous]').forEach(button=>{
+                button.onclick=()=>openReceipt(Number(button.dataset.patientAccountPrevious),true);
+              });
+            }catch(err){''',r'''    root.querySelectorAll<HTMLButtonElement>('[data-patient-account-previous]').forEach(button=>{
+                button.onclick=()=>openReceipt(Number(button.dataset.patientAccountPrevious),true);
+              });
+              root.querySelectorAll<HTMLButtonElement>('[data-patient-void-receipt]').forEach(button=>{
+                button.onclick=async()=>{
+                  const payment=receipts[Number(button.dataset.patientVoidReceipt)];
+                  if(!payment||payment.voided)return;
+                  const reason=window.prompt(`سبب إلغاء السداد المسجل بمبلغ ${payment.amount.toFixed(2)} ج.م؟\nاكتب سببًا واضحًا للمراجعة:`, '');
+                  if(reason===null)return;
+                  if(reason.trim().length<5){toast('لازم تكتب سبب إلغاء واضح (5 حروف على الأقل)','error');return}
+                  const label=labels.get(`${payment.serviceType}:${payment.serviceId}`)||payment.serviceType;
+                  const confirmed=window.confirm(`تأكيد نهائي لإلغاء عملية سداد\nالخدمة: ${label}\nالمبلغ: ${payment.amount.toFixed(2)} ج.م\nطريقة الدفع: ${payment.paymentMethod}\nسبب الإلغاء: ${reason.trim()}\n\nسيعود المبلغ للمتبقي، وستظل العملية محفوظة في سجل المراجعة. هذا إجراء محاسبي ولا يعيد نقودًا تم تحصيلها. هل تؤكد الإلغاء؟`);
+                  if(!confirmed)return;
+                  button.disabled=true;
+                  try {
+                    await invoke('void_cashier_receipt',{input:{patientId,paymentId:payment.id,reason:reason.trim()}});
+                    toast('تم إلغاء السداد وتحديث المتبقي مع الاحتفاظ بسجل العملية');
+                    await openPatientAccountModal(patientId);
+                  }catch(err){toast(`تعذر إلغاء العملية: ${String(err)}`,'error');button.disabled=false}
+                };
+              });
+            }catch(err){''','reversal confirmation and audit action')
+              m=m[:start]+a+m[end:]
+          
+              # Database schema: new table keeps original receipts and reversal reasons for full traceability.
+              r=exact(r,'''      CREATE TABLE IF NOT EXISTS audit_log(
+          ''', '''      CREATE TABLE IF NOT EXISTS cashier_payment_voids(
+                  payment_id TEXT PRIMARY KEY REFERENCES cashier_payments(id),
+                  patient_id TEXT NOT NULL REFERENCES patients(id),
+                  reason TEXT NOT NULL,
+                  created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS audit_log(
+          ''','append-only void journal schema')
+          
+              # Every financial query and price check must exclude voided receipts.
+              for old,new,name in [
+                ('FROM cashier_payments WHERE service_type=?1 AND service_id=?2','FROM cashier_payments WHERE service_type=?1 AND service_id=?2 AND id NOT IN (SELECT payment_id FROM cashier_payment_voids)','nursing paid check'),
+                ("FROM cashier_payments WHERE service_type='radiology' AND service_id=?1","FROM cashier_payments WHERE service_type='radiology' AND service_id=?1 AND id NOT IN (SELECT payment_id FROM cashier_payment_voids)",'radiology paid check'),
+                ("FROM cashier_payments cp WHERE cp.service_type='clinic' AND cp.service_id=v.id","FROM cashier_payments cp WHERE cp.service_type='clinic' AND cp.service_id=v.id AND cp.id NOT IN (SELECT payment_id FROM cashier_payment_voids)",'clinic balance'),
+                ("FROM cashier_payments cp WHERE cp.service_type='lab' AND cp.service_id=o.id","FROM cashier_payments cp WHERE cp.service_type='lab' AND cp.service_id=o.id AND cp.id NOT IN (SELECT payment_id FROM cashier_payment_voids)",'lab balance'),
+                ('AND cp.service_id=n.id\n  ),0)','AND cp.service_id=n.id AND cp.id NOT IN (SELECT payment_id FROM cashier_payment_voids)\n  ),0)','nursing balance'),
+                ("FROM cashier_payments cp WHERE cp.service_type='radiology' AND cp.service_id=r.id","FROM cashier_payments cp WHERE cp.service_type='radiology' AND cp.service_id=r.id AND cp.id NOT IN (SELECT payment_id FROM cashier_payment_voids)",'radiology balance'),
+                ('AND cp.service_id=s.id),0)','AND cp.service_id=s.id AND cp.id NOT IN (SELECT payment_id FROM cashier_payment_voids)),0)','service cases balance'),
+                ('SELECT service_type,service_id,payment_method,CAST(amount AS REAL)\n         FROM cashier_payments"','SELECT service_type,service_id,payment_method,CAST(amount AS REAL)\n         FROM cashier_payments WHERE id NOT IN (SELECT payment_id FROM cashier_payment_voids)"','finance method summary'),
+              ]:
+                  r=exact(r,old,new,name)
+          
+              r=exact(r,'''    tx.execute("DELETE FROM cashier_payments WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;''','''    tx.execute("DELETE FROM cashier_payment_voids WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;
+              tx.execute("DELETE FROM cashier_payments WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;''','clean void records before explicit permanent patient purge')
+          
+              # Backend types exposed only to local app; no multi-user functionality.
+              r=exact(r,'''struct CashierPaymentInput { patient_id:String, service_type:String, service_id:String, amount:String, payment_method:String, notes:String }
+          ''',r'''struct CashierPaymentInput { patient_id:String, service_type:String, service_id:String, amount:String, payment_method:String, notes:String }
+          
+          // AK_PAYMENT_CONFIRM_AND_UNDO_V1 — a payment is voided, never destroyed.
+          #[derive(Debug, Deserialize)]
+          #[serde(rename_all = "camelCase")]
+          struct VoidCashierReceiptInput { payment_id:String, patient_id:String, reason:String }
+          
+          #[derive(Debug, Serialize)]
+          #[serde(rename_all = "camelCase")]
+          struct PatientCashierReceipt {
+              id:String, service_type:String, service_id:String, amount:f64,
+              payment_method:String, notes:String, created_at:String,
+              voided:bool, void_reason:String
+          }
+          ''','backend input/output structures')
+          
+              before='''#[tauri::command]
+          fn record_cashier_payment(state:State<AppState>,input:CashierPaymentInput)->Result<(),String>'''
+              funcs=r'''// AK_PAYMENT_CONFIRM_AND_UNDO_V1 — reversal is recorded in a separate immutable audit trail.
+          #[tauri::command]
+          fn list_patient_cashier_receipts(state:State<AppState>, patient_id:String) -> Result<Vec<PatientCashierReceipt>,String> {
+              if patient_id.is_empty() || patient_id.len()>128 {return Err("ملف المريض غير صالح".into());}
+              let conn=open_db(&state)?;
+              let mut stmt=conn.prepare(
+                  "SELECT p.id,p.service_type,p.service_id,CAST(p.amount AS REAL),
+                    p.payment_method,p.notes,p.created_at,
+                    CASE WHEN v.payment_id IS NULL THEN 0 ELSE 1 END,COALESCE(v.reason,'')
+                   FROM cashier_payments p LEFT JOIN cashier_payment_voids v ON v.payment_id=p.id
+                   WHERE p.patient_id=?1 ORDER BY p.created_at DESC,p.rowid DESC"
+              ).map_err(|e|e.to_string())?;
+              let items=stmt.query_map(params![patient_id],|row|Ok(PatientCashierReceipt{
+                  id:row.get(0)?,service_type:row.get(1)?,service_id:row.get(2)?,amount:row.get(3)?,
+                  payment_method:row.get(4)?,notes:row.get(5)?,created_at:row.get(6)?,
+                  voided:row.get::<_,i64>(7)?!=0,void_reason:row.get(8)?
+              })).map_err(|e|e.to_string())?;
+              items.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+          }
+          
+          fn void_cashier_receipt_conn(conn:&mut Connection,input:&VoidCashierReceiptInput)->Result<(),String>{
+              let reason=input.reason.trim();
+              if input.payment_id.len()>128 || input.payment_id.is_empty() || input.patient_id.len()>128 || input.patient_id.is_empty(){return Err("معرف السداد غير صالح".into());}
+              if reason.chars().count()<5 || reason.chars().count()>300 || reason.chars().any(|c|c.is_control()){return Err("لازم تكتب سبب إلغاء واضح بين 5 و300 حرف".into());}
+              let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+              let receipt:Option<(String,String,String,String,f64)>=tx.query_row(
+                  "SELECT patient_id,service_type,service_id,payment_method,CAST(amount AS REAL) FROM cashier_payments WHERE id=?1",
+                  params![input.payment_id],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?))
+              ).optional().map_err(|e|e.to_string())?;
+              let (patient,service_type,service_id,method,amount)=receipt.ok_or_else(||"عملية الدفع غير موجودة".to_string())?;
+              if patient!=input.patient_id{return Err("عملية السداد لا تخص المريض المحدد".into());}
+              if !amount.is_finite() || amount<=0.0{return Err("عملية السداد غير قابلة للإلغاء".into());}
+              let already:i64=tx.query_row("SELECT COUNT(*) FROM cashier_payment_voids WHERE payment_id=?1",params![input.payment_id],|row|row.get(0)).map_err(|e|e.to_string())?;
+              if already!=0{return Err("هذه العملية أُلغيت بالفعل ولا يمكن إلغاؤها مرتين".into());}
+              let timestamp=Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+              tx.execute(
+                  "INSERT INTO cashier_payment_voids(payment_id,patient_id,reason,created_at) VALUES(?1,?2,?3,?4)",
+                  params![input.payment_id,input.patient_id,reason,timestamp]
+              ).map_err(|e|e.to_string())?;
+              tx.execute(
+                  "INSERT INTO audit_log(action,entity_type,entity_id,details,created_at) VALUES(?1,?2,?3,?4,?5)",
+                  params!["إلغاء تحصيل","كاشير",input.payment_id,
+                      format!("{}:{} | القيمة={:.2} | الطريقة={} | السبب={}",service_type,service_id,amount,method,reason),timestamp]
+              ).map_err(|e|e.to_string())?;
+              tx.commit().map_err(|e|e.to_string())?;
+              Ok(())
+          }
+          
+          #[tauri::command]
+          fn void_cashier_receipt(state:State<AppState>,input:VoidCashierReceiptInput)->Result<(),String>{
+              let mut conn=open_db(&state)?;
+              void_cashier_receipt_conn(&mut conn,&input)
+          }
+          
+          '''
+              r=exact(r,before,funcs+before,'reversal backend registration')
+              r=exact(r,'''            record_cashier_payment,
+                      financial_report,''','''            record_cashier_payment,
+                      list_patient_cashier_receipts,
+                      void_cashier_receipt,
+                      financial_report,''','register new safe commands')
+          
+              # Synthetic regression test verifies full reversal, preserved source receipt and rejection of double-void.
+              tests=r'''    #[test]
+              fn cashier_receipt_void_preserves_audit_and_reopens_balance() {
+                  let path=test_db_path("payment-void-v141");
+                  init_db(&path).expect("prepare payment test DB");
+                  let mut conn=Connection::open(&path).expect("open DB");
+                  conn.execute("INSERT INTO patients(id,full_name,phone,created_at,updated_at) VALUES('void-p','Patient','01000000000','2026-10-15 10:00:00','2026-10-15 10:00:00')",[]).expect("patient");
+                  conn.execute("INSERT INTO visits(id,patient_id,visit_date,visit_time,doctor,fee,visit_type,booking_source,created_at,updated_at) VALUES('void-v','void-p','2026-10-15','10:00','Test','300','كشف جديد','عادي','2026-10-15 10:00:00','2026-10-15 10:00:00')",[]).expect("visit");
+                  conn.execute("INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at) VALUES('void-cp','void-p','clinic','void-v','300.00','نقدي','','2026-10-15 10:00:00')",[]).expect("receipt");
+                  let before=cashier_items_for_range(&conn,"2026-10-15","2026-10-15").expect("before");
+                  assert!((before[0].paid-300.0).abs()<0.001);
+                  let bad=VoidCashierReceiptInput{payment_id:"void-cp".into(),patient_id:"void-p".into(),reason:"no".into()};
+                  assert!(void_cashier_receipt_conn(&mut conn,&bad).is_err(),"missing reason accepted");
+                  let valid=VoidCashierReceiptInput{payment_id:"void-cp".into(),patient_id:"void-p".into(),reason:"ضغط زر مدفوع بالخطأ".into()};
+                  void_cashier_receipt_conn(&mut conn,&valid).expect("void payment");
+                  let rows=cashier_items_for_range(&conn,"2026-10-15","2026-10-15").expect("after");
+                  assert!((rows[0].paid-0.0).abs()<0.001,"voided receipt still counted");
+                  assert!((rows[0].remaining-300.0).abs()<0.001,"balance not reopened");
+                  assert!(void_cashier_receipt_conn(&mut conn,&valid).is_err(),"double void accepted");
+                  let original:i64=conn.query_row("SELECT COUNT(*) FROM cashier_payments WHERE id='void-cp'",[],|row|row.get(0)).expect("retained receipt");
+                  assert_eq!(original,1,"receipt must remain in journal");
+                  let audit:i64=conn.query_row("SELECT COUNT(*) FROM audit_log WHERE entity_id='void-cp' AND action='إلغاء تحصيل'",[],|row|row.get(0)).expect("void audit");
+                  assert_eq!(audit,1,"expected exactly one reversal audit record");
+                  drop(conn);
+                  cleanup(&path);
+              }
+          
+          '''
+              r=exact(r,'''#[cfg(test)]
+          mod production_tests {
+              use super::*;
+          ''','''#[cfg(test)]
+          mod production_tests {
+              use super::*;
+          '''+tests,'regression test injection')
+          
+              c+='''\n/* AK_PAYMENT_CONFIRM_AND_UNDO_V1 - auditable cancellations in patient account. */
+          .patient-receipts-title { margin: 22px 0 6px; font-weight: 800; }
+          .patient-receipts-hint { margin-bottom: 12px; color: #576879; line-height: 1.65; }
+          .patient-receipts-table td { vertical-align: middle; }
+          .patient-receipt-voided { font-weight: 700; color: #9d3b39; }
+          '''
+              if not all(MARK in x for x in (m,r,c)):
+                  raise RuntimeError('Source safety marker missing; no files written')
+              MAIN.write_text(m,encoding='utf-8')
+              LIB.write_text(r,encoding='utf-8')
+              CSS.write_text(c,encoding='utf-8')
+          
+          settings=json.loads(CONF.read_text(encoding='utf-8'))
+          if settings['version']=='7.1.40':
+              settings['version']='7.1.41'
+              CONF.write_text(json.dumps(settings,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+              cargo=CARGO.read_text(encoding='utf-8')
+              cargo=exact(cargo,'version = "7.1.40"','version = "7.1.41"','Cargo version')
+              CARGO.write_text(cargo,encoding='utf-8')
+              subprocess.run(['cargo','update','--workspace','--manifest-path',str(CARGO)],check=True)
+          elif settings['version']!='7.1.41':
+              raise RuntimeError(f'Unexpected version {settings["version"]}; refusing to proceed')
+          print('Safe V7.1.41 payment confirmation, auditable cancellation and regression test patch complete.')
+          PY
+          python -m py_compile ak_confirm_undo_patch_v1.py
+          python ak_confirm_undo_patch_v1.py
+      - name: Validate and test the app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Windows NSIS installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files = @(Get-ChildItem 'src-tauri/target/release/bundle/nsis' -File -Filter '*.exe')
+          if ($files.Count -ne 1) { throw "Expected one NSIS installer; got $($files.Count)" }
+          Copy-Item -LiteralPath $files[0].FullName -Destination 'Clinic-Cases-Windows-Confirm-Undo.exe' -Force
+          if ((Get-Item 'Clinic-Cases-Windows-Confirm-Undo.exe').Length -lt 50000000) { throw 'Installer too small' }
+          $hash = (Get-FileHash 'Clinic-Cases-Windows-Confirm-Undo.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Clinic-Cases-Windows-Confirm-Undo.exe" | Set-Content 'Clinic-Cases-Windows-Confirm-Undo.exe.sha256' -Encoding ascii
+      - name: Push tested exact changes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- src/main.ts src/style.css src-tauri/src/lib.rs src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
+          $changed = @(git diff --cached --name-only)
+          if ($changed.Count -gt 0) {
+            git commit -m 'Require payment confirmation and allow auditable receipt reversal'
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $sha = (git rev-parse HEAD).Trim()
+          "PATCHED_COMMIT=$sha" >> $env:GITHUB_ENV
+      - name: Publish patched offline Windows EXE
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "v7.1.41-payment-undo-$env:GITHUB_RUN_ID"
+          gh release create $tag 'Clinic-Cases-Windows-Confirm-Undo.exe' 'Clinic-Cases-Windows-Confirm-Undo.exe.sha256' --target $env:PATCHED_COMMIT --title 'Clinic Cases V7.1.41 - Confirm Payments and Undo Mistakes' --notes 'Payment confirmations for new visits, historical settlements and cashier receipts. An auditable void action restores outstanding amounts without deleting the original receipt. No automatic status changes on existing records. All cash, finance, and per-service balances exclude voided receipts; synthetic regression tests and offline installer build must pass.'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "### Payment confirmation and reversible receipts ready" >> $env:GITHUB_STEP_SUMMARY
+          "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Confirm-Undo.exe" >> $env:GITHUB_STEP_SUMMARY
