@@ -1532,7 +1532,8 @@ function patientExportSheet(title: string, subtitle: string, body: string) {
     <div class="export-document patient-export-document">
       <div class="patient-print-brand">
         <img src="/patient-print-logo.jpg" alt="لوجو عيادات العقاد التخصصية" />
-        <div>
+        <div class="patient-print-brand-copy">
+          <div class="patient-print-clinic-name">${esc(appSettings.clinicName)}</div>
           <div class="patient-print-slogan">${esc(appSettings.clinicSlogan)}</div>
           <div class="patient-print-address">${esc(appSettings.clinicAddress)}</div>
         </div>
@@ -1549,11 +1550,11 @@ function patientExportSheet(title: string, subtitle: string, body: string) {
 
       <div class="patient-print-footer">
         <div class="patient-print-footer-item">
-          <span class="patient-print-footer-badge wa">WA</span>
+          <span>واتساب</span>
           <strong class="ltr">${esc(appSettings.whatsappNumber)}</strong>
         </div>
         <div class="patient-print-footer-item">
-          <span class="patient-print-footer-badge phone">☎</span>
+          <span>تليفون</span>
           <strong class="ltr">${esc(appSettings.phoneNumber)}</strong>
         </div>
         <div class="patient-print-footer-address">${esc(appSettings.clinicAddress)}</div>
