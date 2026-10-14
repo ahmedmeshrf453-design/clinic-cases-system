@@ -5256,15 +5256,34 @@ table td{font-size:13px !important}
 @media(prefers-reduced-motion:reduce){.modern-sidebar .nav,.modern-main :is(.hologram-specialty-card,.clinic-service-card,.settings-section-card,.settings-tools-card){transition:none!important}}
 
 
-/* AK background and unwanted shortcut strip final correction */
-html body:has(.specialty-home-v7110),
-body:has(.specialty-home-v7110) #app,
-body:has(.specialty-home-v7110) main,
-.specialty-home-v719b.specialty-home-v7110 {
- background:radial-gradient(ellipse at 12% 12%,rgba(13,188,218,.24),transparent 38%),radial-gradient(ellipse at 90% 90%,rgba(2,86,154,.42),transparent 48%),linear-gradient(145deg,#06182e 0%,#0b315a 52%,#082342 100%)!important;
- background-color:#092543!important;
+
+/* AK LOGO FULL DASHBOARD - 2026-10-14 */
+/* Scope full-page logo wallpaper to dashboard; keep all other screens untouched. */
+body:has(.specialty-home-v7110) .modern-main {
+  background-color: #092543 !important;
+  background-image: linear-gradient(rgba(5,22,43,.38),rgba(5,22,43,.38)),url('/sidebar-clinic-logo.jpg') !important;
+  background-position: center center !important;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
 }
-.specialty-home-v719b.specialty-home-v7110{min-height:100vh!important;border-radius:22px!important;padding:22px!important;color:#effaff!important}
-.specialty-home-v7110 .specialty-home-hero,.specialty-home-v7110 .home-section-title{color:#f3fbff!important}
-.specialty-home-v7110 .specialty-home-hero :is(h2,p,span,strong),.specialty-home-v7110 .home-section-title :is(strong,small){color:#effaff!important}
-.specialty-home-v7110 .home-quick-actions{display:none!important}
+/* Prevent duplicate, offset logo image on the homepage panel. */
+.specialty-home-v719b.specialty-home-v7110 {
+  background: transparent !important;
+  min-height: calc(100vh - 200px) !important;
+  border-radius: 22px !important;
+  padding: 22px !important;
+  color: #effaff !important;
+}
+.specialty-home-v7110 .home-section-title,
+.specialty-home-v7110 .home-section-title :is(strong, small) {
+  color: #f3fbff !important;
+}
+/* Hero card remains white: keep its existing dark typography. */
+.specialty-home-v7110 .specialty-home-hero :is(h2,p,span,strong) {
+  color: #163a59 !important;
+}
+/* Unwanted strip must be completely removed, not transparent or blurred. */
+.specialty-home-v7110 .home-quick-actions {
+  display: none !important;
+}
+
