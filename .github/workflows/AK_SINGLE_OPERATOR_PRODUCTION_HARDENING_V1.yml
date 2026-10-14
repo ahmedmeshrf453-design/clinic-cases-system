@@ -1,0 +1,247 @@
+name: AK Single Operator Production Hardening V1
+'on':
+  workflow_dispatch: {}
+  push:
+    branches:
+    - main
+    paths:
+    - .github/workflows/AK_SINGLE_OPERATOR_PRODUCTION_HARDENING_V1.yml
+permissions:
+  contents: write
+concurrency:
+  group: ak-single-operator-hardening
+  cancel-in-progress: false
+jobs:
+  validate-and-package:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+    - name: Checkout main
+      uses: actions/checkout@v4
+      with:
+        ref: main
+        fetch-depth: 0
+    - name: Setup Node 22
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+    - name: Setup Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Setup stable Rust
+      uses: dtolnay/rust-toolchain@stable
+    - name: Preflight clean main and source files
+      shell: pwsh
+      run: "$ErrorActionPreference = 'Stop'\nif ((git status --porcelain).Count -gt 0) { throw 'Checkout was not clean' }\n\
+        foreach ($p in @('src/main.ts','src/style.css','src-tauri/src/lib.rs','src-tauri/Cargo.lock')) {\n  if (-not (Test-Path\
+        \ -LiteralPath $p)) { throw \"Missing expected project file: $p\" }\n}\nWrite-Host 'PASS: stable single-operator source\
+        \ preflight'"
+    - name: Preserve and archive exactly 13 invalid push workflows
+      shell: pwsh
+      run: "@'\n\nfrom pathlib import Path\nimport subprocess\n\nroot = Path('.github/workflows')\narchive = Path('.github/workflow-archive/2026-10-14-invalid-push-workflows')\n\
+        archive.mkdir(parents=True, exist_ok=True)\nfilenames = ['clinic-cases-v3-7-11am-branding.yml', 'V719-REAL-IMAGE-ICONS.yml',\
+        \ 'V716C.yml', 'V7119B-HOLOGRAM-ICONS-ONLY.yml', 'CLINIC-AK-FULL-BRAND-UI (1).yml', 'clinic-cases-windows-offline-v2-build-only.yml',\
+        \ 'V682-LAB2LAB-ARABIC-ENGLISH.yml', 'V681-LAB2LAB-FULL-DROPDOWN.yml', 'V681-LAB2LAB-FULL-DROPDOWN (1).yml', 'build-sms-whatsapp-standalone.yml',\
+        \ 'CLINIC-ZIP-FULL-RESTORE.yml', 'AK_PATIENT_PRINT_HEADER_TITLE_ADDRESS_FIX.yml', 'V700-RUNTIME-FIX4.yml']\nassert\
+        \ len(filenames) == 13 and len(set(filenames)) == len(filenames)\narchived = []\nfor name in filenames:\n    src =\
+        \ root/name\n    dest = archive/name\n    if src.exists():\n        assert src.is_file() and not dest.exists(), f'Unsafe\
+        \ conflicting archive target: {name}'\n        subprocess.run(['git','mv','--',str(src),str(dest)], check=True)\n\
+        \        archived.append(name)\n    else:\n        assert dest.exists(), f'Expected broken workflow missing without\
+        \ archive: {name}'\nreport = archive/'README.md'\nreport.write_text(\"\"\"# Archived invalid push workflows (2026-10-14)\n\
+        \nThese 13 legacy workflows were selected from GitHub Actions **push runs that\nfailed before creating any job** on\
+        \ the reviewed commit. Their original content\nis retained unchanged here; moving them outside `.github/workflows/`\
+        \ prevents\nfurther automatic runs of these broken definitions. These are NOT patient data.\n\nFor rollback, move\
+        \ any selected workflow back into `.github/workflows/` only\nafter fixing and validating its YAML. The working print\
+        \ V2 workflow remains\nactive. No other workflows were archived.\n\n\"\"\" + '\\n'.join('- '+name for name in filenames)\
+        \ + '\\n', encoding='utf-8')\nprint(f'PASS: archived {len(archived)} invalid push workflows; preserved them for rollback')\n\
+        '@ | python -\nif ($LASTEXITCODE -ne 0) { throw 'Python validation failed' }"
+    - name: Modularize print styles and add real ZIP restore drill
+      shell: pwsh
+      run: "@'\n\nfrom pathlib import Path\n\nroot = Path('.')\nmain = root/'src/main.ts'\ncss = root/'src/style.css'\nrust\
+        \ = root/'src-tauri/src/lib.rs'\nprint_css = root/'src/patientPrint.css'\nmain_s = main.read_text(encoding='utf-8')\n\
+        css_s = css.read_text(encoding='utf-8')\nrust_s = rust.read_text(encoding='utf-8')\n\n# Non-functional CSS separation:\
+        \ move existing final override block without\n# changing its contents or the relative cascade order.\nmarker = '/*\
+        \ AK_PATIENT_PRINT_HEADER_FOOTER_FIX_20261014 */'\nif marker in css_s:\n    assert css_s.count(marker) == 1, 'Unexpected\
+        \ duplicate print CSS marker'\n    head, tail = css_s.split(marker, 1)\n    assert '.patient-export-document .patient-file-event.created{display:none!important}'\
+        \ in tail\n    assert not print_css.exists(), 'Print stylesheet already exists unexpectedly'\n    assert \"import\
+        \ './style.css';\" in main_s\n    assert \"import './patientPrint.css';\" not in main_s\n    print_css.write_text(marker\
+        \ + tail, encoding='utf-8')\n    css.write_text(head.rstrip() + '\\n', encoding='utf-8')\n    main_s = main_s.replace(\"\
+        import './style.css';\", \"import './style.css';\\nimport './patientPrint.css';\", 1)\n    main.write_text(main_s,\
+        \ encoding='utf-8')\nelse:\n    assert print_css.exists() and marker in print_css.read_text(encoding='utf-8')\n  \
+        \  assert \"import './patientPrint.css';\" in main_s\n\n# Add one repeatable, on-disk synthetic restore drill to the\
+        \ Rust test suite.\nneedle = '    fn single_operator_full_zip_restore_roundtrip_smoke()'\nanchor = 'mod production_tests\
+        \ {\\n    use super::*;'\nassert anchor in rust_s, 'Rust production test module was changed'\nif needle not in rust_s:\n\
+        \    rust_test = '    #[test]\\n    fn single_operator_full_zip_restore_roundtrip_smoke() {\\n        use zip::write::SimpleFileOptions;\\\
+        n\\n        // Completely synthetic records in temporary Windows runner folders.\\n        // This test must never\
+        \ access a real user\\'s local database.\\n        let root = std::env::temp_dir().join(format!(\"ak-restore-drill-{}\"\
+        , Uuid::new_v4()));\\n        let data = root.join(\"different-machine-data\");\\n        let backups = root.join(\"\
+        backup-transfer\");\\n        let db = data.join(\"clinic-cases.db\");\\n        fs::create_dir_all(&data).expect(\"\
+        make test data dir\");\\n        fs::create_dir_all(&backups).expect(\"make test backup dir\");\\n        init_db(&db).expect(\"\
+        initialize synthetic clinic database\");\\n\\n        {\\n            let conn = Connection::open(&db).expect(\"open\
+        \ test database\");\\n            conn.execute(\\n                \"INSERT INTO patients (id,full_name,phone,created_at,updated_at)\
+        \ VALUES (?1,?2,?3,?4,?5)\",\\n                params![\"synthetic-patient\", \"Backup Before\", \"01000000000\",\
+        \ \"2026-10-14 10:00:00\", \"2026-10-14 10:00:00\"],\\n            ).expect(\"add synthetic patient\");\\n       \
+        \ }\\n        let state = AppState {\\n            db_path: db.clone(),\\n            backup_dir: backups.clone(),\\\
+        n            export_dir: root.join(\"exports\"),\\n            attachments_dir: data.join(\"patient-attachments\"\
+        ),\\n        };\\n        let snapshot = backups.join(\"synthetic-snapshot.db\");\\n        checkpoint_and_copy(&state,\
+        \ &snapshot).expect(\"consistent sqlite backup\");\\n        let archive = backups.join(\"synthetic-transfer.zip\"\
+        );\\n        {\\n            let file = fs::File::create(&archive).expect(\"create test zip\");\\n            let\
+        \ mut zip = zip::ZipWriter::new(file);\\n            zip.start_file(\"database/clinic-cases.db\", SimpleFileOptions::default())\\\
+        n                .expect(\"add database ZIP entry\");\\n            let mut reader = fs::File::open(&snapshot).expect(\"\
+        read snapshot\");\\n            std::io::copy(&mut reader, &mut zip).expect(\"write snapshot to zip\");\\n       \
+        \     zip.finish().expect(\"finish synthetic backup zip\");\\n        }\\n\\n        {\\n            let conn = Connection::open(&db).expect(\"\
+        open live database\");\\n            conn.execute(\"UPDATE patients SET full_name=\\'Modified After Backup\\' WHERE\
+        \ id=\\'synthetic-patient\\'\", [])\\n                .expect(\"change the local synthetic record\");\\n        }\\\
+        n        restore_zip_worker(&data, &backups, &archive).expect(\"restore transferred zip into new data folder\");\\\
+        n        {\\n            let conn = Connection::open(&db).expect(\"reopen restored database\");\\n            let\
+        \ name: String = conn.query_row(\\n                \"SELECT full_name FROM patients WHERE id=\\'synthetic-patient\\\
+        '\", [], |row| row.get(0)\\n            ).expect(\"read restored record\");\\n            assert_eq!(name, \"Backup\
+        \ Before\", \"restore did not recover the original patient\");\\n            let integrity: String = conn.query_row(\"\
+        PRAGMA integrity_check\", [], |r| r.get(0))\\n                .expect(\"check restored database integrity\");\\n \
+        \           assert_eq!(integrity, \"ok\");\\n        }\\n        let broken_archive = backups.join(\"corrupted.zip\"\
+        );\\n        fs::write(&broken_archive, b\"not a valid ZIP\").expect(\"create corrupted test file\");\\n        assert!(restore_zip_worker(&data,\
+        \ &backups, &broken_archive).is_err(),\\n            \"corrupted archive must never restore\");\\n        {\\n   \
+        \         let conn = Connection::open(&db).expect(\"open original database after bad ZIP\");\\n            let name:\
+        \ String = conn.query_row(\\n                \"SELECT full_name FROM patients WHERE id=\\'synthetic-patient\\'\",\
+        \ [], |row| row.get(0)\\n            ).expect(\"read unchanged record\");\\n            assert_eq!(name, \"Backup\
+        \ Before\", \"bad ZIP damaged restored patient data\");\\n        }\\n        fs::remove_dir_all(&root).expect(\"\
+        clean isolated test files\");\\n    }\\n'\n    assert 'fn restore_zip_worker(' in rust_s and 'fn checkpoint_and_copy('\
+        \ in rust_s\n    rust_s = rust_s.replace(anchor, anchor + '\\n\\n' + rust_test.rstrip(), 1)\n    rust.write_text(rust_s,\
+        \ encoding='utf-8')\nelse:\n    print('Synthetic restore drill already present')\n\n# Intentionally do not change\
+        \ bookings, cashier, PIN, or any existing patient record.\nfinal_main = main.read_text(encoding='utf-8')\nfinal_css\
+        \ = print_css.read_text(encoding='utf-8')\nassert 'patient-print-clinic-name' in final_main\nassert '${esc(appSettings.clinicSlogan)}'\
+        \ in final_main\nassert '<span>واتساب</span>' in final_main and '<span>تليفون</span>' in final_main\nassert '.patient-export-document\
+        \ .patient-file-event.created{display:none!important}' in final_css\nassert 'import \\'./patientPrint.css\\';' in\
+        \ final_main\nprint('PASS: Existing print UX preserved, stylesheet separated, isolated Rust restore smoke added')\n\
+        '@ | python -\nif ($LASTEXITCODE -ne 0) { throw 'Python validation failed' }"
+    - name: Document physical second-PC acceptance plan
+      shell: pwsh
+      run: '@''
+
+        from pathlib import Path
+
+        Path(''PRODUCTION_SINGLE_OPERATOR_QA.md'').write_text(''# Clinic Cases System — Single-operator production hardening\n\nScope:
+        one local Windows operator. NO extra accounts, access roles, online login, or patient-data upload.\n\n## Changes tested
+        in GitHub Actions\n\n- Archive precisely 13 old workflow definitions that were failing before jobs started. Files
+        remain available under `.github/workflow-archive/2026-10-14-invalid-push-workflows/` for rollback.\n- Separate the
+        existing patient-print CSS into `src/patientPrint.css` without changing its contents or ordering.\n- Verify print
+        exports retain the clinic name, slogan, address, WhatsApp and phone labels, and hide the creation event only within
+        the exported document.\n- Add a Rust unit test using **synthetic data in temporary folders** to checkpoint SQLite,
+        package the DB in a ZIP, restore it into a different folder, verify row equality/integrity, and reject a corrupted
+        ZIP without modifying data.\n- Run npm frontend build, all Rust unit tests, Windows NSIS build; publish the installer
+        only after all pass.\n\n## Human acceptance checks before using real patient data\n\n1. Close the Windows app on the
+        old computer. Use a TEST database and make a ZIP full backup, including one sample attachment. Copy it to a DIFFERENT
+        Windows computer by USB or other controlled storage.\n2. Install this exact Windows EXE on the second computer. Use
+        its supported ZIP restore process and confirm the sample patient, visit, attachment, PIN recovery and report match.
+        Keep original backup untouched.\n3. Print/export one sample patient to PNG and PDF and inspect for clinic header/address
+        clarity, no creation-folder row, no overlap or clipping over multiple pages.\n4. Restart the program, verify the locked
+        single-operator PIN unlock, patient lookup and the clinic logo wallpaper/UI.\n5. Confirm automatic backup task, manual
+        full backup, free disk space and restore-point availability.\n\nThe GitHub runner cannot prove print appearance on
+        your display nor complete a physical second-PC transfer. Do not label the system production-certified until these
+        checks pass.\n\n## Rollback\n\nKeep the previous working installer. Revert the hardening commit (or restore archived
+        workflows as needed), and do not replace your real local database when rolling back code. No patient records are stored
+        in this repository or GitHub Actions artifacts.\n'', encoding=''utf-8'')
+
+        print(''PASS: added offline single-operator acceptance guide'')
+
+        ''@ | python -
+
+        if ($LASTEXITCODE -ne 0) { throw ''Python validation failed'' }'
+    - name: Stage and verify exact change scope
+      shell: pwsh
+      run: "git add -A -- .github/workflows .github/workflow-archive src/main.ts src/style.css src/patientPrint.css src-tauri/src/lib.rs\
+        \ PRODUCTION_SINGLE_OPERATOR_QA.md\n@'\n\nfrom pathlib import Path\nimport subprocess\n\nmain=Path('src/main.ts').read_text(encoding='utf-8')\n\
+        css=Path('src/patientPrint.css').read_text(encoding='utf-8')\nrust=Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')\n\
+        assert \"import './patientPrint.css';\" in main\nassert \"${esc(appSettings.clinicName)}\" in main and \"${esc(appSettings.clinicSlogan)}\"\
+        \ in main\nassert \"${esc(appSettings.clinicAddress)}\" in main\nassert 'patient-print-clinic-name' in css\nassert\
+        \ '.patient-export-document .patient-file-event.created{display:none!important}' in css\nassert 'single_operator_full_zip_restore_roundtrip_smoke'\
+        \ in rust\nassert 'mod production_tests {' in rust\nstaged=subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines()\n\
+        assert staged, 'Expected reviewed modifications'\nallowed={'src/main.ts','src/style.css','src/patientPrint.css',\n\
+        \         'src-tauri/src/lib.rs','PRODUCTION_SINGLE_OPERATOR_QA.md'}\nfor f in staged:\n    assert f in allowed or\
+        \ f.startswith('.github/workflows/') or f.startswith('.github/workflow-archive/'),f'Unexpected modified path: {f}'\n\
+        print('PASS: exact scope (print styles, synthetic tests, archival and offline QA)')\n'@ | python -\nif ($LASTEXITCODE\
+        \ -ne 0) { throw 'Python validation failed' }"
+    - name: Frontend production build
+      shell: pwsh
+      run: 'npm ci
+
+        if ($LASTEXITCODE -ne 0) { throw ''npm ci failed'' }
+
+        npm run build
+
+        if ($LASTEXITCODE -ne 0) { throw ''TypeScript/Vite build failed'' }'
+    - name: All Rust unit tests including real synthetic ZIP restore roundtrip
+      shell: pwsh
+      run: 'cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+        if ($LASTEXITCODE -ne 0) { throw ''Rust test gate failed'' }'
+    - name: Windows NSIS EXE installer build
+      shell: pwsh
+      run: 'npm run tauri -- build --bundles nsis
+
+        if ($LASTEXITCODE -ne 0) { throw ''Windows installer build failed'' }
+
+        $files = @(Get-ChildItem ''src-tauri/target/release/bundle/nsis'' -File -Filter ''*.exe'')
+
+        if ($files.Count -ne 1) { throw "Expected one EXE, found $($files.Count)" }
+
+        Copy-Item -LiteralPath $files[0].FullName -Destination ''Clinic-Cases-Windows-Single-Operator.exe''
+
+        $hash = (Get-FileHash ''Clinic-Cases-Windows-Single-Operator.exe'' -Algorithm SHA256).Hash.ToLowerInvariant()
+
+        "$hash  Clinic-Cases-Windows-Single-Operator.exe" | Set-Content -Path ''Clinic-Cases-Windows-Single-Operator.exe.sha256''
+        -Encoding ascii'
+    - name: Upload tested installer artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: AK-Single-Operator-EXE
+        path: 'Clinic-Cases-Windows-Single-Operator.exe
+
+          Clinic-Cases-Windows-Single-Operator.exe.sha256'
+        retention-days: 30
+    - name: Commit only validated changes and push to main
+      shell: pwsh
+      run: '$ErrorActionPreference = ''Stop''
+
+        git config user.name ''github-actions[bot]''
+
+        git config user.email ''41898282+github-actions[bot]@users.noreply.github.com''
+
+        git diff --cached --quiet
+
+        if ($LASTEXITCODE -eq 0) { Write-Host ''Already applied''; exit 0 }
+
+        git commit -m ''Production hardening: archive legacy CI and add offline restore smoke test''
+
+        if ($LASTEXITCODE -ne 0) { throw ''Commit failed'' }
+
+        git fetch origin main
+
+        if ($LASTEXITCODE -ne 0) { throw ''Fetch failed'' }
+
+        git rebase origin/main
+
+        if ($LASTEXITCODE -ne 0) { throw ''Concurrent edit conflict; no release created'' }
+
+        git push origin HEAD:main
+
+        if ($LASTEXITCODE -ne 0) { throw ''Unable to push validated hardening'' }'
+    - name: Publish tested Windows installer and hash
+      shell: pwsh
+      run: '$tag = "ak-single-operator-hardening-$env:GITHUB_RUN_ID"
+
+        gh release create $tag ''Clinic-Cases-Windows-Single-Operator.exe'' ''Clinic-Cases-Windows-Single-Operator.exe.sha256''
+        --target main --title ''Clinic Cases — Single Operator Production Hardening'' --notes ''Single Windows operator only;
+        13 invalid legacy workflows archived (reversible), patient print styles extracted unchanged, synthetic ZIP backup/restore/corrupt-archive
+        regression test passed, frontend/Rust/Windows build passed. Physical second-PC validation and visual print check remain
+        manual; no real patient data used.''
+
+        if ($LASTEXITCODE -ne 0) { throw ''Release failed'' }
+
+        "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Single-Operator.exe" >> $env:GITHUB_STEP_SUMMARY
+
+        ''GitHub tests and installer: GREEN. Physical second-PC restore and visual PDF review still manual.'' >> $env:GITHUB_STEP_SUMMARY'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
