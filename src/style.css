@@ -5305,3 +5305,11 @@ table td{font-size:13px !important}
   background-repeat:no-repeat!important;
   background-color:#f0f9fd!important;
 }
+
+/* AK_CLINIC_PAYMENT_3_STATES_V1 — payment status inside both visit forms. */
+.clinic-payment-fields { grid-column: 1 / -1; padding: 14px; margin: 5px 0; border: 1px solid rgba(29, 101, 146, .25); border-radius: 14px; background: rgba(54, 146, 188, .055); }
+.clinic-payment-heading { font-weight: 800; margin-bottom: 12px; }
+.clinic-payment-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 12px; }
+.clinic-payment-grid label { display: flex; flex-direction: column; gap: 7px; }
+.clinic-payment-grid [hidden] { display: none !important; }
+.clinic-payment-summary { margin: 12px 0 0; font-weight: 650; }

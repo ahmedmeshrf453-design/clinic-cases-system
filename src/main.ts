@@ -5078,6 +5078,81 @@ async function renderSpecialtyDoctorDirectory(): Promise<void> {
   document.querySelectorAll<HTMLButtonElement>('[data-doctor-file]').forEach(btn=>{btn.onclick=()=>{const doctor=activeDoctors.find(d=>d.id===btn.dataset.doctorFile);if(doctor)void openDoctorProfile(doctor)}});
 }
 
+// AK_CLINIC_PAYMENT_3_STATES_V1 — Payment controls for BOTH new-visit flows.
+function clinicVisitPaymentFieldsHtml() {
+  return `<section class="clinic-payment-fields">
+    <div class="clinic-payment-heading">💳 حالة دفع الكشف</div>
+    <div class="clinic-payment-grid">
+      <label>حالة الدفع
+        <select name="paymentStatus">
+          <option value="full" selected>مدفوع بالكامل</option>
+          <option value="partial">دفع جزئي</option>
+          <option value="unpaid">غير مدفوع</option>
+        </select>
+      </label>
+      <label data-clinic-payment-amount>المبلغ المدفوع
+        <input class="ltr" name="paidAmount" type="number" min="0.01" step="0.01" placeholder="المبلغ المحصل">
+      </label>
+      <label data-clinic-payment-method>طريقة الدفع
+        <select name="paymentMethod">
+          <option value="نقدي">نقدي</option>
+          <option value="فيزا">فيزا</option>
+          <option value="إنستاباي">إنستاباي</option>
+          <option value="محفظة">محفظة</option>
+          <option value="أخرى">أخرى</option>
+        </select>
+      </label>
+    </div>
+    <p class="clinic-payment-summary" data-clinic-payment-summary>يتم تسجيل التحصيل في الكاشير تلقائيًا عند حفظ الكشف.</p>
+  </section>`;
+}
+
+function bindClinicVisitPaymentFields(form: HTMLFormElement) {
+  const fee = form.querySelector<HTMLInputElement>('input[name="fee"]')!;
+  const status = form.querySelector<HTMLSelectElement>('select[name="paymentStatus"]')!;
+  const paid = form.querySelector<HTMLInputElement>('input[name="paidAmount"]')!;
+  const amountWrap = form.querySelector<HTMLElement>('[data-clinic-payment-amount]')!;
+  const methodWrap = form.querySelector<HTMLElement>('[data-clinic-payment-method]')!;
+  const summary = form.querySelector<HTMLElement>('[data-clinic-payment-summary]')!;
+  const refresh = () => {
+    const charge = Math.max(0, Number(fee.value) || 0);
+    const mode = status.value;
+    amountWrap.hidden = mode !== 'partial';
+    methodWrap.hidden = mode === 'unpaid' || charge <= 0;
+    const amount = mode === 'full' ? charge : (mode === 'partial' ? Math.max(0, Number(paid.value) || 0) : 0);
+    const due = Math.max(0, charge - amount);
+    summary.textContent = mode === 'full'
+      ? `المدفوع عند الحفظ: ${charge.toFixed(2)} ج.م — المتبقي: 0.00 ج.م`
+      : mode === 'partial'
+        ? `المدفوع: ${amount.toFixed(2)} ج.م — المتبقي: ${due.toFixed(2)} ج.م`
+        : `غير مدفوع — المتبقي: ${charge.toFixed(2)} ج.م`;
+  };
+  fee.addEventListener('input', refresh);
+  paid.addEventListener('input', refresh);
+  status.addEventListener('change', refresh);
+  refresh();
+}
+
+function clinicVisitPaymentPayload(fd: FormData) {
+  const paymentStatus = String(fd.get('paymentStatus') || 'full');
+  const feeText = String(fd.get('fee') || '').trim();
+  const fee = Number(feeText);
+  if (!['full', 'partial', 'unpaid'].includes(paymentStatus)) throw new Error('حالة الدفع غير صالحة');
+  if (paymentStatus !== 'unpaid' && (!feeText || !Number.isFinite(fee) || fee < 0)) {
+    throw new Error('أدخل سعر الكشف لتسجيل حالة الدفع');
+  }
+  const paidAmount = paymentStatus === 'full' ? feeText :
+    (paymentStatus === 'partial' ? String(fd.get('paidAmount') || '').trim() : '0');
+  if (paymentStatus === 'partial') {
+    const paid = Number(paidAmount);
+    if (!paidAmount || !Number.isFinite(paid) || paid <= 0 || paid >= fee) {
+      throw new Error('المبلغ المدفوع جزئيًا لازم يكون أكبر من صفر وأقل من سعر الكشف');
+    }
+  }
+  const paymentMethod = paymentStatus === 'unpaid' ? '' : String(fd.get('paymentMethod') || 'نقدي');
+  return { paymentStatus, paidAmount, paymentMethod };
+}
+
 function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
   const specialty=specialtyMeta(specialtyKey);
   if(!specialty)return;
@@ -5108,12 +5183,14 @@ function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
         <label>سعر الكشف<input name="fee" class="ltr" type="number" min="0" step="0.01" placeholder="اختياري"></label>
         <label>مبلغ العيادات<input name="clinicAmount" class="ltr" type="number" min="0" step="0.01" placeholder="اختياري"></label>
         <label>مبلغ الطبيب<input name="doctorAmount" class="ltr" type="number" min="0" step="0.01" placeholder="اختياري"></label>
+        ${clinicVisitPaymentFieldsHtml()}
       </div>
       <div class="specialty-booking-help">راجع البيانات ثم اضغط حفظ الحجز.</div><div class="form-actions specialty-booking-actions"><button type="button" class="btn ghost" id="cancelSpecialtyBooking">إلغاء</button><button class="btn primary">✓ حفظ الحجز</button></div>
     </form>
   </section></div>`;
 
   const form=document.querySelector<HTMLFormElement>('#specialtyBookingForm')!;
+  bindClinicVisitPaymentFields(form);
   const phoneInput=form.querySelector<HTMLInputElement>('input[name="phone"]')!;
   const typeInput=form.querySelector<HTMLSelectElement>('select[name="visitType"]')!;
   // Default fee allocation: 60% physician, 40% clinic. Both shares remain editable.
@@ -5178,6 +5255,7 @@ if(feeText && clinicText && doctorText){
   if(!Number.isFinite(cents)||!Number.isFinite(shares)||Math.abs(cents-shares)>1)
     throw new Error('مجموع مبلغ العيادة والطبيب لازم يساوي سعر الكشف');
 }
+      const paymentInput = clinicVisitPaymentPayload(fd);
       const result=await invoke<{id:string,existed:boolean}>('register_patient',{input:{
           fullName:String(fd.get('fullName')||'').trim(),
           phone,
@@ -5200,6 +5278,7 @@ if(feeText && clinicText && doctorText){
         fee:String(fd.get('fee')||'').trim(),
         clinicAmount:String(fd.get('clinicAmount')||'').trim(),
         doctorAmount:String(fd.get('doctorAmount')||'').trim(),
+        ...paymentInput,
         status:'منتظر',
         visitDate:storedVisitDate,
         visitTime:bookingTime,
@@ -6825,6 +6904,7 @@ async function openVisitModal(patient: Patient) {
             <label>مبلغ الطبيب
               <input class="ltr" name="doctorAmount" type="number" min="0" step="0.01" placeholder="يكتب يدويًا">
             </label>
+            ${clinicVisitPaymentFieldsHtml()}
             <label>التاريخ
               <input name="visitDate" type="date" value="${today()}">
             </label>
@@ -6845,10 +6925,14 @@ async function openVisitModal(patient: Patient) {
   document.querySelector<HTMLButtonElement>('#closeVisit')!.onclick = close;
   document.querySelector<HTMLButtonElement>('#cancelVisit')!.onclick = close;
 
-  document.querySelector<HTMLFormElement>('#visitForm')!.onsubmit = async e => {
+  const visitForm = document.querySelector<HTMLFormElement>('#visitForm')!;
+  bindClinicVisitPaymentFields(visitForm);
+  visitForm.onsubmit = async e => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget as HTMLFormElement);
-
+    const fd = new FormData(visitForm);
+    const saveButton = visitForm.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    if (saveButton.disabled) return;
+    saveButton.disabled = true;
     try {
       await invoke('add_visit', { input: {
         patientId: patient.id,
@@ -6858,6 +6942,7 @@ async function openVisitModal(patient: Patient) {
         fee: String(fd.get('fee')||'').trim(),
         clinicAmount: String(fd.get('clinicAmount')||'').trim(),
         doctorAmount: String(fd.get('doctorAmount')||'').trim(),
+        ...clinicVisitPaymentPayload(fd),
         status: 'حضر',
         visitDate: String(fd.get('visitDate')||''),
         visitTime: String(fd.get('visitTime')||'')
@@ -6869,6 +6954,8 @@ async function openVisitModal(patient: Patient) {
       await openPatient(patient.id);
     } catch (err) {
       toast(`تعذر حفظ الزيارة: ${String(err)}`, 'error');
+    } finally {
+      saveButton.disabled = false;
     }
   };
 }

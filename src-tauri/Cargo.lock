@@ -380,7 +380,7 @@ dependencies = [
 
 [[package]]
 name = "clinic-cases-system"
-version = "7.1.38"
+version = "7.1.39"
 dependencies = [
  "argon2",
  "base64 0.22.1",

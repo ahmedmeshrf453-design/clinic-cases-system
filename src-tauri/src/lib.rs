@@ -136,6 +136,12 @@ struct AddVisitInput {
     visit_date: String,
     visit_time: String,
     specialty: Option<String>,
+    #[serde(default)]
+    payment_status: Option<String>,
+    #[serde(default)]
+    paid_amount: Option<String>,
+    #[serde(default)]
+    payment_method: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1485,6 +1491,49 @@ fn register_patient(
     Ok(RegisterPatientResult { id, existed: false })
 }
 
+// AK_CLINIC_PAYMENT_3_STATES_V1: validated initial payment and atomic cashier insert.
+fn initial_visit_payment(
+    fee: &str,
+    status: Option<&str>,
+    amount: Option<&str>,
+    method: Option<&str>,
+) -> Result<Option<(f64, String)>, String> {
+    // Omitted payment fields preserve old API behavior for legacy callers.
+    let status = status.unwrap_or("unpaid").trim();
+    if !["full", "partial", "unpaid"].contains(&status) {
+        return Err("حالة دفع الكشف غير صالحة".into());
+    }
+    if status == "unpaid" {
+        if let Some(text) = amount {
+            if !text.trim().is_empty() && parse_lab_money(text, "المدفوع")? > 0.0 {
+                return Err("لا يمكن تسجيل مبلغ مدفوع مع حالة غير مدفوع".into());
+            }
+        }
+        return Ok(None);
+    }
+    if fee.trim().is_empty() {
+        return Err("سعر الكشف مطلوب عند تسجيل التحصيل".into());
+    }
+    let charge = parse_lab_money(fee, "سعر الكشف")?;
+    let paid = if status == "full" {
+        charge
+    } else {
+        parse_lab_money(amount.unwrap_or(""), "المدفوع")?
+    };
+    if status == "partial" && !(paid > 0.0 && paid + 0.001 < charge) {
+        return Err("المدفوع جزئيًا يجب أن يكون أكبر من صفر وأقل من سعر الكشف".into());
+    }
+    if status == "full" && charge <= 0.0 {
+        // A free visit is fully settled without a fictitious cash transaction.
+        return Ok(None);
+    }
+    let method = method.unwrap_or("").trim();
+    if !["نقدي", "فيزا", "إنستاباي", "محفظة", "أخرى"].contains(&method) {
+        return Err("طريقة دفع الكشف غير صالحة".into());
+    }
+    Ok(Some((paid, method.to_string())))
+}
+
 #[tauri::command]
 fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, String> {
     let allowed_source = ["فيزيتا", "اكشف", "كلينيدو", "عادي"];
@@ -1502,6 +1551,12 @@ fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, Str
         input.status.trim(),
         input.visit_date.trim(),
         input.visit_time.trim(),
+    )?;
+    let initial_payment = initial_visit_payment(
+        &input.fee,
+        input.payment_status.as_deref(),
+        input.paid_amount.as_deref(),
+        input.payment_method.as_deref(),
     )?;
 
     let mut conn = open_db(&state)?;
@@ -1555,6 +1610,19 @@ fn add_visit(state: State<AppState>, input: AddVisitInput) -> Result<String, Str
             now
         ]
     ).map_err(|e| e.to_string())?;
+
+    // The visit and its initial payment commit together, or neither commits.
+    if let Some((paid, method)) = initial_payment {
+        tx.execute(
+            "INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at)
+             VALUES(?1,?2,'clinic',?3,?4,?5,?6,?7)",
+            params![
+                Uuid::new_v4().to_string(), input.patient_id, visit_id,
+                format!("{:.2}", paid), method,
+                "تحصيل تلقائي عند تسجيل الكشف", now
+            ],
+        ).map_err(|e| e.to_string())?;
+    }
 
     tx.execute(
         "UPDATE patients SET updated_at=?1 WHERE id=?2",
@@ -4512,6 +4580,70 @@ pub fn run() {
 #[cfg(test)]
 mod production_tests {
     use super::*;
+
+    #[test]
+    fn clinic_initial_payment_all_three_modes_and_rejections() {
+        let full = initial_visit_payment("300", Some("full"), Some("0"), Some("نقدي"))
+            .expect("full payment").expect("payment entry");
+        assert_eq!(full.0, 300.0);
+        assert_eq!(full.1, "نقدي");
+        let partial = initial_visit_payment("300", Some("partial"), Some("125"), Some("فيزا"))
+            .expect("partial payment").expect("payment entry");
+        assert_eq!(partial.0, 125.0);
+        assert!(initial_visit_payment("300", Some("unpaid"), Some("0"), None)
+            .expect("unpaid visit").is_none());
+        assert!(initial_visit_payment("300", None, None, None)
+            .expect("legacy unpaid visit").is_none());
+        assert!(initial_visit_payment("0", Some("full"), None, None)
+            .expect("free visit").is_none());
+        assert!(initial_visit_payment("300", Some("partial"), Some("300"), Some("نقدي")).is_err());
+        assert!(initial_visit_payment("300", Some("partial"), Some("0"), Some("نقدي")).is_err());
+        assert!(initial_visit_payment("300", Some("unpaid"), Some("20"), None).is_err());
+        assert!(initial_visit_payment("", Some("full"), None, Some("نقدي")).is_err());
+        assert!(initial_visit_payment("300", Some("full"), None, Some("غير صالحة")).is_err());
+    }
+
+    #[test]
+    fn clinic_cashier_payment_records_affect_due_balance() {
+        let path = test_db_path("clinic-three-payment-states");
+        init_db(&path).expect("initialize synthetic database");
+        let mut conn = Connection::open(&path).expect("open db");
+        conn.execute(
+            "INSERT INTO patients(id,full_name,phone,created_at,updated_at)
+             VALUES('p-pay','Patient Payment Test','01010010010','2026-10-14 10:00:00','2026-10-14 10:00:00')",
+            [],
+        ).expect("insert patient");
+        for (id, state, amount, method) in [
+            ("full-v", "full", "300", "نقدي"),
+            ("partial-v", "partial", "125", "فيزا"),
+            ("unpaid-v", "unpaid", "0", ""),
+        ] {
+            let tx = conn.transaction().expect("transaction");
+            tx.execute(
+                "INSERT INTO visits(id,patient_id,visit_date,visit_time,doctor,fee,visit_type,status,booking_source,created_at,updated_at)
+                 VALUES(?1,'p-pay','2026-10-14','10:30','طبيب تجريبي','300','كشف جديد','حضر','عادي','2026-10-14 10:30:00','2026-10-14 10:30:00')",
+                params![id],
+            ).expect("insert visit");
+            if let Some((paid, method)) = initial_visit_payment("300", Some(state), Some(amount), Some(method))
+                .expect("compute payment") {
+                tx.execute(
+                    "INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at)
+                     VALUES(?1,'p-pay','clinic',?2,?3,?4,'automated test','2026-10-14 10:30:00')",
+                    params![Uuid::new_v4().to_string(), id, format!("{:.2}", paid), method],
+                ).expect("insert initial payment");
+            }
+            tx.commit().expect("commit visit and payment");
+        }
+        let rows = cashier_items_for_range(&conn, "2026-10-14", "2026-10-14")
+            .expect("load cashier results");
+        for (id, paid, due) in [("full-v", 300.0, 0.0), ("partial-v", 125.0, 175.0), ("unpaid-v", 0.0, 300.0)] {
+            let row = rows.iter().find(|x| x.service_id == id).expect("visit row");
+            assert!((row.paid - paid).abs() < 0.001);
+            assert!((row.remaining - due).abs() < 0.001);
+        }
+        drop(conn);
+        cleanup(&path);
+    }
 
     #[test]
     fn single_operator_full_zip_restore_roundtrip_smoke() {
