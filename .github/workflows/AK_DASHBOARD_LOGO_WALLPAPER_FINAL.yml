@@ -1,0 +1,89 @@
+name: AK Dashboard Logo Wallpaper Final Fix
+'on':
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: ak-dashboard-logo-fix-main
+  cancel-in-progress: false
+jobs:
+  fix-build-release:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Apply targeted dashboard fix
+        shell: pwsh
+        run: |
+          @'
+          import base64
+          exec(compile(base64.b64decode('ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpzdHlsZSA9IFBhdGgoJ3NyYy9zdHlsZS5jc3MnKQptYWluID0gUGF0aCgnc3JjL21haW4udHMnKQphc3NlcnQgc3R5bGUuaXNfZmlsZSgpIGFuZCBtYWluLmlzX2ZpbGUoKSwgJ0V4cGVjdGVkIGFwcGxpY2F0aW9uIGZpbGVzIGFyZSBtaXNzaW5nJwphc3NlcnQgUGF0aCgncHVibGljL3NpZGViYXItY2xpbmljLWxvZ28uanBnJykuaXNfZmlsZSgpLCAnTG9nbyBpbWFnZSBpcyBtaXNzaW5nJwoKY3NzID0gc3R5bGUucmVhZF90ZXh0KGVuY29kaW5nPSd1dGYtOCcpCnN0YXJ0X21hcmtlciA9ICcvKiBBSyBiYWNrZ3JvdW5kIGFuZCB1bndhbnRlZCBzaG9ydGN1dCBzdHJpcCBmaW5hbCBjb3JyZWN0aW9uICovJwpuZXdfbWFya2VyID0gJy8qIEFLIExPR08gRlVMTCBEQVNIQk9BUkQgLSAyMDI2LTEwLTE0ICovJwppZiBuZXdfbWFya2VyIGluIGNzczoKICAgIHByaW50KCdGaXggYWxyZWFkeSBwcmVzZW50OyBubyBDU1MgY2hhbmdlIHJlcXVpcmVkLicpCmVsc2U6CiAgICBhc3NlcnQgY3NzLmNvdW50KHN0YXJ0X21hcmtlcikgPT0gMSwgJ0V4aXN0aW5nIGNvcnJlY3Rpb24gZGlmZmVyczsgYWJvcnQgc2FmZWx5JwogICAgc3RhcnQgPSBjc3MuaW5kZXgoc3RhcnRfbWFya2VyKQogICAgYXNzZXJ0IGNzc1tzdGFydDpdLnN0cmlwKCkuZW5kc3dpdGgoJy5zcGVjaWFsdHktaG9tZS12NzExMCAuaG9tZS1xdWljay1hY3Rpb25ze2Rpc3BsYXk6bm9uZSFpbXBvcnRhbnR9JyksICdUcmFpbGluZyBDU1MgY2hhbmdlZDsgYWJvcnQgc2FmZWx5JwogICAgcGF0Y2ggPSByJycnCi8qIEFLIExPR08gRlVMTCBEQVNIQk9BUkQgLSAyMDI2LTEwLTE0ICovCi8qIFNjb3BlIGZ1bGwtcGFnZSBsb2dvIHdhbGxwYXBlciB0byBkYXNoYm9hcmQ7IGtlZXAgYWxsIG90aGVyIHNjcmVlbnMgdW50b3VjaGVkLiAqLwpib2R5Omhhcyguc3BlY2lhbHR5LWhvbWUtdjcxMTApIC5tb2Rlcm4tbWFpbiB7CiAgYmFja2dyb3VuZC1jb2xvcjogIzA5MjU0MyAhaW1wb3J0YW50OwogIGJhY2tncm91bmQtaW1hZ2U6IGxpbmVhci1ncmFkaWVudChyZ2JhKDUsMjIsNDMsLjM4KSxyZ2JhKDUsMjIsNDMsLjM4KSksdXJsKCcvc2lkZWJhci1jbGluaWMtbG9nby5qcGcnKSAhaW1wb3J0YW50OwogIGJhY2tncm91bmQtcG9zaXRpb246IGNlbnRlciBjZW50ZXIgIWltcG9ydGFudDsKICBiYWNrZ3JvdW5kLXJlcGVhdDogbm8tcmVwZWF0ICFpbXBvcnRhbnQ7CiAgYmFja2dyb3VuZC1zaXplOiBjb3ZlciAhaW1wb3J0YW50Owp9Ci8qIFByZXZlbnQgZHVwbGljYXRlLCBvZmZzZXQgbG9nbyBpbWFnZSBvbiB0aGUgaG9tZXBhZ2UgcGFuZWwuICovCi5zcGVjaWFsdHktaG9tZS12NzE5Yi5zcGVjaWFsdHktaG9tZS12NzExMCB7CiAgYmFja2dyb3VuZDogdHJhbnNwYXJlbnQgIWltcG9ydGFudDsKICBtaW4taGVpZ2h0OiBjYWxjKDEwMHZoIC0gMjAwcHgpICFpbXBvcnRhbnQ7CiAgYm9yZGVyLXJhZGl1czogMjJweCAhaW1wb3J0YW50OwogIHBhZGRpbmc6IDIycHggIWltcG9ydGFudDsKICBjb2xvcjogI2VmZmFmZiAhaW1wb3J0YW50Owp9Ci5zcGVjaWFsdHktaG9tZS12NzExMCAuaG9tZS1zZWN0aW9uLXRpdGxlLAouc3BlY2lhbHR5LWhvbWUtdjcxMTAgLmhvbWUtc2VjdGlvbi10aXRsZSA6aXMoc3Ryb25nLCBzbWFsbCkgewogIGNvbG9yOiAjZjNmYmZmICFpbXBvcnRhbnQ7Cn0KLyogSGVybyBjYXJkIHJlbWFpbnMgd2hpdGU6IGtlZXAgaXRzIGV4aXN0aW5nIGRhcmsgdHlwb2dyYXBoeS4gKi8KLnNwZWNpYWx0eS1ob21lLXY3MTEwIC5zcGVjaWFsdHktaG9tZS1oZXJvIDppcyhoMixwLHNwYW4sc3Ryb25nKSB7CiAgY29sb3I6ICMxNjNhNTkgIWltcG9ydGFudDsKfQovKiBVbndhbnRlZCBzdHJpcCBtdXN0IGJlIGNvbXBsZXRlbHkgcmVtb3ZlZCwgbm90IHRyYW5zcGFyZW50IG9yIGJsdXJyZWQuICovCi5zcGVjaWFsdHktaG9tZS12NzExMCAuaG9tZS1xdWljay1hY3Rpb25zIHsKICBkaXNwbGF5OiBub25lICFpbXBvcnRhbnQ7Cn0KJycnCiAgICBzdHlsZS53cml0ZV90ZXh0KGNzc1s6c3RhcnRdICsgcGF0Y2ggKyAnXG4nLCBlbmNvZGluZz0ndXRmLTgnKQogICAgcHJpbnQoJ0Rhc2hib2FyZCBsb2dvIHdhbGxwYXBlciBhcHBsaWVkLicpCgojIEVuc3VyZSBvYnNvbGV0ZSBzaG9ydGN1dCBzdHJpcCBpcyBhYnNlbnQgZnJvbSBkYXNoYm9hcmQgSFRNTCBpdHNlbGYuCnNvdXJjZSA9IG1haW4ucmVhZF90ZXh0KGVuY29kaW5nPSd1dGYtOCcpCmFuY2hvciA9ICdhc3luYyBmdW5jdGlvbiByZW5kZXJEYXNoYm9hcmQoKScKYXNzZXJ0IHNvdXJjZS5jb3VudChhbmNob3IpID09IDEsICdEYXNoYm9hcmQgc291cmNlIG5vdCBmb3VuZCcKc2VnbWVudCA9IHNvdXJjZS5zcGxpdChhbmNob3IsIDEpWzFdLnNwbGl0KCdhc3luYyBmdW5jdGlvbiAnLCAxKVswXQphc3NlcnQgJ2NsYXNzPSJob21lLXF1aWNrLWFjdGlvbnMiJyBub3QgaW4gc2VnbWVudCwgJ1Nob3J0Y3V0IHN0cmlwIHJlbWFpbnMgaW4gdGhlIEhUTUw7IGFib3J0IHNhZmVseScKcHJpbnQoJ09ic29sZXRlIHNob3J0Y3V0cyBhYnNlbnQgZnJvbSBkYXNoYm9hcmQgbWFya3VwLicpCnByaW50KCdObyBjaGFuZ2VzIHRvIHBhdGllbnRzLCBTUUxpdGUsIFBJTiwgYm9va2luZywgb3IgbWVkaWNhbCBmZWF0dXJlcy4nKQo=').decode('utf-8'), 'ak_dashboard_fix.py', 'exec'))
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $changed = @(git diff --name-only)
+          if ($changed.Count -gt 1 -or ($changed.Count -eq 1 -and $changed[0] -ne 'src/style.css')) {
+            throw "Unexpected file changes: $changed"
+          }
+      - name: Validate TypeScript and Vite
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate Rust tests
+        shell: pwsh
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files = @(Get-ChildItem 'src-tauri/target/release/bundle/nsis' -File -Filter '*.exe')
+          if ($files.Count -ne 1) { throw 'Expected exactly one Windows installer' }
+          Copy-Item -LiteralPath $files[0].FullName -Destination 'Clinic-Cases-Windows-Setup.exe'
+          $hash = (Get-FileHash 'Clinic-Cases-Windows-Setup.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Clinic-Cases-Windows-Setup.exe" | Set-Content 'Clinic-Cases-Windows-Setup.exe.sha256' -Encoding ascii
+      - name: Commit tested CSS to main
+        shell: pwsh
+        run: |
+          $changed = @(git diff --name-only)
+          if ($changed.Count -eq 0) {
+            Write-Host 'Fix already committed.'
+            exit 0
+          }
+          if ($changed.Count -ne 1 -or $changed[0] -ne 'src/style.css') { throw "Unexpected files: $changed" }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- src/style.css
+          git commit -m 'Use AK logo as dashboard wallpaper and suppress obsolete shortcuts'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git fetch origin main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git rebase origin/main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish installer download
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "ak-logo-wallpaper-$env:GITHUB_RUN_ID"
+          gh release create $tag 'Clinic-Cases-Windows-Setup.exe' 'Clinic-Cases-Windows-Setup.exe.sha256' --target main --title 'AK Dashboard Logo Wallpaper Fix' --notes 'Dashboard-only logo wallpaper and obsolete shortcut removal. No patient, PIN, SQLite or booking logic changed.'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Setup.exe" >> $env:GITHUB_STEP_SUMMARY
