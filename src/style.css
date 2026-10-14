@@ -5254,3 +5254,17 @@ table td{font-size:13px !important}
 .modern-main .settings-version-box{background:linear-gradient(135deg,#0b355d,#126587)!important;color:#fff!important}
 /* Keep existing medical imagery, data grid colors, alerts, financial statuses, buttons and PIN workflow unchanged. */
 @media(prefers-reduced-motion:reduce){.modern-sidebar .nav,.modern-main :is(.hologram-specialty-card,.clinic-service-card,.settings-section-card,.settings-tools-card){transition:none!important}}
+
+
+/* AK background and unwanted shortcut strip final correction */
+html body:has(.specialty-home-v7110),
+body:has(.specialty-home-v7110) #app,
+body:has(.specialty-home-v7110) main,
+.specialty-home-v719b.specialty-home-v7110 {
+ background:radial-gradient(ellipse at 12% 12%,rgba(13,188,218,.24),transparent 38%),radial-gradient(ellipse at 90% 90%,rgba(2,86,154,.42),transparent 48%),linear-gradient(145deg,#06182e 0%,#0b315a 52%,#082342 100%)!important;
+ background-color:#092543!important;
+}
+.specialty-home-v719b.specialty-home-v7110{min-height:100vh!important;border-radius:22px!important;padding:22px!important;color:#effaff!important}
+.specialty-home-v7110 .specialty-home-hero,.specialty-home-v7110 .home-section-title{color:#f3fbff!important}
+.specialty-home-v7110 .specialty-home-hero :is(h2,p,span,strong),.specialty-home-v7110 .home-section-title :is(strong,small){color:#effaff!important}
+.specialty-home-v7110 .home-quick-actions{display:none!important}

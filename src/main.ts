@@ -3431,7 +3431,7 @@ async function renderDashboard(){
       }).join('')}
     </div>
 
-    <div class="home-quick-actions"><button data-q="patients">👥 المرضى</button><button data-q="today">◷ حالات اليوم</button><button data-q="cashier">💵 الكاشير</button><button data-q="todaystats">▥ إحصائيات اليوم</button></div>
+    
     <div class="v71-build-stamp">V7.1.17 • BOOKING INTEGRITY</div>
   </section>`,'الرئيسية','التخصصات والخدمات');
 
