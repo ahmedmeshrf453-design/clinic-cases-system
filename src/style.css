@@ -5282,3 +5282,26 @@ table td{font-size:13px !important}
 }
 /* Keep the unwanted dashboard shortcut strip hidden if a stale copy exists. */
 .specialty-home-v7110 .home-quick-actions { display: none !important; }
+
+
+/* AK_SERVICE_ART_ONLY_NO_EMBEDDED_SHORTCUTS_20261014 */
+/* Standalone clean artwork from original 4x4 medical sprite. */
+.specialty-home-v7110 #serviceGridHome .photo-sprite-tile.organ-labs {
+  background-image:url('/home-icons/service-art/labs.webp')!important;
+}
+.specialty-home-v7110 #serviceGridHome .photo-sprite-tile.organ-radiology {
+  background-image:url('/home-icons/service-art/radiology.webp')!important;
+}
+.specialty-home-v7110 #serviceGridHome .photo-sprite-tile.organ-physio {
+  background-image:url('/home-icons/service-art/physio.webp')!important;
+}
+.specialty-home-v7110 #serviceGridHome .photo-sprite-tile.organ-nursing {
+  background-image:url('/home-icons/service-art/nursing.webp')!important;
+}
+.specialty-home-v7110 #serviceGridHome .photo-sprite-tile:is(
+    .organ-labs,.organ-radiology,.organ-physio,.organ-nursing) {
+  background-size:100% 100%!important;
+  background-position:center!important;
+  background-repeat:no-repeat!important;
+  background-color:#f0f9fd!important;
+}
