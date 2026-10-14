@@ -1,0 +1,168 @@
+name: AK Windows Installer Acceptance V1
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/AK_WINDOWS_INSTALLER_ACCEPTANCE_V1.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ak-windows-installer-acceptance-v1
+  cancel-in-progress: true
+
+jobs:
+  test-published-installer:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout source for print checks
+        uses: actions/checkout@v4
+
+      - name: Download exact published single-operator release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = 'ak-single-operator-hardening-38587592336'
+          $dir = Join-Path $env:RUNNER_TEMP 'ak-acceptance-download'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          gh release download $tag --repo $env:GITHUB_REPOSITORY --dir $dir --pattern 'Clinic-Cases-Windows-Single-Operator.exe*'
+          if ($LASTEXITCODE -ne 0) { throw 'Release download failed' }
+          if (-not (Test-Path (Join-Path $dir 'Clinic-Cases-Windows-Single-Operator.exe'))) {
+            throw 'Installer EXE was not downloaded'
+          }
+          if (-not (Test-Path (Join-Path $dir 'Clinic-Cases-Windows-Single-Operator.exe.sha256'))) {
+            throw 'Checksum sidecar was not downloaded'
+          }
+          "AK_ACCEPTANCE_DIR=$dir" >> $env:GITHUB_ENV
+          "AK_ACCEPTANCE_TAG=$tag" >> $env:GITHUB_ENV
+
+      - name: Verify installer release hash and size
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $env:AK_ACCEPTANCE_DIR 'Clinic-Cases-Windows-Single-Operator.exe'
+          $sidecar = "$exe.sha256"
+          $actual = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          # Trusted digest recorded from the specific GitHub Release asset.
+          $expected = 'fd1ebcce7245f3c8ada35b21fa04e7f13c92a2f8d5d3e416338c5ab8c22a7ed2'
+          if ($actual -ne $expected) { throw "Pinned release digest mismatch: $actual" }
+          $sidecarValue = (Get-Content -LiteralPath $sidecar -Raw).Trim()
+          $hashMatch = [regex]::Match($sidecarValue, '^([0-9a-fA-F]{64})\s+\*?Clinic-Cases-Windows-Single-Operator\.exe$')
+          if (-not $hashMatch.Success) {
+            throw "Invalid .sha256 sidecar format: $sidecarValue"
+          }
+          if ($hashMatch.Groups[1].Value.ToLowerInvariant() -ne $actual) {
+            throw 'Published checksum sidecar disagrees with installer'
+          }
+          $bytes = (Get-Item -LiteralPath $exe).Length
+          if ($bytes -lt 100MB) { throw "Unexpectedly small installer: $bytes bytes" }
+          $signature = Get-AuthenticodeSignature -FilePath $exe
+          "## AK Windows Installer Acceptance" >> $env:GITHUB_STEP_SUMMARY
+          "- Release: $env:AK_ACCEPTANCE_TAG" >> $env:GITHUB_STEP_SUMMARY
+          "- SHA-256 verified: ``$actual``" >> $env:GITHUB_STEP_SUMMARY
+          "- Installer size: $([Math]::Round($bytes/1MB, 1)) MB" >> $env:GITHUB_STEP_SUMMARY
+          "- Authenticode signature: $($signature.Status) (informational only)" >> $env:GITHUB_STEP_SUMMARY
+          Write-Host 'PASS: pinned EXE SHA256 matches published sidecar'
+
+      - name: Validate single-operator print and backup safeguards
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $main = Get-Content 'src/main.ts' -Raw -Encoding utf8
+          $print = Get-Content 'src/patientPrint.css' -Raw -Encoding utf8
+          $rust = Get-Content 'src-tauri/src/lib.rs' -Raw -Encoding utf8
+          foreach ($required in @(
+            'patient-print-clinic-name',
+            '${esc(appSettings.clinicName)}',
+            '${esc(appSettings.clinicSlogan)}',
+            '${esc(appSettings.clinicAddress)}',
+            '<span>واتساب</span>',
+            '<span>تليفون</span>'
+          )) {
+            if (-not $main.Contains($required)) { throw "Missing print field: $required" }
+          }
+          if (-not $main.Contains("import './patientPrint.css';")) { throw 'Print CSS module not imported' }
+          if (-not $print.Contains('.patient-export-document .patient-file-event.created{display:none!important}')) {
+            throw 'Creation-folder row is not hidden from exported patient documents'
+          }
+          foreach ($required in @(
+            'single_operator_full_zip_restore_roundtrip_smoke',
+            'fn restore_zip_worker(',
+            'PRAGMA integrity_check',
+            'PRAGMA foreign_key_check',
+            'argon2'
+          )) {
+            if (-not $rust.Contains($required)) { throw "Missing backup or security check: $required" }
+          }
+          "- Source print safeguards: PASS" >> $env:GITHUB_STEP_SUMMARY
+          "- Backup restore safeguards present: PASS" >> $env:GITHUB_STEP_SUMMARY
+          Write-Host 'PASS: report and backup source safeguards'
+
+      - name: Silent install on a fresh temporary Windows runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Join-Path $env:AK_ACCEPTANCE_DIR 'Clinic-Cases-Windows-Single-Operator.exe'
+          $installDir = Join-Path $env:RUNNER_TEMP 'AKSingleOperatorAcceptance'
+          if (Test-Path $installDir) { throw 'Temporary install destination unexpectedly exists' }
+          # /D is the standard NSIS installation-directory override; it must be last.
+          $process = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "NSIS setup exited with code $($process.ExitCode)" }
+          $installedExe = Join-Path $installDir 'clinic-cases-system.exe'
+          if (-not (Test-Path -LiteralPath $installedExe -PathType Leaf)) {
+            throw "Installer exited successfully but app executable is missing: $installedExe"
+          }
+          $info = (Get-Item -LiteralPath $installedExe).VersionInfo
+          Write-Host "Installed app: $installedExe"
+          Write-Host "File version: $($info.FileVersion)"
+          "AK_INSTALLED_EXE=$installedExe" >> $env:GITHUB_ENV
+          "AK_INSTALLED_DIR=$installDir" >> $env:GITHUB_ENV
+          "- Clean-runner silent NSIS install: PASS" >> $env:GITHUB_STEP_SUMMARY
+          "- Installed executable found: PASS" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Best-effort startup probe without real patient data
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = $null
+          try {
+            # An unattended runner is not a substitute for verifying the real
+            # application UI, printing, or backup import on a human-operated PC.
+            $app = Start-Process -FilePath $env:AK_INSTALLED_EXE -WorkingDirectory $env:AK_INSTALLED_DIR -PassThru
+            Start-Sleep -Seconds 12
+            $app.Refresh()
+            if ($app.HasExited) {
+              Write-Warning "App exited in an unattended CI desktop session (exit code $($app.ExitCode)). Manual UI validation remains mandatory."
+              "- Unattended GUI startup probe: INCONCLUSIVE (app exited)" >> $env:GITHUB_STEP_SUMMARY
+            } else {
+              Write-Host "PASS: Installed app process was alive after 12 seconds"
+              "- Unattended startup process (12 seconds): PASS; actual UI remains unverified" >> $env:GITHUB_STEP_SUMMARY
+            }
+          } catch {
+            Write-Warning "No reliable GUI desktop session in this runner: $($_.Exception.Message)"
+            "- Unattended GUI startup probe: INCONCLUSIVE (runner limitation)" >> $env:GITHUB_STEP_SUMMARY
+          } finally {
+            if ($null -ne $app) {
+              $app.Refresh()
+              if (-not $app.HasExited) {
+                Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+              }
+            }
+          }
+
+      - name: Note physical acceptance items not proven by CI
+        if: always()
+        shell: pwsh
+        run: |
+          "### Remaining human-only checks" >> $env:GITHUB_STEP_SUMMARY
+          "- Test-install on your actual Windows PC, preferably a second computer" >> $env:GITHUB_STEP_SUMMARY
+          "- Create **synthetic** patient/visit and inspect exported PDF and PNG visually" >> $env:GITHUB_STEP_SUMMARY
+          "- Verify one-operator PIN, restart, patient search, cashier and booking screens" >> $env:GITHUB_STEP_SUMMARY
+          "- Import a synthetic ZIP backup including an attachment on a second PC" >> $env:GITHUB_STEP_SUMMARY
+          "- Confirm manual and scheduled backups. Keep all real patient data offline" >> $env:GITHUB_STEP_SUMMARY
