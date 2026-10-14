@@ -1,0 +1,106 @@
+name: Clinic AK Background And Remove Bottom Strip
+'on':
+  workflow_dispatch: null
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: main
+        fetch-depth: 0
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Remove unwanted quick actions and fix actual AK homepage background
+      shell: pwsh
+      run: "@'\nfrom pathlib import Path\np=Path('src/main.ts'); s=p.read_text(encoding='utf-8')\nold='<div\
+        \ class=\"home-quick-actions\"><button data-q=\"patients\">\U0001F465 المرضى</button><button data-q=\"\
+        today\">◷ حالات اليوم</button><button data-q=\"cashier\">\U0001F4B5 الكاشير</button><button data-q=\"\
+        todaystats\">▥ إحصائيات اليوم</button></div>'\nassert s.count(old)==1, 'Quick action strip was\
+        \ changed; refuse an unsafe patch'\ns=s.replace(old,'')\np.write_text(s,encoding='utf-8')\np=Path('src/style.css');s=p.read_text(encoding='utf-8')\n\
+        marker='/* AK background and unwanted shortcut strip final correction */'\nassert marker not in\
+        \ s,'Patch already applied'\ncss=r'''\n/* AK background and unwanted shortcut strip final correction\
+        \ */\nhtml body:has(.specialty-home-v7110),\nbody:has(.specialty-home-v7110) #app,\nbody:has(.specialty-home-v7110)\
+        \ main,\n.specialty-home-v719b.specialty-home-v7110 {\n background:radial-gradient(ellipse at\
+        \ 12% 12%,rgba(13,188,218,.24),transparent 38%),radial-gradient(ellipse at 90% 90%,rgba(2,86,154,.42),transparent\
+        \ 48%),linear-gradient(145deg,#06182e 0%,#0b315a 52%,#082342 100%)!important;\n background-color:#092543!important;\n\
+        }\n.specialty-home-v719b.specialty-home-v7110{min-height:100vh!important;border-radius:22px!important;padding:22px!important;color:#effaff!important}\n\
+        .specialty-home-v7110 .specialty-home-hero,.specialty-home-v7110 .home-section-title{color:#f3fbff!important}\n\
+        .specialty-home-v7110 .specialty-home-hero :is(h2,p,span,strong),.specialty-home-v7110 .home-section-title\
+        \ :is(strong,small){color:#effaff!important}\n.specialty-home-v7110 .home-quick-actions{display:none!important}\n\
+        '''\np.write_text(s+'\\n'+css,encoding='utf-8')\nprint('AK dark background applied and bottom\
+        \ quick-action strip completely removed')\n'@ | python -\nif ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE\
+        \ }"
+    - name: Validate frontend, Rust and exact changed files
+      shell: pwsh
+      run: 'npm ci
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        npm run build
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $changed=@(git diff --name-only | Sort-Object)
+
+        if ($changed.Count -ne 2 -or $changed[0] -ne ''src/main.ts'' -or $changed[1] -ne ''src/style.css'')
+        { throw "Unexpected changed files: $changed" }'
+    - name: Build verified EXE
+      shell: pwsh
+      run: 'npm run tauri -- build --bundles nsis
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $f=@(Get-ChildItem ''src-tauri/target/release/bundle/nsis'' -Filter ''*.exe'' -File)
+
+        if ($f.Count -ne 1) { throw ''Expected a single installer'' }
+
+        Copy-Item $f[0].FullName Clinic-Cases-Windows-Setup.exe'
+    - name: Commit only UI source modifications
+      shell: pwsh
+      run: 'git config user.name ''github-actions[bot]''
+
+        git config user.email ''41898282+github-actions[bot]@users.noreply.github.com''
+
+        git add -- src/main.ts src/style.css
+
+        git commit -m ''Correct AK dashboard background and remove quick shortcut strip''
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        git fetch origin main
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        git rebase origin/main
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        git push origin HEAD:main
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+    - name: Release Windows EXE
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: '$tag="clinic-ak-background-clean-$($env:GITHUB_RUN_ID)"
+
+        gh release create $tag Clinic-Cases-Windows-Setup.exe --target main --title ''AK Background +
+        Clean Dashboard'' --notes ''AK navy gradient visibly applied to main dashboard. Bottom shortcuts
+        removed entirely, not blurred or faded. Existing services, doctor data, PIN and SQLite backend
+        unchanged.''
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Setup.exe"
+        >> $env:GITHUB_STEP_SUMMARY'
