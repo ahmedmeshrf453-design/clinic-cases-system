@@ -1,0 +1,87 @@
+name: Clinic Services And Quick Actions UI Polish
+'on':
+  workflow_dispatch: null
+permissions:
+  contents: write
+jobs:
+  deliver:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: main
+        fetch-depth: 0
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Style services and quick actions only
+      shell: pwsh
+      run: "@'\nfrom pathlib import Path\np=Path('src/style.css')\ns=p.read_text(encoding='utf-8')\nmarker='/* Service dashboard harmonization - scoped only to home service panels */'\nif marker in s: raise SystemExit('Service dashboard polish already applied')\npatch = r'''\n/* Service dashboard harmonization - scoped only to home service panels */\n.specialty-home-v7110 #serviceGridHome {gap:12px!important;}\n.specialty-home-v7110 #serviceGridHome .clinic-service-card {\n  height:166px!important;min-height:166px!important;padding:10px 9px 12px!important;\n  gap:8px!important;border-radius:18px!important;\n  border:1px solid #d7e5ed!important;background:#fff!important;\n  box-shadow:0 6px 18px rgba(22,65,98,.06)!important;\n  transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease!important;\n}\n.specialty-home-v7110 #serviceGridHome .clinic-service-card:hover {\n  transform:translateY(-3px)!important;border-color:#80bad4!important;\n  box-shadow:0 11px 24px rgba(22,65,98,.12)!important;\n}\n.specialty-home-v7110 #serviceGridHome .clinic-service-icon {\n  width:94px!important;height:94px!important;min-width:94px!important;min-height:94px!important;\n\
+        \  flex:0 0 94px!important;margin:0 auto!important;\n}\n.specialty-home-v7110 #serviceGridHome .photo-sprite-tile {\n  border-radius:12px!important;background-size:400% 400%!important;\n  border:1px solid #e0eaf0!important;\n}\n.specialty-home-v7110 #serviceGridHome .service-hologram-icon {\n  border:none!important;background:transparent!important;\n  box-shadow:none!important;border-radius:0!important;\n}\n.specialty-home-v7110 #serviceGridHome .service-hologram-icon img {\n  width:100%!important;height:100%!important;object-fit:contain!important;\n}\n.specialty-home-v7110 #serviceGridHome .clinic-service-copy {\n  min-height:31px!important;display:flex!important;align-items:center!important;\n  justify-content:center!important;margin:0!important;text-align:center!important;\n}\n.specialty-home-v7110 #serviceGridHome .clinic-service-copy strong {\n  font-size:13px!important;line-height:1.4!important;max-width:100%!important;\n  white-space:normal!important;color:#173650!important;\n}\n.specialty-home-v7110 .home-quick-actions {gap:12px!important;margin-top:15px!important;}\n.specialty-home-v7110\
+        \ .home-quick-actions button {\n  min-height:56px!important;padding:12px 14px!important;\n  border:1px solid #d7e5ed!important;border-radius:14px!important;\n  background:#fff!important;color:#173650!important;font-size:14px!important;\n  font-weight:800!important;box-shadow:0 5px 15px rgba(22,65,98,.05)!important;\n  transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease!important;\n}\n.specialty-home-v7110 .home-quick-actions button:hover {\n  transform:translateY(-2px)!important;border-color:#80bad4!important;\n  box-shadow:0 9px 20px rgba(22,65,98,.10)!important;\n}\n@media(max-width:900px) {\n  .specialty-home-v7110 #serviceGridHome .clinic-service-card {height:152px!important;min-height:152px!important;}\n  .specialty-home-v7110 #serviceGridHome .clinic-service-icon {width:82px!important;height:82px!important;min-width:82px!important;min-height:82px!important;flex-basis:82px!important;}\n}\n@media(prefers-reduced-motion:reduce) {\n  .specialty-home-v7110 #serviceGridHome .clinic-service-card,\n  .specialty-home-v7110 .home-quick-actions button {transition:none!important;}\n\
+        }\n'''\nassert '#serviceGridHome' in patch and '.home-quick-actions' in patch\np.write_text(s+'\\n'+patch,encoding='utf-8')\nprint('Only src/style.css changed')\n'@ | python -\nif ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+    - name: Test code and verify scope
+      shell: pwsh
+      run: 'npm ci
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        npm run build
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $changed=@(git diff --name-only)
+
+        if ($changed.Count -ne 1 -or $changed[0] -ne ''src/style.css'') { throw ''Unexpected source changes'' }'
+    - name: Build Windows installer
+      shell: pwsh
+      run: 'npm run tauri -- build --bundles nsis
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $files=@(Get-ChildItem src-tauri/target/release/bundle/nsis -File -Filter ''*.exe'')
+
+        if ($files.Count -ne 1) { throw ''Expected exactly one EXE'' }
+
+        Copy-Item -LiteralPath $files[0].FullName -Destination Clinic-Cases-Windows-Setup.exe'
+    - name: Commit tested CSS
+      shell: pwsh
+      run: 'git config user.name ''github-actions[bot]''
+
+        git config user.email ''41898282+github-actions[bot]@users.noreply.github.com''
+
+        git add src/style.css
+
+        git commit -m ''Improve service cards and quick actions layout''
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        git fetch origin main
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        git rebase origin/main
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        git push origin HEAD:main
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+    - name: Publish installer
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: '$tag="clinic-service-ui-polish-$($env:GITHUB_RUN_ID)"
+
+        gh release create $tag Clinic-Cases-Windows-Setup.exe --target main --title ''Clinic Cases - Services UI Polish'' --notes ''UI-only changes: larger service medical artwork, consistent cards, polished four quick-action buttons. No patient records, medical imagery, PIN, or backup logic modified.''
+
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Setup.exe" >> $env:GITHUB_STEP_SUMMARY'
