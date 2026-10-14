@@ -5322,3 +5322,9 @@ table td{font-size:13px !important}
 .patient-reconcile-warning { padding: 12px 14px; border-radius: 10px; border: 1px solid #f1d7aa; background: #fff9ee; color: #86531e; font-weight: 600; line-height: 1.7; }
 .patient-account-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .patient-account-table td { vertical-align: middle; }
+
+/* AK_PAYMENT_CONFIRM_AND_UNDO_V1 - auditable cancellations in patient account. */
+.patient-receipts-title { margin: 22px 0 6px; font-weight: 800; }
+.patient-receipts-hint { margin-bottom: 12px; color: #576879; line-height: 1.65; }
+.patient-receipts-table td { vertical-align: middle; }
+.patient-receipt-voided { font-weight: 700; color: #9d3b39; }

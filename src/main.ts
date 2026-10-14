@@ -2380,7 +2380,17 @@ function openCashierPaymentModal(
     const fd=new FormData(form);
     const button=document.querySelector<HTMLButtonElement>('#confirmCashierPayment')!;
     if(button.disabled)return;
-    if(historical && !window.confirm('هل أنت متأكد أن المبلغ دُفع سابقًا بالفعل؟ لن يُسجل كتحصيل نقدي جديد، لكن سيُسوى المستحق في ملف المريض.'))return;
+    const paidAmount=Number(String(fd.get('amount')||'0'));
+    if(!Number.isFinite(paidAmount)||paidAmount<=0){toast('أدخل مبلغًا صحيحًا','error');return}
+    const method=String(fd.get('paymentMethod')||'');
+    const msg=historical
+      ? `تأكيد تسوية سداد سابق بمبلغ ${paidAmount.toFixed(2)} ج.م
+هل تحققت من أن المريض دفع هذا المبلغ بالفعل؟
+لن يُعتبر تحصيلًا نقديًا جديدًا.`
+      : `تأكيد تحصيل مبلغ ${paidAmount.toFixed(2)} ج.م
+طريقة الدفع: ${method}
+هل تم استلام هذا المبلغ فعلًا؟`;
+    if(!window.confirm(msg))return;
     button.disabled=true;
     try {
       await invoke('record_cashier_payment',{input:{
@@ -2398,17 +2408,25 @@ function openCashierPaymentModal(
 }
 
 // AK_PATIENT_ACCOUNT_RECONCILIATION_V2 — review old and new services independently.
+// AK_PAYMENT_CONFIRM_AND_UNDO_V1 — journal records including void status; never delete receipts.
+type PatientCashierReceipt={
+  id:string;serviceType:string;serviceId:string;amount:number;paymentMethod:string;
+  notes:string;createdAt:string;voided:boolean;voidReason:string
+};
+
 async function openPatientAccountModal(patientId:string){
   const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
   try {
-    const [details,all]=await Promise.all([
+    const [details,all,receipts]=await Promise.all([
       invoke<PatientDetails>('get_patient_details',{id:patientId}),
-      invoke<CashierItem[]>('list_cashier_items',{query:{from:'2000-01-01',to:'2099-12-31'}})
+      invoke<CashierItem[]>('list_cashier_items',{query:{from:'2000-01-01',to:'2099-12-31'}}),
+      invoke<PatientCashierReceipt[]>('list_patient_cashier_receipts',{patientId})
     ]);
     const rows=all.filter(row=>row.patientId===patientId);
     const charges=rows.reduce((s,r)=>s+r.charge,0);
     const paid=rows.reduce((s,r)=>s+r.paid,0);
     const remaining=rows.reduce((s,r)=>s+r.remaining,0);
+    const labels=new Map(rows.map(r=>[`${r.serviceType}:${r.serviceId}`,r.serviceLabel]));
     const back=async()=>{root.innerHTML='';await openPatient(patientId)};
     root.innerHTML=`<div class="modal-backdrop" data-back-patient-id="${esc(patientId)}"><section class="modal wide patient-account-review-modal">
       <div class="modal-head"><div><h2>🧾 مراجعة حساب المريض</h2><p>${esc(details.patient.fullName||'ملف المريض')} — سجل الدفع لكل خدمة على حدة</p></div>
@@ -2428,6 +2446,17 @@ async function openPatientAccountModal(patientId:string){
           <td>${r.remaining>0.009?`<div class="patient-account-row-actions"><button type="button" class="btn primary small" data-patient-account-collect="${i}">تحصيل / جزئي</button><button type="button" class="btn ghost small" data-patient-account-previous="${i}">سدد سابقًا</button></div>`:'<span class="v7-paid-badge">لا يوجد مستحق</span>'}</td>
         </tr>`).join(''):'<tr><td colspan="6" class="empty-row">لا توجد خدمات مالية مسجلة</td></tr>'}</tbody>
       </table></div>
+      <h3 class="patient-receipts-title">🧾 سجل التحصيل والتسويات والإلغاءات</h3>
+      <p class="patient-receipts-hint">يمكن إلغاء أي سداد مسجل بالخطأ مع الاحتفاظ بالعملية الأصلية وسبب الإلغاء في سجل النظام. مدفوعات التحاليل عند تسجيل الطلب تُراجع في تفاصيل التحليل.</p>
+      <div class="table-wrap"><table class="v7-cashier-table patient-receipts-table">
+        <thead><tr><th>التاريخ</th><th>الخدمة</th><th>المبلغ</th><th>طريقة الدفع</th><th>الحالة</th><th>إجراء</th></tr></thead>
+        <tbody>${receipts.length?receipts.map((p,i)=>`<tr>
+          <td>${esc(p.createdAt)}</td><td>${esc(labels.get(`${p.serviceType}:${p.serviceId}`)||p.serviceType)}</td>
+          <td class="ltr">${p.amount.toFixed(2)} ج.م</td><td>${esc(p.paymentMethod)}</td>
+          <td>${p.voided?`<span class="patient-receipt-voided">أُلغي — ${esc(p.voidReason)}</span>`:'<span class="v7-paid-badge">مسجل</span>'}</td>
+          <td>${!p.voided?`<button class="btn danger-outline small" type="button" data-patient-void-receipt="${i}">إلغاء السداد</button>`:'—'}</td>
+        </tr>`).join(''):'<tr><td colspan="6" class="empty-row">لا توجد عمليات تحصيل مسجلة</td></tr>'}</tbody>
+      </table></div>
       <div class="form-actions"><button type="button" class="btn ghost" id="backToPatientFromAccount">← رجوع لملف المريض</button></div>
     </section></div>`;
     document.querySelector<HTMLButtonElement>('#closePatientAccountReview')!.onclick=()=>void back();
@@ -2444,6 +2473,24 @@ async function openPatientAccountModal(patientId:string){
     });
     root.querySelectorAll<HTMLButtonElement>('[data-patient-account-previous]').forEach(button=>{
       button.onclick=()=>openReceipt(Number(button.dataset.patientAccountPrevious),true);
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-patient-void-receipt]').forEach(button=>{
+      button.onclick=async()=>{
+        const payment=receipts[Number(button.dataset.patientVoidReceipt)];
+        if(!payment||payment.voided)return;
+        const reason=window.prompt(`سبب إلغاء السداد المسجل بمبلغ ${payment.amount.toFixed(2)} ج.م؟\nاكتب سببًا واضحًا للمراجعة:`, '');
+        if(reason===null)return;
+        if(reason.trim().length<5){toast('لازم تكتب سبب إلغاء واضح (5 حروف على الأقل)','error');return}
+        const label=labels.get(`${payment.serviceType}:${payment.serviceId}`)||payment.serviceType;
+        const confirmed=window.confirm(`تأكيد نهائي لإلغاء عملية سداد\nالخدمة: ${label}\nالمبلغ: ${payment.amount.toFixed(2)} ج.م\nطريقة الدفع: ${payment.paymentMethod}\nسبب الإلغاء: ${reason.trim()}\n\nسيعود المبلغ للمتبقي، وستظل العملية محفوظة في سجل المراجعة. هذا إجراء محاسبي ولا يعيد نقودًا تم تحصيلها. هل تؤكد الإلغاء؟`);
+        if(!confirmed)return;
+        button.disabled=true;
+        try {
+          await invoke('void_cashier_receipt',{input:{patientId,paymentId:payment.id,reason:reason.trim()}});
+          toast('تم إلغاء السداد وتحديث المتبقي مع الاحتفاظ بسجل العملية');
+          await openPatientAccountModal(patientId);
+        }catch(err){toast(`تعذر إلغاء العملية: ${String(err)}`,'error');button.disabled=false}
+      };
     });
   }catch(err){toast(`تعذر فتح مراجعة الحساب: ${String(err)}`,'error');await openPatient(patientId)}
 }
@@ -5254,6 +5301,16 @@ function clinicVisitPaymentPayload(fd: FormData) {
   return { paymentStatus, paidAmount, paymentMethod };
 }
 
+// AK_PAYMENT_CONFIRM_AND_UNDO_V1: require positive confirmation for any amount marked received.
+function confirmClinicVisitReceipt(fd:FormData, payment:{paymentStatus:string;paidAmount:string;paymentMethod:string}) {
+  const paid=Number(payment.paidAmount||'0');
+  if(payment.paymentStatus==='unpaid'||paid<=0)return true;
+  const total=Number(String(fd.get('fee')||'0'));
+  const name=String(fd.get('fullName')||'').trim()||'المريض الحالي';
+  const status=payment.paymentStatus==='partial'?'دفع جزئي':'مدفوع بالكامل';
+  return window.confirm(`تأكيد تسجيل سداد الكشف\nالمريض: ${name}\nالحالة: ${status}\nقيمة الكشف: ${total.toFixed(2)} ج.م\nالمبلغ الذي تم استلامه بالفعل: ${paid.toFixed(2)} ج.م\nطريقة الدفع: ${payment.paymentMethod}\n\nهل استلمت المبلغ فعلًا وتريد تسجيله في الكاشير؟`);
+}
+
 function openSpecialtyBookingModal(specialtyKey:string, bookingDate:string) {
   const specialty=specialtyMeta(specialtyKey);
   if(!specialty)return;
@@ -5357,6 +5414,7 @@ if(feeText && clinicText && doctorText){
     throw new Error('مجموع مبلغ العيادة والطبيب لازم يساوي سعر الكشف');
 }
       const paymentInput = clinicVisitPaymentPayload(fd);
+      if (!confirmClinicVisitReceipt(fd,paymentInput)) return;
       const result=await invoke<{id:string,existed:boolean}>('register_patient',{input:{
           fullName:String(fd.get('fullName')||'').trim(),
           phone,
@@ -7038,6 +7096,8 @@ async function openVisitModal(patient: Patient) {
     if (saveButton.disabled) return;
     saveButton.disabled = true;
     try {
+      const paymentInput=clinicVisitPaymentPayload(fd);
+      if(!confirmClinicVisitReceipt(fd,paymentInput))return;
       await invoke('add_visit', { input: {
         patientId: patient.id,
         visitType: String(fd.get('visitType')||''),
@@ -7046,7 +7106,7 @@ async function openVisitModal(patient: Patient) {
         fee: String(fd.get('fee')||'').trim(),
         clinicAmount: String(fd.get('clinicAmount')||'').trim(),
         doctorAmount: String(fd.get('doctorAmount')||'').trim(),
-        ...clinicVisitPaymentPayload(fd),
+        ...paymentInput,
         status: 'حضر',
         visitDate: String(fd.get('visitDate')||''),
         visitTime: String(fd.get('visitTime')||'')

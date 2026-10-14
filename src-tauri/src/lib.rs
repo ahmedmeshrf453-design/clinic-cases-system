@@ -549,6 +549,19 @@ struct CashierItem { service_type:String, service_id:String, patient_id:String, 
 #[serde(rename_all = "camelCase")]
 struct CashierPaymentInput { patient_id:String, service_type:String, service_id:String, amount:String, payment_method:String, notes:String }
 
+// AK_PAYMENT_CONFIRM_AND_UNDO_V1 — a payment is voided, never destroyed.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VoidCashierReceiptInput { payment_id:String, patient_id:String, reason:String }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PatientCashierReceipt {
+    id:String, service_type:String, service_id:String, amount:f64,
+    payment_method:String, notes:String, created_at:String,
+    voided:bool, void_reason:String
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FinancePaymentQuery {
@@ -1234,6 +1247,12 @@ fn init_db(path: &PathBuf) -> Result<(), String> {
         id TEXT PRIMARY KEY, patient_id TEXT NOT NULL, service_type TEXT NOT NULL, service_id TEXT NOT NULL,
         amount TEXT NOT NULL DEFAULT '0', payment_method TEXT NOT NULL DEFAULT 'نقدي', notes TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL, FOREIGN KEY(patient_id) REFERENCES patients(id)
+      );
+      CREATE TABLE IF NOT EXISTS cashier_payment_voids(
+        payment_id TEXT PRIMARY KEY REFERENCES cashier_payments(id),
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        reason TEXT NOT NULL,
+        created_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS audit_log(
         id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT NOT NULL, entity_type TEXT NOT NULL,
@@ -2338,7 +2357,7 @@ fn update_nursing_order(
     let payment_type = if existing_service.starts_with("@@PHYSIO@@") { "physio" } else { "nursing" };
     let paid: f64 = conn.query_row(
         "SELECT COALESCE(SUM(CAST(amount AS REAL)),0)
-         FROM cashier_payments WHERE service_type=?1 AND service_id=?2",
+         FROM cashier_payments WHERE service_type=?1 AND service_id=?2 AND id NOT IN (SELECT payment_id FROM cashier_payment_voids)",
         params![payment_type, input.id.clone()],
         |row| row.get(0),
     ).map_err(|e| e.to_string())?;
@@ -2584,7 +2603,7 @@ fn update_radiology_order(
     let conn = open_db(&state)?;
     let paid: f64 = conn.query_row(
         "SELECT COALESCE(SUM(CAST(amount AS REAL)),0)
-         FROM cashier_payments WHERE service_type='radiology' AND service_id=?1",
+         FROM cashier_payments WHERE service_type='radiology' AND service_id=?1 AND id NOT IN (SELECT payment_id FROM cashier_payment_voids)",
         params![input.id.clone()],
         |row| row.get(0),
     ).map_err(|e| e.to_string())?;
@@ -2688,6 +2707,7 @@ fn purge_patient_data(state: &AppState, id: &str) -> Result<(), String> {
     };
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM cashier_payment_voids WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM cashier_payments WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM patient_attachments WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM radiology_orders WHERE patient_id=?1", params![id]).map_err(|e| e.to_string())?;
@@ -3607,14 +3627,14 @@ SELECT
   COALESCE(v.visit_type,'') AS visit_type,
   COALESCE(v.booking_source,'عادي') AS booking_source,
   CAST(COALESCE(NULLIF(v.fee,''),'0') AS REAL) AS charge,
-  COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='clinic' AND cp.service_id=v.id),0) AS paid
+  COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='clinic' AND cp.service_id=v.id AND cp.id NOT IN (SELECT payment_id FROM cashier_payment_voids)),0) AS paid
 FROM visits v JOIN patients p ON p.id=v.patient_id
 WHERE COALESCE(p.deleted_at,'')='' AND v.visit_date BETWEEN ?1 AND ?2
 
 UNION ALL SELECT
   'lab',o.id,p.id,p.full_name,p.phone,'تحاليل',o.order_date,COALESCE(o.order_time,''),'','','',
   CAST(COALESCE(NULLIF(o.net_total,''),'0') AS REAL),
-  CAST(COALESCE(NULLIF(o.paid_amount,''),'0') AS REAL)+COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='lab' AND cp.service_id=o.id),0)
+  CAST(COALESCE(NULLIF(o.paid_amount,''),'0') AS REAL)+COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='lab' AND cp.service_id=o.id AND cp.id NOT IN (SELECT payment_id FROM cashier_payment_voids)),0)
 FROM lab_orders o JOIN patients p ON p.id=o.patient_id
 WHERE COALESCE(p.deleted_at,'')='' AND o.order_date BETWEEN ?1 AND ?2
 
@@ -3630,7 +3650,7 @@ UNION ALL SELECT
     SELECT SUM(CAST(cp.amount AS REAL))
     FROM cashier_payments cp
     WHERE cp.service_type=CASE WHEN n.service_name LIKE '@@PHYSIO@@%' THEN 'physio' ELSE 'nursing' END
-      AND cp.service_id=n.id
+      AND cp.service_id=n.id AND cp.id NOT IN (SELECT payment_id FROM cashier_payment_voids)
   ),0)
 FROM nursing_orders n JOIN patients p ON p.id=n.patient_id
 WHERE COALESCE(p.deleted_at,'')='' AND n.order_date BETWEEN ?1 AND ?2
@@ -3638,7 +3658,7 @@ WHERE COALESCE(p.deleted_at,'')='' AND n.order_date BETWEEN ?1 AND ?2
 UNION ALL SELECT
   'radiology',r.id,p.id,p.full_name,p.phone,'أشعة - '||COALESCE(r.radiology_name,''),r.order_date,COALESCE(r.order_time,''),'','','',
   CAST(COALESCE(NULLIF(r.net_total,''),'0') AS REAL),
-  COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='radiology' AND cp.service_id=r.id),0)
+  COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp WHERE cp.service_type='radiology' AND cp.service_id=r.id AND cp.id NOT IN (SELECT payment_id FROM cashier_payment_voids)),0)
 FROM radiology_orders r JOIN patients p ON p.id=r.patient_id
 WHERE COALESCE(p.deleted_at,'')='' AND r.order_date BETWEEN ?1 AND ?2
 
@@ -3648,7 +3668,7 @@ UNION ALL SELECT
   s.case_date,COALESCE(s.case_time,''),'','','',
   CAST(COALESCE(NULLIF(s.fee,''),'0') AS REAL),
   COALESCE((SELECT SUM(CAST(cp.amount AS REAL)) FROM cashier_payments cp
-    WHERE cp.service_type=s.service_key AND cp.service_id=s.id),0)
+    WHERE cp.service_type=s.service_key AND cp.service_id=s.id AND cp.id NOT IN (SELECT payment_id FROM cashier_payment_voids)),0)
 FROM service_cases s JOIN patients p ON p.id=s.patient_id
 WHERE COALESCE(p.deleted_at,'')='' AND s.service_key IN ('emergency','others') AND s.case_date BETWEEN ?1 AND ?2
 ) x ORDER BY service_date DESC, service_time DESC, patient_name
@@ -3671,6 +3691,60 @@ WHERE COALESCE(p.deleted_at,'')='' AND s.service_key IN ('emergency','others') A
 }
 #[tauri::command]
 fn list_cashier_items(state:State<AppState>,query:CashierQuery)->Result<Vec<CashierItem>,String>{let c=open_db(&state)?; cashier_items_for_range(&c,&query.from,&query.to)}
+// AK_PAYMENT_CONFIRM_AND_UNDO_V1 — reversal is recorded in a separate immutable audit trail.
+#[tauri::command]
+fn list_patient_cashier_receipts(state:State<AppState>, patient_id:String) -> Result<Vec<PatientCashierReceipt>,String> {
+    if patient_id.is_empty() || patient_id.len()>128 {return Err("ملف المريض غير صالح".into());}
+    let conn=open_db(&state)?;
+    let mut stmt=conn.prepare(
+        "SELECT p.id,p.service_type,p.service_id,CAST(p.amount AS REAL),
+          p.payment_method,p.notes,p.created_at,
+          CASE WHEN v.payment_id IS NULL THEN 0 ELSE 1 END,COALESCE(v.reason,'')
+         FROM cashier_payments p LEFT JOIN cashier_payment_voids v ON v.payment_id=p.id
+         WHERE p.patient_id=?1 ORDER BY p.created_at DESC,p.rowid DESC"
+    ).map_err(|e|e.to_string())?;
+    let items=stmt.query_map(params![patient_id],|row|Ok(PatientCashierReceipt{
+        id:row.get(0)?,service_type:row.get(1)?,service_id:row.get(2)?,amount:row.get(3)?,
+        payment_method:row.get(4)?,notes:row.get(5)?,created_at:row.get(6)?,
+        voided:row.get::<_,i64>(7)?!=0,void_reason:row.get(8)?
+    })).map_err(|e|e.to_string())?;
+    items.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+}
+
+fn void_cashier_receipt_conn(conn:&mut Connection,input:&VoidCashierReceiptInput)->Result<(),String>{
+    let reason=input.reason.trim();
+    if input.payment_id.len()>128 || input.payment_id.is_empty() || input.patient_id.len()>128 || input.patient_id.is_empty(){return Err("معرف السداد غير صالح".into());}
+    if reason.chars().count()<5 || reason.chars().count()>300 || reason.chars().any(|c|c.is_control()){return Err("لازم تكتب سبب إلغاء واضح بين 5 و300 حرف".into());}
+    let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+    let receipt:Option<(String,String,String,String,f64)>=tx.query_row(
+        "SELECT patient_id,service_type,service_id,payment_method,CAST(amount AS REAL) FROM cashier_payments WHERE id=?1",
+        params![input.payment_id],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?))
+    ).optional().map_err(|e|e.to_string())?;
+    let (patient,service_type,service_id,method,amount)=receipt.ok_or_else(||"عملية الدفع غير موجودة".to_string())?;
+    if patient!=input.patient_id{return Err("عملية السداد لا تخص المريض المحدد".into());}
+    if !amount.is_finite() || amount<=0.0{return Err("عملية السداد غير قابلة للإلغاء".into());}
+    let already:i64=tx.query_row("SELECT COUNT(*) FROM cashier_payment_voids WHERE payment_id=?1",params![input.payment_id],|row|row.get(0)).map_err(|e|e.to_string())?;
+    if already!=0{return Err("هذه العملية أُلغيت بالفعل ولا يمكن إلغاؤها مرتين".into());}
+    let timestamp=Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    tx.execute(
+        "INSERT INTO cashier_payment_voids(payment_id,patient_id,reason,created_at) VALUES(?1,?2,?3,?4)",
+        params![input.payment_id,input.patient_id,reason,timestamp]
+    ).map_err(|e|e.to_string())?;
+    tx.execute(
+        "INSERT INTO audit_log(action,entity_type,entity_id,details,created_at) VALUES(?1,?2,?3,?4,?5)",
+        params!["إلغاء تحصيل","كاشير",input.payment_id,
+            format!("{}:{} | القيمة={:.2} | الطريقة={} | السبب={}",service_type,service_id,amount,method,reason),timestamp]
+    ).map_err(|e|e.to_string())?;
+    tx.commit().map_err(|e|e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn void_cashier_receipt(state:State<AppState>,input:VoidCashierReceiptInput)->Result<(),String>{
+    let mut conn=open_db(&state)?;
+    void_cashier_receipt_conn(&mut conn,&input)
+}
+
 #[tauri::command]
 fn record_cashier_payment(state:State<AppState>,input:CashierPaymentInput)->Result<(),String>{if !["clinic","lab","nursing","physio","radiology","emergency","others"].contains(&input.service_type.as_str()){return Err("نوع الخدمة غير صالح".into())}if input.patient_id.len()>128||input.service_id.len()>128{return Err("معرف الخدمة غير صالح".into())}let amount=parse_lab_money(&input.amount,"المبلغ")?;if amount<=0.0{return Err("المبلغ يجب أن يكون أكبر من صفر".into())}let method=input.payment_method.trim();if method.is_empty()||method.len()>80||method.chars().any(|c|c.is_control()){return Err("طريقة الدفع غير صالحة".into())}if input.notes.len()>500{return Err("ملاحظات الدفع أطول من المسموح".into())}let mut c=open_db(&state)?;let tx=c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;let item=cashier_items_for_range(&tx,"2000-01-01","2099-12-31")?.into_iter().find(|x|x.service_type==input.service_type&&x.service_id==input.service_id).ok_or_else(||"الخدمة غير موجودة".to_string())?;if item.patient_id!=input.patient_id{return Err("بيانات المريض غير متطابقة".into())}if amount>item.remaining+0.001{return Err("المبلغ أكبر من المتبقي".into())}tx.execute("INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![Uuid::new_v4().to_string(),input.patient_id,input.service_type,input.service_id,format!("{:.2}",amount),method,input.notes.trim(),Local::now().format("%Y-%m-%d %H:%M:%S").to_string()]).map_err(|e|e.to_string())?;tx.commit().map_err(|e|e.to_string())?;Ok(())}
 
@@ -3726,7 +3800,7 @@ fn list_payment_method_summary(
 
     let mut stmt = conn.prepare(
         "SELECT service_type,service_id,payment_method,CAST(amount AS REAL)
-         FROM cashier_payments"
+         FROM cashier_payments WHERE id NOT IN (SELECT payment_id FROM cashier_payment_voids)"
     ).map_err(|e| e.to_string())?;
     let payments = stmt.query_map([], |row| Ok((
         row.get::<_,String>(0)?,
@@ -4554,6 +4628,8 @@ pub fn run() {
             open_patient_attachment,
             list_cashier_items,
             record_cashier_payment,
+            list_patient_cashier_receipts,
+            void_cashier_receipt,
             financial_report,
             list_payment_method_summary,
             list_audit_logs,
@@ -4580,6 +4656,32 @@ pub fn run() {
 #[cfg(test)]
 mod production_tests {
     use super::*;
+    #[test]
+    fn cashier_receipt_void_preserves_audit_and_reopens_balance() {
+        let path=test_db_path("payment-void-v141");
+        init_db(&path).expect("prepare payment test DB");
+        let mut conn=Connection::open(&path).expect("open DB");
+        conn.execute("INSERT INTO patients(id,full_name,phone,created_at,updated_at) VALUES('void-p','Patient','01000000000','2026-10-15 10:00:00','2026-10-15 10:00:00')",[]).expect("patient");
+        conn.execute("INSERT INTO visits(id,patient_id,visit_date,visit_time,doctor,fee,visit_type,booking_source,created_at,updated_at) VALUES('void-v','void-p','2026-10-15','10:00','Test','300','كشف جديد','عادي','2026-10-15 10:00:00','2026-10-15 10:00:00')",[]).expect("visit");
+        conn.execute("INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at) VALUES('void-cp','void-p','clinic','void-v','300.00','نقدي','','2026-10-15 10:00:00')",[]).expect("receipt");
+        let before=cashier_items_for_range(&conn,"2026-10-15","2026-10-15").expect("before");
+        assert!((before[0].paid-300.0).abs()<0.001);
+        let bad=VoidCashierReceiptInput{payment_id:"void-cp".into(),patient_id:"void-p".into(),reason:"no".into()};
+        assert!(void_cashier_receipt_conn(&mut conn,&bad).is_err(),"missing reason accepted");
+        let valid=VoidCashierReceiptInput{payment_id:"void-cp".into(),patient_id:"void-p".into(),reason:"ضغط زر مدفوع بالخطأ".into()};
+        void_cashier_receipt_conn(&mut conn,&valid).expect("void payment");
+        let rows=cashier_items_for_range(&conn,"2026-10-15","2026-10-15").expect("after");
+        assert!((rows[0].paid-0.0).abs()<0.001,"voided receipt still counted");
+        assert!((rows[0].remaining-300.0).abs()<0.001,"balance not reopened");
+        assert!(void_cashier_receipt_conn(&mut conn,&valid).is_err(),"double void accepted");
+        let original:i64=conn.query_row("SELECT COUNT(*) FROM cashier_payments WHERE id='void-cp'",[],|row|row.get(0)).expect("retained receipt");
+        assert_eq!(original,1,"receipt must remain in journal");
+        let audit:i64=conn.query_row("SELECT COUNT(*) FROM audit_log WHERE entity_id='void-cp' AND action='إلغاء تحصيل'",[],|row|row.get(0)).expect("void audit");
+        assert_eq!(audit,1,"expected exactly one reversal audit record");
+        drop(conn);
+        cleanup(&path);
+    }
+
 
     // AK_PATIENT_ACCOUNT_RECONCILIATION_V2 — synthetic legacy-account settlement regression test.
         #[test]
