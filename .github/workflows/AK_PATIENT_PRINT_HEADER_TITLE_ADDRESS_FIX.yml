@@ -1,0 +1,242 @@
+name: AK Patient Print Header + Footer + Timeline Clean Fix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ak-patient-print-header-footer-clean
+  cancel-in-progress: false
+
+jobs:
+  fix_print_export:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Apply patient-print header/footer fix only
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          main_path = Path('src/main.ts')
+          css_path = Path('src/style.css')
+          main_src = main_path.read_text(encoding='utf-8')
+          css_src = css_path.read_text(encoding='utf-8')
+
+          marker_main_start = 'function patientExportSheet(title: string, subtitle: string, body: string) {'
+          marker_main_end = 'function buildPatientQrPayload(details: PatientDetails) {'
+          assert marker_main_start in main_src and marker_main_end in main_src, 'patientExportSheet markers not found'
+          s = main_src.index(marker_main_start)
+          e = main_src.index(marker_main_end, s)
+          section = main_src[s:e]
+
+          old_block = '''      <div class="patient-print-brand">
+        <img src="/patient-print-logo.jpg" alt="لوجو عيادات العقاد التخصصية" />
+        <div>
+          <div class="patient-print-slogan">${esc(appSettings.clinicSlogan)}</div>
+          <div class="patient-print-address">${esc(appSettings.clinicAddress)}</div>
+        </div>
+      </div>'''
+          new_block = '''      <div class="patient-print-brand">
+        <img src="/patient-print-logo.jpg" alt="لوجو عيادات العقاد التخصصية" />
+        <div class="patient-print-brand-copy">
+          <div class="patient-print-clinic-name">${esc(appSettings.clinicName)}</div>
+          <div class="patient-print-slogan">${esc(appSettings.clinicSlogan)}</div>
+          <div class="patient-print-address">${esc(appSettings.clinicAddress)}</div>
+        </div>
+      </div>'''
+          assert old_block in section, 'old patient print brand block not found'
+          section = section.replace(old_block, new_block, 1)
+
+          old_footer = '''      <div class="patient-print-footer">
+        <div class="patient-print-footer-item">
+          <span class="patient-print-footer-badge wa">WA</span>
+          <strong class="ltr">${esc(appSettings.whatsappNumber)}</strong>
+        </div>
+        <div class="patient-print-footer-item">
+          <span class="patient-print-footer-badge phone">☎</span>
+          <strong class="ltr">${esc(appSettings.phoneNumber)}</strong>
+        </div>
+        <div class="patient-print-footer-address">${esc(appSettings.clinicAddress)}</div>
+      </div>'''
+          new_footer = '''      <div class="patient-print-footer">
+        <div class="patient-print-footer-item">
+          <span>واتساب</span>
+          <strong class="ltr">${esc(appSettings.whatsappNumber)}</strong>
+        </div>
+        <div class="patient-print-footer-item">
+          <span>تليفون</span>
+          <strong class="ltr">${esc(appSettings.phoneNumber)}</strong>
+        </div>
+        <div class="patient-print-footer-address">${esc(appSettings.clinicAddress)}</div>
+      </div>'''
+          assert old_footer in section, 'old patient print footer block not found'
+          section = section.replace(old_footer, new_footer, 1)
+
+          new_main = main_src[:s] + section + main_src[e:]
+          main_path.write_text(new_main, encoding='utf-8')
+
+          css_marker = '/* AK_PATIENT_PRINT_HEADER_FOOTER_AND_CREATED_EVENT_FIX_20261014 */'
+          assert css_marker not in css_src, 'CSS patch already present'
+          css_add = '''
+
+/* AK_PATIENT_PRINT_HEADER_FOOTER_AND_CREATED_EVENT_FIX_20261014 */
+.patient-print-brand-copy{
+  display:grid;
+  gap:6px;
+  justify-items:center;
+  text-align:center;
+}
+.patient-print-clinic-name{
+  margin-top:12px;
+  font-size:28px;
+  line-height:1.35;
+  font-weight:900;
+  color:#0a2342;
+}
+.patient-print-slogan{
+  margin-top:2px;
+  font-size:24px;
+  line-height:1.3;
+  font-weight:900;
+  color:#087f8a;
+  letter-spacing:0;
+}
+.patient-print-address{
+  margin-top:4px;
+  max-width:820px;
+  font-size:13px;
+  line-height:1.95;
+  font-weight:700;
+  color:#5f7686;
+}
+.patient-export-title h2{
+  font-size:31px;
+  line-height:1.35;
+  font-weight:900;
+  color:#0a2342;
+}
+.patient-export-title p{
+  font-size:18px;
+  line-height:1.7;
+  font-weight:800;
+  color:#657b8c;
+}
+.patient-print-footer{
+  gap:28px;
+}
+.patient-print-footer-item{
+  gap:8px;
+}
+.patient-print-footer-item span{
+  display:block;
+  font-size:12px;
+  font-weight:900;
+  color:#738698;
+}
+.patient-print-footer-item strong{
+  display:block;
+  font-size:18px;
+  color:#0a2342;
+}
+.patient-print-footer-badge{
+  display:none!important;
+}
+/* Hide the file-creation row from exported patient reports only. */
+.patient-export-document .patient-file-event.created{
+  display:none!important;
+}
+'''
+          css_path.write_text(css_src + css_add, encoding='utf-8')
+
+          # Sanity checks
+          final_main = main_path.read_text(encoding='utf-8')
+          final_css = css_path.read_text(encoding='utf-8')
+          assert 'patient-print-clinic-name' in final_main, 'clinic name not inserted'
+          assert '<span class="patient-print-footer-badge wa">WA</span>' not in final_main, 'WA icon still present'
+          assert '<span class="patient-print-footer-badge phone">☎</span>' not in final_main, 'phone icon still present'
+          assert css_marker in final_css, 'CSS patch missing'
+          print('PASS: patient file print header/footer cleaned; created-event hidden only in print export')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify changed files only
+        shell: pwsh
+        run: |
+          git add -- src/main.ts src/style.css
+          $changed = @(git diff --cached --name-only | Sort-Object)
+          $expected = @('src/main.ts','src/style.css') | Sort-Object
+          if (($changed -join "`n") -ne ($expected -join "`n")) {
+            throw "Unexpected changed files: $($changed -join ', ')"
+          }
+          $diff = git diff --cached -- src/main.ts src/style.css
+          if ($diff -notmatch 'patient-print-clinic-name') { throw 'Clinic name change missing' }
+          if ($diff -notmatch 'patient-print-address') { throw 'Address styling change missing' }
+          if ($diff -notmatch 'patient-file-event.created') { throw 'Created-event print hide missing' }
+          if ($diff -match 'buildPatientQrPayload\(' -or $diff -match 'captureAndSaveExport\(') {
+            throw 'Unexpected QR/export core logic change'
+          }
+          Write-Host 'PASS - change scope verified'
+
+      - name: Validate frontend and backend
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build Windows EXE installer
+        shell: pwsh
+        run: |
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files = @(Get-ChildItem 'src-tauri/target/release/bundle/nsis' -File -Filter '*.exe')
+          if ($files.Count -ne 1) { throw "Expected one EXE, found $($files.Count)" }
+          Copy-Item -LiteralPath $files[0].FullName -Destination 'Clinic-Cases-Windows-Setup.exe'
+          $hash = (Get-FileHash 'Clinic-Cases-Windows-Setup.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Clinic-Cases-Windows-Setup.exe" | Set-Content 'Clinic-Cases-Windows-Setup.exe.sha256' -Encoding ascii
+
+      - name: Commit tested print correction
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Improve patient file print header and hide created event in export'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git fetch origin main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git rebase origin/main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish tested installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "ak-patient-print-header-fix-$($env:GITHUB_RUN_ID)"
+          gh release create $tag 'Clinic-Cases-Windows-Setup.exe' 'Clinic-Cases-Windows-Setup.exe.sha256' --target main --title 'Clinic Cases - Patient Print Header Fix' --notes 'Patient file PNG/PDF fix only: keep clinic slogan, add clear readable clinic name under the logo, enlarge title and address, remove footer contact icons while keeping numbers, and hide the yellow file-creation row from printed patient reports only. No changes to patient data, QR generation, bookings, security, or database logic.'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Setup.exe" >> $env:GITHUB_STEP_SUMMARY
