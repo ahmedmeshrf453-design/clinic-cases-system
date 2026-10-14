@@ -4581,6 +4581,40 @@ pub fn run() {
 mod production_tests {
     use super::*;
 
+    // AK_PATIENT_ACCOUNT_RECONCILIATION_V2 — synthetic legacy-account settlement regression test.
+        #[test]
+    fn patient_historical_reconciliation_preserves_source_visit_and_balance() {
+        let db=test_db_path("patient-reconcile");
+        init_db(&db).expect("setup synthetic finance db");
+        let conn=Connection::open(&db).expect("open synthetic finance db");
+        conn.execute("INSERT INTO patients(id,full_name,phone,created_at,updated_at) VALUES('recon-p1','Test','01000000000','2026-10-15 10:00:00','2026-10-15 10:00:00')",[])
+            .expect("insert patient");
+        conn.execute("INSERT INTO visits(id,patient_id,visit_date,visit_time,doctor,fee,visit_type,booking_source,created_at,updated_at) VALUES('recon-v1','recon-p1','2026-10-15','10:00','Test Dr','300','كشف جديد','عادي','2026-10-15 10:00:00','2026-10-15 10:00:00')",[])
+            .expect("insert old visit");
+        let before=cashier_items_for_range(&conn,"2026-10-15","2026-10-15").expect("old visit cashier query");
+        let old=before.iter().find(|r|r.service_id=="recon-v1").expect("old visit visible");
+        assert!((old.paid-0.0).abs()<0.001);
+        assert!((old.remaining-300.0).abs()<0.001);
+        conn.execute("INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at) VALUES('recon-cp1','recon-p1','clinic','recon-v1','120.00','تسوية سداد سابق','Verified historical receipt','2026-10-15 11:00:00')",[])
+            .expect("record partial historical payment");
+        let partial=cashier_items_for_range(&conn,"2026-10-15","2026-10-15").expect("partial query");
+        let old=partial.iter().find(|r|r.service_id=="recon-v1").expect("partial visit exists");
+        assert!((old.paid-120.0).abs()<0.001);
+        assert!((old.remaining-180.0).abs()<0.001);
+        conn.execute("INSERT INTO cashier_payments(id,patient_id,service_type,service_id,amount,payment_method,notes,created_at) VALUES('recon-cp2','recon-p1','clinic','recon-v1','180.00','نقدي','Test actual collection','2026-10-15 11:15:00')",[])
+            .expect("collect remainder");
+        let final_rows=cashier_items_for_range(&conn,"2026-10-15","2026-10-15").expect("final query");
+        let old=final_rows.iter().find(|r|r.service_id=="recon-v1").expect("paid visit exists");
+        assert!((old.paid-300.0).abs()<0.001);
+        assert!((old.remaining-0.0).abs()<0.001);
+        let (price,count):(String,i64)=conn.query_row("SELECT fee,(SELECT COUNT(*) FROM visits WHERE id='recon-v1') FROM visits WHERE id='recon-v1'",[],|row|Ok((row.get(0)?,row.get(1)?))).expect("original visit unchanged");
+        assert_eq!(price,"300");
+        assert_eq!(count,1);
+        drop(conn);
+        cleanup(&db);
+    }
+
+
     #[test]
     fn clinic_initial_payment_all_three_modes_and_rejections() {
         let full = initial_visit_payment("300", Some("full"), Some("0"), Some("نقدي"))

@@ -2346,7 +2346,108 @@ async function openPatientAttachments(patientId:string){
 }
 
 function cashierTableHtml(rows:CashierItem[]){return `<div class="table-wrap"><table class="v7-cashier-table"><thead><tr><th>التاريخ</th><th>المريض</th><th>الخدمة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>إجراء</th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr><td>${esc(displayDate(r.serviceDate))}</td><td><strong>${esc(r.patientName)}</strong><small class="ltr">${esc(r.patientPhone||'')}</small></td><td>${esc(r.serviceLabel)}</td><td class="ltr">${r.charge.toFixed(2)} ج.م</td><td class="ltr">${r.paid.toFixed(2)} ج.م</td><td class="ltr ${r.remaining>0.009?'v7-due':'v7-paid'}">${r.remaining.toFixed(2)} ج.م</td><td>${r.remaining>0.009?`<button class="btn primary small" data-cashier-pay="${esc(r.serviceType)}" data-service-id="${esc(r.serviceId)}" data-patient-id="${esc(r.patientId)}" data-remaining="${r.remaining}">تحصيل</button>`:'<span class="v7-paid-badge">تم السداد</span>'}</td></tr>`).join(''):'<tr><td colspan="7" class="empty-row">لا توجد خدمات في الفترة</td></tr>'}</tbody></table></div>`}
-function openCashierPaymentModal(item:{patientId:string;serviceType:string;serviceId:string;remaining:number},onSaved:()=>Promise<void>){const root=document.querySelector<HTMLDivElement>('#modalRoot')!;root.innerHTML=`<div class="modal-backdrop"><section class="modal compact"><div class="modal-head"><div><h2>تحصيل مبلغ</h2><p>المتبقي ${item.remaining.toFixed(2)} ج.م</p></div><button class="modal-close" id="closeCashierPayment">×</button></div><form id="cashierPaymentForm"><div class="form-grid one"><label>المبلغ<input class="ltr" name="amount" type="number" min="0.01" max="${item.remaining}" step="0.01" value="${item.remaining.toFixed(2)}"></label><label>طريقة الدفع<select name="paymentMethod"><option>نقدي</option><option>فيزا</option><option>إنستاباي</option><option>محفظة</option><option>أخرى</option></select></label><label>ملاحظات<input name="notes" maxlength="300"></label></div><div class="form-actions"><button type="button" class="btn ghost" id="cancelCashierPayment">إلغاء</button><button class="btn primary">✓ حفظ التحصيل</button></div></form></section></div>`;const close=()=>root.innerHTML='';document.querySelector<HTMLButtonElement>('#closeCashierPayment')!.onclick=close;document.querySelector<HTMLButtonElement>('#cancelCashierPayment')!.onclick=close;document.querySelector<HTMLFormElement>('#cashierPaymentForm')!.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget as HTMLFormElement);try{await invoke('record_cashier_payment',{input:{patientId:item.patientId,serviceType:item.serviceType,serviceId:item.serviceId,amount:String(fd.get('amount')||''),paymentMethod:String(fd.get('paymentMethod')||''),notes:String(fd.get('notes')||'').trim()}});close();toast('تم تسجيل التحصيل');await onSaved()}catch(err){toast(`تعذر تسجيل التحصيل: ${String(err)}`,'error')}}}
+// AK_PATIENT_ACCOUNT_RECONCILIATION_V2 — retain ordinary cashier behavior and explicitly tag old receipts.
+function openCashierPaymentModal(
+  item:{patientId:string;serviceType:string;serviceId:string;remaining:number},
+  onSaved:()=>Promise<void>,
+  options?:{historical?:boolean;onCancel?:()=>Promise<void>}
+){
+  const historical=options?.historical===true;
+  const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
+  const methodOptions=historical
+    ? '<option value="تسوية سداد سابق">تسوية سداد سابق — بدون تحصيل جديد</option>'
+    : '<option>نقدي</option><option>فيزا</option><option>إنستاباي</option><option>محفظة</option><option>أخرى</option>';
+  root.innerHTML=`<div class="modal-backdrop"><section class="modal compact">
+    <div class="modal-head"><div><h2>${historical?'تسجيل سداد سابق':'تحصيل مبلغ'}</h2>
+      <p>المتبقي المسجل ${item.remaining.toFixed(2)} ج.م</p></div>
+      <button class="modal-close" id="closeCashierPayment">×</button></div>
+    ${historical?'<p class="patient-reconcile-warning">⚠ سجل التسوية فقط إذا تأكدت من إيصال أو واقعة السداد السابقة. هذا ليس تحصيلًا نقديًا جديدًا ولن ينشئ كشفًا جديدًا.</p>':''}
+    <form id="cashierPaymentForm"><div class="form-grid one">
+      <label>المبلغ<input class="ltr" name="amount" type="number" min="0.01" max="${item.remaining}" step="0.01" value="${item.remaining.toFixed(2)}" required></label>
+      <label>طريقة الدفع<select name="paymentMethod">${methodOptions}</select></label>
+      <label>${historical?'مرجع السداد السابق / ملاحظات':'ملاحظات'}<input name="notes" maxlength="300" ${historical?'placeholder="مثال: تم السداد عند الزيارة وفق الإيصال"':''}></label>
+    </div><div class="form-actions">
+      <button type="button" class="btn ghost" id="cancelCashierPayment">إلغاء</button>
+      <button type="submit" class="btn primary" id="confirmCashierPayment">${historical?'✓ اعتماد السداد السابق':'✓ حفظ التحصيل'}</button>
+    </div></form>
+  </section></div>`;
+  const close=()=>{root.innerHTML='';if(options?.onCancel)void options.onCancel()};
+  document.querySelector<HTMLButtonElement>('#closeCashierPayment')!.onclick=close;
+  document.querySelector<HTMLButtonElement>('#cancelCashierPayment')!.onclick=close;
+  const form=document.querySelector<HTMLFormElement>('#cashierPaymentForm')!;
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    const fd=new FormData(form);
+    const button=document.querySelector<HTMLButtonElement>('#confirmCashierPayment')!;
+    if(button.disabled)return;
+    if(historical && !window.confirm('هل أنت متأكد أن المبلغ دُفع سابقًا بالفعل؟ لن يُسجل كتحصيل نقدي جديد، لكن سيُسوى المستحق في ملف المريض.'))return;
+    button.disabled=true;
+    try {
+      await invoke('record_cashier_payment',{input:{
+        patientId:item.patientId,serviceType:item.serviceType,serviceId:item.serviceId,
+        amount:String(fd.get('amount')||''),
+        paymentMethod:String(fd.get('paymentMethod')||''),
+        notes:String(fd.get('notes')||'').trim()
+      }});
+      root.innerHTML='';
+      toast(historical?'تم تسجيل تسوية السداد السابق':'تم تسجيل التحصيل');
+      await onSaved();
+    }catch(err){toast(`تعذر تسجيل ${historical?'السداد السابق':'التحصيل'}: ${String(err)}`,'error')}
+    finally{button.disabled=false}
+  };
+}
+
+// AK_PATIENT_ACCOUNT_RECONCILIATION_V2 — review old and new services independently.
+async function openPatientAccountModal(patientId:string){
+  const root=document.querySelector<HTMLDivElement>('#modalRoot')!;
+  try {
+    const [details,all]=await Promise.all([
+      invoke<PatientDetails>('get_patient_details',{id:patientId}),
+      invoke<CashierItem[]>('list_cashier_items',{query:{from:'2000-01-01',to:'2099-12-31'}})
+    ]);
+    const rows=all.filter(row=>row.patientId===patientId);
+    const charges=rows.reduce((s,r)=>s+r.charge,0);
+    const paid=rows.reduce((s,r)=>s+r.paid,0);
+    const remaining=rows.reduce((s,r)=>s+r.remaining,0);
+    const back=async()=>{root.innerHTML='';await openPatient(patientId)};
+    root.innerHTML=`<div class="modal-backdrop" data-back-patient-id="${esc(patientId)}"><section class="modal wide patient-account-review-modal">
+      <div class="modal-head"><div><h2>🧾 مراجعة حساب المريض</h2><p>${esc(details.patient.fullName||'ملف المريض')} — سجل الدفع لكل خدمة على حدة</p></div>
+      <button type="button" class="modal-close" id="closePatientAccountReview">×</button></div>
+      <p class="patient-reconcile-warning">المستحقات الظاهرة تعني أن السداد غير مسجل في النظام، وليس بالضرورة أن المريض لم يدفع. راجع الإيصالات قبل تسجيل «سداد سابق».</p>
+      <div class="v7-money-grid patient-account-money-summary">
+        <div><span>إجمالي الخدمات</span><strong>${charges.toFixed(2)} ج.م</strong></div>
+        <div><span>المدفوع المسجل</span><strong>${paid.toFixed(2)} ج.م</strong></div>
+        <div><span>غير مسجل سداده</span><strong>${remaining.toFixed(2)} ج.م</strong></div>
+      </div>
+      <div class="table-wrap"><table class="v7-cashier-table patient-account-table">
+        <thead><tr><th>التاريخ</th><th>الخدمة</th><th>الإجمالي</th><th>المدفوع</th><th>المتبقي</th><th>الإجراء</th></tr></thead>
+        <tbody>${rows.length?rows.map((r,i)=>`<tr>
+          <td>${esc(displayDate(r.serviceDate))}</td><td>${esc(r.serviceLabel)}</td>
+          <td class="ltr">${r.charge.toFixed(2)} ج.م</td><td class="ltr">${r.paid.toFixed(2)} ج.م</td>
+          <td class="ltr ${r.remaining>0.009?'v7-due':'v7-paid'}">${r.remaining.toFixed(2)} ج.م</td>
+          <td>${r.remaining>0.009?`<div class="patient-account-row-actions"><button type="button" class="btn primary small" data-patient-account-collect="${i}">تحصيل / جزئي</button><button type="button" class="btn ghost small" data-patient-account-previous="${i}">سدد سابقًا</button></div>`:'<span class="v7-paid-badge">لا يوجد مستحق</span>'}</td>
+        </tr>`).join(''):'<tr><td colspan="6" class="empty-row">لا توجد خدمات مالية مسجلة</td></tr>'}</tbody>
+      </table></div>
+      <div class="form-actions"><button type="button" class="btn ghost" id="backToPatientFromAccount">← رجوع لملف المريض</button></div>
+    </section></div>`;
+    document.querySelector<HTMLButtonElement>('#closePatientAccountReview')!.onclick=()=>void back();
+    document.querySelector<HTMLButtonElement>('#backToPatientFromAccount')!.onclick=()=>void back();
+    const openReceipt=(idx:number,historical:boolean)=>{
+      const row=rows[idx];
+      if(!row||row.remaining<=0.009){toast('لم يعد على هذه الخدمة مبلغ مستحق');return}
+      openCashierPaymentModal({patientId,serviceType:row.serviceType,serviceId:row.serviceId,remaining:row.remaining},
+        async()=>openPatientAccountModal(patientId),
+        {historical,onCancel:async()=>openPatientAccountModal(patientId)});
+    };
+    root.querySelectorAll<HTMLButtonElement>('[data-patient-account-collect]').forEach(button=>{
+      button.onclick=()=>openReceipt(Number(button.dataset.patientAccountCollect),false);
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-patient-account-previous]').forEach(button=>{
+      button.onclick=()=>openReceipt(Number(button.dataset.patientAccountPrevious),true);
+    });
+  }catch(err){toast(`تعذر فتح مراجعة الحساب: ${String(err)}`,'error');await openPatient(patientId)}
+}
+
 async function renderCashier(){
   const day=businessDay();
   shell(`
@@ -6485,8 +6586,9 @@ async function openPatient(id: string) {
           <div><span>آخر خدمة</span><strong>${esc(lastService.label)}</strong><small>${esc(lastService.when)}</small></div>
           <div class="${patientRemaining > 0.009 ? 'has-due' : 'is-paid'}">
             <span>الحساب</span>
-            <strong>${patientRemaining > 0.009 ? `متبقي ${patientRemaining.toFixed(2)} ج.م` : 'مسدد ✓'}</strong>
-            <small>المدفوع ${patientPaid.toFixed(2)} من ${patientCharges.toFixed(2)} ج.م</small>
+            <strong>${patientCharges <= 0.009 ? 'لا توجد رسوم مسجلة' : patientRemaining > 0.009 ? `غير مسجل سداده ${patientRemaining.toFixed(2)} ج.م` : 'مسدد ✓'}</strong>
+            <small>المدفوع المسجل ${patientPaid.toFixed(2)} من ${patientCharges.toFixed(2)} ج.م</small>
+            <button type="button" class="patient-account-review-button" id="patientReviewAccount">🧾 مراجعة السداد</button>
           </div>
         </div>
 
@@ -6583,6 +6685,8 @@ async function openPatient(id: string) {
   const close = () => root.innerHTML = '';
 
   document.querySelector<HTMLButtonElement>('#closePatient')!.onclick = close;
+  // AK_PATIENT_ACCOUNT_RECONCILIATION_V2: old services require explicit reconciliation.
+  document.querySelector<HTMLButtonElement>('#patientReviewAccount')!.onclick = () => void openPatientAccountModal(id);
   document.querySelector<HTMLDivElement>('#patientModalBackdrop')!.onclick = e => {
     if (e.target === e.currentTarget) close();
   };

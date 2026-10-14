@@ -5313,3 +5313,12 @@ table td{font-size:13px !important}
 .clinic-payment-grid label { display: flex; flex-direction: column; gap: 7px; }
 .clinic-payment-grid [hidden] { display: none !important; }
 .clinic-payment-summary { margin: 12px 0 0; font-weight: 650; }
+
+/* AK_PATIENT_ACCOUNT_RECONCILIATION_V2 — patient-ledger reconciliation UI. */
+.patient-account-review-button { display: inline-flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #d0dfea; color: #155b89; border-radius: 9px; padding: 7px 12px; font-weight: 800; cursor: pointer; margin-top: 7px; }
+.patient-account-review-button:hover { border-color: #1973ac; background: #f0f8ff; }
+.patient-account-review-modal { max-width: 1100px; }
+.patient-account-money-summary { margin: 15px 0; }
+.patient-reconcile-warning { padding: 12px 14px; border-radius: 10px; border: 1px solid #f1d7aa; background: #fff9ee; color: #86531e; font-weight: 600; line-height: 1.7; }
+.patient-account-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.patient-account-table td { vertical-align: middle; }
