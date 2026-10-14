@@ -1,0 +1,154 @@
+name: AK Lock Screen Logo Only - Corrected
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ak-lock-screen-logo-only-main
+  cancel-in-progress: false
+
+jobs:
+  fix-test-release:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore dashboard and place AK logo ONLY on lock screen
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          css = Path('src/style.css')
+          main = Path('src/main.ts')
+          s = css.read_text(encoding='utf-8')
+          app_code = main.read_text(encoding='utf-8')
+          assert 'function showV7LockScreen()' in app_code, 'Lock screen function is missing'
+          assert 'class="v7-lock-screen"' in app_code, 'Lock screen markup changed'
+          assert Path('public/sidebar-clinic-logo.jpg').is_file(), 'Original AK logo image missing'
+
+          existing = '/* AK LOGO FULL DASHBOARD - 2026-10-14 */'
+          earlier = '/* AK background and unwanted shortcut strip final correction */'
+          fixed = '/* AK LOCK SCREEN LOGO ONLY - SAFE CORRECTION 2026-10-14 */'
+
+          if existing in s:
+              assert s.count(existing) == 1, 'Ambiguous dashboard block'
+              i = s.index(existing)
+              obsolete = s[i:]
+              assert 'body:has(.specialty-home-v7110) .modern-main' in obsolete, 'Unknown dashboard code: refusing removal'
+              assert '.specialty-home-v7110 .home-quick-actions' in obsolete, 'Unknown dashboard footer: refusing removal'
+              assert '/* AK LOCK SCREEN LOGO ONLY' not in obsolete, 'Lock correction present in dashboard block: refusing removal'
+              s = s[:i].rstrip() + '\n\n'
+          elif earlier in s:
+              assert s.count(earlier) == 1, 'Ambiguous legacy block'
+              i = s.index(earlier)
+              obsolete = s[i:]
+              assert 'html body:has(.specialty-home-v7110)' in obsolete, 'Unknown legacy block: refusing removal'
+              assert '.specialty-home-v7110 .home-quick-actions' in obsolete, 'Unknown footer: refusing removal'
+              s = s[:i].rstrip() + '\n\n'
+
+          assert fixed not in s, 'Lock screen logo correction already installed'
+          assert 'body:has(.specialty-home-v7110) .modern-main' not in s, 'Unexpected dashboard logo rule remains'
+
+          lock_css = r'''
+          /* AK LOCK SCREEN LOGO ONLY - SAFE CORRECTION 2026-10-14 */
+          /* This background applies ONLY to the PIN lock screen. */
+          .v7-lock-screen {
+            background-color: #07192f !important;
+            background-image:
+              linear-gradient(145deg, rgba(7,25,47,.66), rgba(17,59,101,.72)),
+              url('/sidebar-clinic-logo.jpg') !important;
+            background-position: center center !important;
+            background-size: cover !important;
+            background-repeat: no-repeat !important;
+          }
+          /* Keep login and local PIN recovery readable and functional. */
+          .v7-lock-screen .v7-lock-card {
+            background: #fff !important;
+          }
+          /* A crisp, uncropped official logo in the unlock card. */
+          .v7-lock-screen #v7UnlockPanel > .v7-lock-icon {
+            display: block !important;
+            width: min(172px, 45vw) !important;
+            height: min(172px, 23vh) !important;
+            min-height: 115px !important;
+            margin: 0 auto 12px !important;
+            font-size: 0 !important;
+            background: url('/sidebar-clinic-logo.jpg') center / contain no-repeat !important;
+          }
+          /* Keep the unwanted dashboard shortcut strip hidden if a stale copy exists. */
+          .specialty-home-v7110 .home-quick-actions { display: none !important; }
+          '''
+          s = s.rstrip() + '\n\n' + lock_css.strip() + '\n'
+          css.write_text(s, encoding='utf-8')
+          assert s.count(fixed) == 1
+          print('Changed src/style.css ONLY; lock-screen logo applied, unwanted dashboard wallpaper removed.')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify exact file scope and compile frontend
+        shell: pwsh
+        run: |
+          $changed = @(git diff --name-only)
+          if ($changed.Count -ne 1 -or $changed[0] -ne 'src/style.css') {
+            throw "Unexpected changes: $changed"
+          }
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          npm run tauri -- build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = @(Get-ChildItem 'src-tauri/target/release/bundle/nsis' -Filter '*.exe' -File)
+          if ($exe.Count -ne 1) { throw 'Expected exactly one Windows installer' }
+          Copy-Item -LiteralPath $exe[0].FullName -Destination 'Clinic-Cases-Windows-Setup.exe'
+          $hash = (Get-FileHash 'Clinic-Cases-Windows-Setup.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Clinic-Cases-Windows-Setup.exe" | Set-Content 'Clinic-Cases-Windows-Setup.exe.sha256' -Encoding ascii
+
+      - name: Commit tested change on main
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- src/style.css
+          git commit -m 'Put AK logo on PIN lock screen and restore dashboard background'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git fetch origin main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git rebase origin/main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish Windows installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "ak-lock-only-$($env:GITHUB_RUN_ID)"
+          gh release create $tag 'Clinic-Cases-Windows-Setup.exe' 'Clinic-Cases-Windows-Setup.exe.sha256' --target main --title 'AK Logo - Lock Screen Only' --notes 'Corrected placement: official AK logo appears on PIN lock screen, not specialty dashboard. Previous dashboard logo wallpaper restored to original theme; shortcut strip remains removed. PIN, recovery, patient records, SQLite and all service functions unchanged.'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Clinic-Cases-Windows-Setup.exe" >> $env:GITHUB_STEP_SUMMARY
