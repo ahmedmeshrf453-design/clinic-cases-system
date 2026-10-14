@@ -4,6 +4,7 @@ import { save as saveDialog, open as openDialog } from '@tauri-apps/plugin-dialo
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import './style.css';
+import './patientPrint.css';
 import { LAB_TESTS, type LabTestItem } from './labCatalog';
 import { openLabReferenceGuide } from './labReferenceGuide';
 import { LAB2LAB_SOURCE } from './lab2labCatalog';

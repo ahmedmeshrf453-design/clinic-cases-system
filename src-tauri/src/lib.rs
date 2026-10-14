@@ -4513,6 +4513,76 @@ pub fn run() {
 mod production_tests {
     use super::*;
 
+    #[test]
+    fn single_operator_full_zip_restore_roundtrip_smoke() {
+        use zip::write::SimpleFileOptions;
+
+        // Completely synthetic records in temporary Windows runner folders.
+        // This test must never access a real user's local database.
+        let root = std::env::temp_dir().join(format!("ak-restore-drill-{}", Uuid::new_v4()));
+        let data = root.join("different-machine-data");
+        let backups = root.join("backup-transfer");
+        let db = data.join("clinic-cases.db");
+        fs::create_dir_all(&data).expect("make test data dir");
+        fs::create_dir_all(&backups).expect("make test backup dir");
+        init_db(&db).expect("initialize synthetic clinic database");
+
+        {
+            let conn = Connection::open(&db).expect("open test database");
+            conn.execute(
+                "INSERT INTO patients (id,full_name,phone,created_at,updated_at) VALUES (?1,?2,?3,?4,?5)",
+                params!["synthetic-patient", "Backup Before", "01000000000", "2026-10-14 10:00:00", "2026-10-14 10:00:00"],
+            ).expect("add synthetic patient");
+        }
+        let state = AppState {
+            db_path: db.clone(),
+            backup_dir: backups.clone(),
+            export_dir: root.join("exports"),
+            attachments_dir: data.join("patient-attachments"),
+        };
+        let snapshot = backups.join("synthetic-snapshot.db");
+        checkpoint_and_copy(&state, &snapshot).expect("consistent sqlite backup");
+        let archive = backups.join("synthetic-transfer.zip");
+        {
+            let file = fs::File::create(&archive).expect("create test zip");
+            let mut zip = zip::ZipWriter::new(file);
+            zip.start_file("database/clinic-cases.db", SimpleFileOptions::default())
+                .expect("add database ZIP entry");
+            let mut reader = fs::File::open(&snapshot).expect("read snapshot");
+            std::io::copy(&mut reader, &mut zip).expect("write snapshot to zip");
+            zip.finish().expect("finish synthetic backup zip");
+        }
+
+        {
+            let conn = Connection::open(&db).expect("open live database");
+            conn.execute("UPDATE patients SET full_name='Modified After Backup' WHERE id='synthetic-patient'", [])
+                .expect("change the local synthetic record");
+        }
+        restore_zip_worker(&data, &backups, &archive).expect("restore transferred zip into new data folder");
+        {
+            let conn = Connection::open(&db).expect("reopen restored database");
+            let name: String = conn.query_row(
+                "SELECT full_name FROM patients WHERE id='synthetic-patient'", [], |row| row.get(0)
+            ).expect("read restored record");
+            assert_eq!(name, "Backup Before", "restore did not recover the original patient");
+            let integrity: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))
+                .expect("check restored database integrity");
+            assert_eq!(integrity, "ok");
+        }
+        let broken_archive = backups.join("corrupted.zip");
+        fs::write(&broken_archive, b"not a valid ZIP").expect("create corrupted test file");
+        assert!(restore_zip_worker(&data, &backups, &broken_archive).is_err(),
+            "corrupted archive must never restore");
+        {
+            let conn = Connection::open(&db).expect("open original database after bad ZIP");
+            let name: String = conn.query_row(
+                "SELECT full_name FROM patients WHERE id='synthetic-patient'", [], |row| row.get(0)
+            ).expect("read unchanged record");
+            assert_eq!(name, "Backup Before", "bad ZIP damaged restored patient data");
+        }
+        fs::remove_dir_all(&root).expect("clean isolated test files");
+    }
+
     fn test_db_path(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!("clinic-cases-{}-{}.db", label, Uuid::new_v4()))
     }
